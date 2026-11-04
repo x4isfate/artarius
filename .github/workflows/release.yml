@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег релиза, например v0.1.0"
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Тег
+        id: tag
+        run: echo "name=${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Проверка версии
+        env:
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          TAG="${TAG_NAME#v}"
+          MOD=$(node -p "require('./module.json').version")
+          test "$TAG" = "$MOD" || { echo "module.json: $MOD, тег: $TAG"; exit 1; }
+          grep -q "download/$TAG_NAME/artarius.zip" module.json || { echo "download в module.json не указывает на $TAG_NAME"; exit 1; }
+      - run: npm run dist
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          FILES="dist/artarius.zip dist/module.json"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" $FILES --clobber
+          else
+            gh release create "$TAG_NAME" $FILES --title "$TAG_NAME" --notes-file CHANGELOG.md
+          fi

@@ -1,0 +1,14 @@
+{
+  "name": "artarius",
+  "private": true,
+  "type": "module",
+  "description": "Модуль «Витрувий: карта мира» для Foundry VTT",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "lint": "node tools/check-syntax.mjs",
+    "dist": "sh tools/dist.sh"
+  },
+  "devDependencies": {
+    "handlebars": "^4.7.8"
+  }
+}
