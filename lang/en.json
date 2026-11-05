@@ -10,7 +10,8 @@
       "area": "Area",
       "erase": "Eraser",
       "claims": "Claims",
-      "atlas": "Types and layers"
+      "atlas": "Types and layers",
+      "guide": "How to play"
     },
     "Hint": {
       "select": "Click selects, double-click opens the sheet. Drag objects and line points. Delete removes.",
@@ -200,7 +201,8 @@
     "Notify": {
       "noAtlas": "This scene has no atlas yet. The GM creates it by opening the map.",
       "featureMissing": "The feature is no longer on the map.",
-      "selectAreaToErase": "Select the area to erase first."
+      "selectAreaToErase": "Select the area to erase first.",
+      "error": "Artarius error: “{message}”. See the console (F12)."
     },
     "Sheet": {
       "page": "Map feature"
@@ -214,6 +216,10 @@
         "name": "Draw the map below tokens",
         "hint": "Experimental. The map sits between the background and tokens instead of above the scene."
       }
+    },
+    "Guide": {
+      "title": "Artarius: how to play",
+      "missing": "Could not load the guide. It is in the module folder: docs/GUIDE.md."
     }
   }
 }

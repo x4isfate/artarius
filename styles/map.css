@@ -148,3 +148,17 @@
 .vmap-page .vmap-page-head { margin-bottom: 12px; }
 .vmap-page .vmap-page-head h2 { margin: 2px 0 6px; border: none; }
 .vmap-page .v-rows li { font-size: 13px; }
+
+/* Окно «Как играть» */
+.vmap-guide .window-content { padding: 0; }
+.vmap-guide-body { padding: 16px 22px 28px; overflow-y: auto; height: 100%; font-size: 14px; line-height: 1.55; color: var(--vm-ink-2); }
+.vmap-guide-body h1 { margin: 0 0 10px; font-size: 22px; border: none; color: var(--vm-ink); }
+.vmap-guide-body h2 { margin: 22px 0 8px; font-size: 17px; border: none; color: var(--vm-ink); }
+.vmap-guide-body h3 { margin: 16px 0 6px; font-size: 15px; border: none; color: var(--vm-ink); }
+.vmap-guide-body p, .vmap-guide-body li { margin: 6px 0; }
+.vmap-guide-body ul, .vmap-guide-body ol { padding-left: 22px; }
+.vmap-guide-body strong { color: var(--vm-ink); }
+.vmap-guide-body code { padding: 1px 5px; background: var(--vm-panel-2); border-radius: 4px; font-size: 12px; word-break: break-all; }
+.vmap-guide-body table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.vmap-guide-body th, .vmap-guide-body td { padding: 5px 8px; border-bottom: 1px solid var(--vm-line); text-align: left; vertical-align: top; }
+.vmap-guide-body th { color: var(--vm-muted); font-weight: 600; }
