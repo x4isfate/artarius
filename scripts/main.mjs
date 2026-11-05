@@ -6,6 +6,7 @@ import FeatureSheet from "./apps/feature-sheet.mjs";
 import AtlasConfig from "./apps/atlas-config.mjs";
 import ClaimsApp from "./apps/claims-app.mjs";
 import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
+import GuideApp from "./apps/guide-app.mjs";
 import {
   SOCKET, onSocket, onCheckMessage, onCheckUpdated, autoApplyTrusted, rollForClaim
 } from "./review/claims.mjs";
@@ -32,6 +33,9 @@ Hooks.once("init", () => {
     scope: "world", config: false, type: Array, default: [],
     onChange: () => ClaimsApp.refresh()
   });
+  game.settings.register(MODULE_ID, "guideSeen", {
+    scope: "client", config: false, type: Boolean, default: false
+  });
   game.settings.register(MODULE_ID, "renderBelowTokens", {
     name: "VMAP.Settings.renderBelowTokens.name",
     hint: "VMAP.Settings.renderBelowTokens.hint",
@@ -48,6 +52,7 @@ Hooks.once("init", () => {
   game.modules.get(MODULE_ID).api = {
     openFeature: id => FeatureSheet.open(id),
     openClaims: () => ClaimsApp.open(),
+    openGuide: () => GuideApp.open(),
     openAtlasConfig: () => game.user.isGM ? new AtlasConfig().render({ force: true }) : null,
     activateLayer,
     getAtlas, ensureAtlas,
@@ -72,7 +77,25 @@ Hooks.on("getSceneControlButtons", controls => {
 Hooks.once("ready", () => {
   game.socket.on(SOCKET, onSocket);
   rememberClaimStatuses();
+  if ( !game.settings.get(MODULE_ID, "guideSeen") ) {
+    GuideApp.open();
+    game.settings.set(MODULE_ID, "guideSeen", true);
+  }
 });
+
+/* ------------------------------------------------------------------ */
+/*  Ошибки модуля не должны пропадать молча                            */
+/* ------------------------------------------------------------------ */
+
+/** Ошибка из кода модуля: показать сообщение с текстом, полную трассу оставить в консоли. */
+function reportError(err) {
+  const stack = String(err?.stack ?? "");
+  if ( !stack.includes(`modules/${MODULE_ID}/`) ) return;
+  console.error(`${MODULE_ID} |`, err);
+  ui.notifications?.error(game.i18n.format("VMAP.Notify.error", { message: err?.message ?? String(err) }), { permanent: true });
+}
+window.addEventListener("error", ev => reportError(ev.error));
+window.addEventListener("unhandledrejection", ev => reportError(ev.reason));
 
 /* ------------------------------------------------------------------ */
 /*  Перерисовка                                                        */

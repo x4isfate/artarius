@@ -72,6 +72,10 @@ export default class MapLayer extends InteractionLayer {
           button: true,
           visible: game.user.isGM,
           onChange: () => game.modules.get(MODULE_ID).api.openAtlasConfig()
+        }),
+        guide: t("guide", "fa-solid fa-circle-question", 8, {
+          button: true,
+          onChange: () => game.modules.get(MODULE_ID).api.openGuide()
         })
       }
     };
