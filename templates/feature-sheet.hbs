@@ -106,6 +106,14 @@
       {{#each backlinks}}<button type="button" class="v-tag lv vmap-chip" data-action="openLink" data-id="{{id}}">{{name}}{{#if role}} · {{role}}{{/if}}</button>{{/each}}
     </div>
     {{/if}}
+    {{#if isObject}}
+    <p class="v-hint">{{localize "VMAP.Feature.within"}}</p>
+    {{#if within.length}}
+    <div class="v-tags">
+      {{#each within}}<button type="button" class="v-tag lv vmap-chip" data-action="openLink" data-id="{{id}}">{{name}}</button>{{/each}}
+    </div>
+    {{else}}<p class="v-empty">{{localize "VMAP.Feature.withinNone"}}</p>{{/if}}
+    {{/if}}
     {{#if isArea}}
     <p class="v-hint">{{localize "VMAP.Feature.inside"}}</p>
     {{#if inside.length}}

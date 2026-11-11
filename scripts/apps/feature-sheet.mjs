@@ -100,6 +100,14 @@ export default class FeatureSheet extends HandlebarsApplicationMixin(Application
     const backlinks = [...all.values()]
       .filter(o => o.id !== s.id && (o.system.links ?? []).some(l => l.target === s.id))
       .map(o => ({ id: o.id, name: o.name, role: o.system.links.find(l => l.target === s.id).role }));
+    // Обратная сторона: в каких областях стоит объект. Привязки нет, считается по месту.
+    let within = [];
+    if ( sys.kind === "object" && layer.renderer ) {
+      const pt = [sys.geometry?.x ?? 0, sys.geometry?.y ?? 0];
+      within = [...all.values()]
+        .filter(o => o.system.kind === "area" && pointInRings(pt, layer.renderer.visible.get(o.id) ?? []))
+        .map(o => ({ id: o.id, name: o.name }));
+    }
     let inside = [];
     if ( sys.kind === "area" ) {
       const rings = layer.renderer?.visible.get(s.id) ?? [];
@@ -147,7 +155,8 @@ export default class FeatureSheet extends HandlebarsApplicationMixin(Application
           .sort((a, b) => a.name.localeCompare(b.name))
           .map(o => ({ id: o.id, name: `${o.name} · ${L(`VMAP.Kind.${o.system.kind}`)}`, selected: o.id === l.target }))
       })),
-      backlinks, inside,
+      backlinks, inside, within,
+      isObject: sys.kind === "object",
       style,
       status: pendingAction ? game.i18n.format("VMAP.Feature.pending", { what: L(`VMAP.Draft.${pendingAction}`).toLowerCase() }) : null
     };

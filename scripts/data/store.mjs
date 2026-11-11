@@ -126,6 +126,7 @@ export function revOf(atlas, id) {
 /**
  * Записать правку. Мастер пишет прямо в атлас, игрок — в свой черновик.
  * op: { action, id, state?, name? }; baseRev ставится здесь.
+ * Хук artarius.preCommit может отменить правку (вернуть false), artarius.commit сообщает о ней.
  */
 export async function commit(op, scene = canvas?.scene) {
   const atlas = getAtlas(scene) ?? await ensureAtlas(scene);
@@ -133,14 +134,19 @@ export async function commit(op, scene = canvas?.scene) {
     ui.notifications.warn(game.i18n.localize("VMAP.Notify.noAtlas"));
     return;
   }
+  if ( Hooks.call("artarius.preCommit", op, { scene, direct: game.user.isGM }) === false ) return;
+  let result;
   if ( game.user.isGM ) {
     const plan = buildApplyPlan([{ ...op, baseRev: revOf(atlas, op.id) }], id => revOf(atlas, id), { force: true });
-    return applyPlan(atlas, plan);
+    result = await applyPlan(atlas, plan);
+  } else {
+    const draft = getDraft(game.user, scene.id);
+    const prev = draft[op.id];
+    const baseRev = prev?.baseRev ?? revOf(atlas, op.id) ?? null;
+    result = await setDraft(addToDraft(draft, { ...op, baseRev }), game.user, scene.id);
   }
-  const draft = getDraft(game.user, scene.id);
-  const prev = draft[op.id];
-  const baseRev = prev?.baseRev ?? revOf(atlas, op.id) ?? null;
-  return setDraft(addToDraft(draft, { ...op, baseRev }), game.user, scene.id);
+  Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM });
+  return result;
 }
 
 /** Применить план к атласу: создания, правки и удаления тремя пакетными вызовами. */
