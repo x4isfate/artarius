@@ -162,6 +162,7 @@ export async function applyClaims(entries, { ask = true } = {}) {
     await patchClaim(user, claim.id, { status: CLAIM_STATUS.applied, decidedAt: Date.now() });
   }
   ui.notifications.info(game.i18n.format("VMAP.Claims.appliedN", { n: entries.length }));
+  Hooks.callAll("artarius.claimsApplied", entries);
 }
 
 /** Отклонить заявки с пояснением. */
@@ -170,6 +171,7 @@ export async function rejectClaims(entries, comment = "") {
   for ( const { user, claim } of entries ) {
     await patchClaim(user, claim.id, { status: CLAIM_STATUS.rejected, comment, decidedAt: Date.now() });
   }
+  Hooks.callAll("artarius.claimsRejected", entries, comment);
 }
 
 /** Назначить проверку: карточка в чат, игрок бросает по кнопке. */

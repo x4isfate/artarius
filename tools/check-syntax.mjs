@@ -59,5 +59,12 @@ for ( const file of files.filter(f => /\.(mjs|hbs)$/.test(f) && !f.includes(`${p
   }
 }
 
+// Ссылки для обновления в Foundry: манифест всегда последний релиз, архив — релиз этой версии.
+const manifest = JSON.parse(readFileSync(path.join(root, "module.json"), "utf8"));
+const repo = "https://github.com/x4isfate/artarius";
+if ( manifest.manifest !== `${repo}/releases/latest/download/module.json` ) fail(path.join(root, "module.json"), "manifest должен вести на releases/latest/download/module.json");
+if ( manifest.download !== `${repo}/releases/download/v${manifest.version}/artarius.zip` ) fail(path.join(root, "module.json"), `download должен вести на релиз v${manifest.version}`);
+if ( !readFileSync(path.join(root, "CHANGELOG.md"), "utf8").includes(`## ${manifest.version}`) ) fail(path.join(root, "CHANGELOG.md"), `нет раздела ## ${manifest.version}`);
+
 console.log(bad ? `${bad} ошибок` : "lint ok");
 process.exit(bad ? 1 : 0);

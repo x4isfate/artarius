@@ -1,8 +1,8 @@
 {
   "id": "artarius",
   "title": "Artarius: карта мира",
-  "description": "Модуль для системы «Витрувий»: общая карта для политической игры богов. Объекты, реки и дороги, области на гексах. Игроки предлагают правки заявками, мастер принимает их, отклоняет или назначает проверку Витрувия.",
-  "version": "0.1.1",
+  "description": "Модуль для системы «Витрувий»: общая карта для политической игры богов. Объекты, реки и дороги, области на гексах, импорт и генерация карты через Azgaar. Игроки предлагают правки заявками, мастер принимает их, отклоняет или назначает проверку Витрувия.",
+  "version": "0.2.0",
   "compatibility": {
     "minimum": "14",
     "verified": "14.370",
@@ -51,7 +51,7 @@
   },
   "url": "https://github.com/x4isfate/artarius",
   "manifest": "https://github.com/x4isfate/artarius/releases/latest/download/module.json",
-  "download": "https://github.com/x4isfate/artarius/releases/download/v0.1.1/artarius.zip",
+  "download": "https://github.com/x4isfate/artarius/releases/download/v0.2.0/artarius.zip",
   "license": "LICENSE",
   "readme": "README.md",
   "changelog": "CHANGELOG.md"

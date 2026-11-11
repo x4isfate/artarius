@@ -1,0 +1,34 @@
+<div class="vmap-config">
+  <div class="vmap-scroll">
+    <p class="v-hint">{{localize "VMAP.Quick.configHint"}}</p>
+    <ul class="v-rows vmap-qm-rows">
+      {{#each rows}}
+      <li class="{{#unless on}}off{{/unless}}">
+        <button type="button" class="v-icon-btn" data-action="toggle" data-id="{{id}}" data-tooltip="{{#if on}}{{localize "VMAP.Quick.hide"}}{{else}}{{localize "VMAP.Quick.show"}}{{/if}}">
+          <i class="fa-solid {{#if on}}fa-eye{{else}}fa-eye-slash{{/if}}"></i></button>
+        <span class="vmap-qm-icon">{{#if img}}<img src="{{img}}" alt="">{{else}}<i class="{{icon}}"></i>{{/if}}</span>
+        <span class="vmap-qm-label">{{label}}{{#if module}} <span class="v-hint">· {{module}}</span>{{/if}}</span>
+        {{#if on}}
+        <button type="button" class="v-icon-btn" data-action="move" data-id="{{id}}" data-dir="-1" {{#if first}}disabled{{/if}}><i class="fa-solid fa-arrow-up"></i></button>
+        <button type="button" class="v-icon-btn" data-action="move" data-id="{{id}}" data-dir="1" {{#if last}}disabled{{/if}}><i class="fa-solid fa-arrow-down"></i></button>
+        {{/if}}
+      </li>
+      {{/each}}
+    </ul>
+
+    <section class="v-block">
+      <span class="v-eyebrow">{{localize "VMAP.Quick.macros"}}</span>
+      {{#if macros.length}}
+      <div class="vmap-file">
+        <select name="macro">{{#each macros}}<option value="{{uuid}}">{{name}}</option>{{/each}}</select>
+        <button type="button" class="v-btn" data-action="addMacro"><i class="fa-solid fa-plus"></i> {{localize "VMAP.Quick.addMacro"}}</button>
+      </div>
+      {{else}}<p class="v-empty">{{localize "VMAP.Quick.noMacros"}}</p>{{/if}}
+    </section>
+
+    <div class="vmap-actions">
+      <button type="button" class="v-btn" data-action="reset"><i class="fa-solid fa-rotate-left"></i> {{localize "VMAP.Quick.reset"}}</button>
+      {{#if isGM}}<button type="button" class="v-btn" data-action="saveDefault"><i class="fa-solid fa-users"></i> {{localize "VMAP.Quick.saveDefault"}}</button>{{/if}}
+    </div>
+  </div>
+</div>
