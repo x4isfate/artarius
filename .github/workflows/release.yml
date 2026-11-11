@@ -1,15 +1,14 @@
 name: Release
 
+# Релиз собирается сам, когда в main приходит новая версия в module.json.
+# Foundry берёт манифест из последнего релиза, поэтому после релиза у всех
+# появляется кнопка обновления модуля.
+
 on:
   push:
-    tags: ["v*"]
-  release:
-    types: [published]
+    branches: [main]
+    paths: [module.json]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Тег релиза, например v0.1.0"
-        required: true
 
 concurrency:
   group: release
@@ -22,36 +21,43 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Тег
-        id: tag
-        run: echo "name=${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.tag.outputs.name }}
+      - name: Версия
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./module.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^artarius.zip$'; then
+            echo "Релиз v$VERSION уже есть"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.v.outputs.skip != 'true'
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - name: Проверка версии
-        env:
-          TAG_NAME: ${{ steps.tag.outputs.name }}
-        run: |
-          TAG="${TAG_NAME#v}"
-          MOD=$(node -p "require('./module.json').version")
-          test "$TAG" = "$MOD" || { echo "module.json: $MOD, тег: $TAG"; exit 1; }
-          grep -q "download/$TAG_NAME/artarius.zip" module.json || { echo "download в module.json не указывает на $TAG_NAME"; exit 1; }
-      - run: npm run dist
+      - if: steps.v.outputs.skip != 'true'
+        run: npm ci
+      - if: steps.v.outputs.skip != 'true'
+        run: npm run lint
+      - if: steps.v.outputs.skip != 'true'
+        run: npm test
+      - if: steps.v.outputs.skip != 'true'
+        run: npm run dist
       - name: Релиз
+        if: steps.v.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ steps.tag.outputs.name }}
+          TAG: ${{ steps.v.outputs.tag }}
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
+          sh tools/release-notes.sh "$VERSION" > notes.md
           FILES="dist/artarius.zip dist/module.json"
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" $FILES --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $FILES --clobber
           else
-            gh release create "$TAG_NAME" $FILES --title "$TAG_NAME" --notes-file CHANGELOG.md
+            gh release create "$TAG" $FILES --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA" --latest
           fi

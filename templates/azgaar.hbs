@@ -1,0 +1,32 @@
+<div class="vmap-azgaar">
+  <section class="v-block">
+    <span class="v-eyebrow">{{localize "VMAP.Azgaar.generate"}}</span>
+    <p class="v-hint">{{localize "VMAP.Azgaar.generateHint"}}</p>
+    <div class="vmap-actions">
+      <button type="button" class="v-btn v-btn-accent" data-action="generator"><i class="fa-solid fa-wand-magic-sparkles"></i> {{localize "VMAP.Azgaar.openGenerator"}}</button>
+      <button type="button" class="v-btn" data-action="browser"><i class="fa-solid fa-arrow-up-right-from-square"></i> {{localize "VMAP.Azgaar.openBrowser"}}</button>
+    </div>
+  </section>
+
+  <section class="v-block">
+    <span class="v-eyebrow">{{localize "VMAP.Azgaar.import"}}</span>
+    <p class="v-hint">{{localize "VMAP.Azgaar.importHint"}}</p>
+    <label>{{localize "VMAP.Azgaar.file"}}
+      <input type="file" name="file" accept=".json,application/json">
+    </label>
+    <div class="vmap-grid">
+      {{#each parts}}
+      <label class="v-check"><input type="checkbox" data-part="{{key}}" {{#if on}}checked{{/if}}> {{label}}</label>
+      {{/each}}
+    </div>
+    <label>{{localize "VMAP.Azgaar.image"}}
+      <span class="vmap-file"><input type="text" name="image" value="{{form.image}}" placeholder="{{localize "VMAP.Azgaar.imageHint"}}">
+        <button type="button" class="v-icon-btn" data-action="pickImage"><i class="fa-solid fa-file-image"></i></button></span>
+    </label>
+    <label class="v-check"><input type="checkbox" name="setBackground" {{#if form.setBackground}}checked{{/if}}> {{localize "VMAP.Azgaar.setBackground"}}</label>
+    <label class="v-check"><input type="checkbox" name="replace" {{#if form.replace}}checked{{/if}}> {{localize "VMAP.Azgaar.replace"}}</label>
+    <p class="v-hint">{{localize "VMAP.Azgaar.scene"}}: <b>{{scene}}</b></p>
+    <button type="button" class="v-btn v-btn-accent wide" data-action="import" {{#if busy}}disabled{{/if}}>
+      <i class="fa-solid {{#if busy}}fa-spinner fa-spin{{else}}fa-file-import{{/if}}"></i> {{localize "VMAP.Azgaar.doImport"}}</button>
+  </section>
+</div>

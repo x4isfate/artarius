@@ -47,6 +47,8 @@ export default class FeatureModel extends foundry.abstract.TypeDataModel {
         target: new fields.StringField({ required: true, blank: true, initial: "" }),
         role: new fields.StringField({ required: true, blank: true, initial: "" })
       })),
+      /** Данные модулей-расширений и импорта: ext.<moduleId> = { … }. Артарий их не трогает. */
+      ext: new fields.ObjectField(),
       /** Растёт на каждую принятую правку. По нему очередь видит устаревшие заявки. */
       rev: new fields.NumberField({ required: true, integer: true, min: 0, initial: 0 })
     };

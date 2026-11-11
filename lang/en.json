@@ -11,7 +11,8 @@
       "erase": "Eraser",
       "claims": "Claims",
       "atlas": "Types and layers",
-      "guide": "How to play"
+      "guide": "How to play",
+      "azgaar": "Map from Azgaar"
     },
     "Hint": {
       "select": "Click selects, double-click opens the sheet. Drag objects and line points. Delete removes.",
@@ -81,7 +82,9 @@
       "delete": "Delete",
       "deleteConfirm": "Delete “{name}”?",
       "remove": "Remove",
-      "pending": "Waiting for the GM: {what}"
+      "pending": "Waiting for the GM: {what}",
+      "within": "Stands on:",
+      "withinNone": "No area is drawn here."
     },
     "Style": {
       "icon": "Icon",
@@ -202,7 +205,8 @@
       "noAtlas": "This scene has no atlas yet. The GM creates it by opening the map.",
       "featureMissing": "The feature is no longer on the map.",
       "selectAreaToErase": "Select the area to erase first.",
-      "error": "Artarius error: “{message}”. See the console (F12)."
+      "error": "Artarius error: “{message}”. See the console (F12).",
+      "updateAvailable": "Artarius {latest} is out (you have {current}). To update: return to Foundry setup → Add-on Modules → update button on Artarius."
     },
     "Sheet": {
       "page": "Map feature"
@@ -215,11 +219,67 @@
       "renderBelowTokens": {
         "name": "Draw the map below tokens",
         "hint": "Experimental. The map sits between the background and tokens instead of above the scene."
+      },
+      "checkUpdates": {
+        "name": "Notify about new versions",
+        "hint": "The GM sees a message when a new module version is released on GitHub."
       }
     },
     "Guide": {
       "title": "Artarius: how to play",
       "missing": "Could not load the guide. It is in the module folder: docs/GUIDE.md."
+    },
+    "Quick": {
+      "layer": "World map",
+      "find": "Find on map",
+      "findLabel": "Name",
+      "findPlaceholder": "Start typing…",
+      "findEmpty": "The map is empty so far.",
+      "configure": "Configure menu",
+      "collapse": "Collapse menu",
+      "expand": "Expand menu",
+      "configHint": "The eye turns a button on or off, arrows change the order. Every player has their own set.",
+      "show": "Show in menu",
+      "hide": "Remove from menu",
+      "macros": "Macros",
+      "addMacro": "Add",
+      "noMacros": "No macros you can run.",
+      "reset": "Use default",
+      "saveDefault": "Make default for everyone",
+      "defaultSaved": "This button set is now the default for all players."
+    },
+    "Azgaar": {
+      "title": "Map from Azgaar",
+      "generator": "Azgaar generator",
+      "gmOnly": "Only the GM can import a map.",
+      "generate": "Generate",
+      "generateHint": "The generator opens inside Foundry. Press “New Map!” until you like the map. Then press “Export”: PNG saves the picture for the background, “Export to JSON” → “Full” saves the data for import.",
+      "openGenerator": "Open generator",
+      "openBrowser": "In browser",
+      "import": "Import",
+      "importHint": "States, provinces, burgs, rivers and routes become map features on the current scene. The GM can edit them like any other.",
+      "file": "JSON file (Full)",
+      "image": "Map picture for the background",
+      "imageHint": "PNG or SVG from Azgaar, uploaded to Foundry data",
+      "setBackground": "Use the picture as scene background and fit the scene size",
+      "replace": "Replace what an earlier Azgaar import brought",
+      "scene": "Scene",
+      "doImport": "Import",
+      "noFile": "Choose a JSON file from Azgaar.",
+      "noScene": "Open a scene first.",
+      "done": "Import done: states {states}, provinces {provinces}, burgs {burgs}, rivers {rivers}, routes {routes}.",
+      "part": {
+        "states": "States",
+        "provinces": "Provinces",
+        "burgs": "Burgs",
+        "rivers": "Rivers",
+        "routes": "Roads and routes"
+      },
+      "error": {
+        "notJson": "This is not a JSON file.",
+        "noInfo": "The file has no map size. An Azgaar export is needed.",
+        "notFull": "This is not a full export. In Azgaar choose Export to JSON → Full."
+      }
     }
   }
 }

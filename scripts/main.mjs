@@ -1,5 +1,6 @@
 import { MODULE_ID, FEATURE_TYPE, CLAIM_STATUS } from "./constants.mjs";
 import FeatureModel from "./data/feature-model.mjs";
+import * as store from "./data/store.mjs";
 import { getAtlas, ensureAtlas, getClaims } from "./data/store.mjs";
 import MapLayer, { LAYER_NAME } from "./canvas/map-layer.mjs";
 import FeatureSheet from "./apps/feature-sheet.mjs";
@@ -7,6 +8,11 @@ import AtlasConfig from "./apps/atlas-config.mjs";
 import ClaimsApp from "./apps/claims-app.mjs";
 import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
 import GuideApp from "./apps/guide-app.mjs";
+import QuickMenu, { registerQuickAction, unregisterQuickAction, registerBuiltInActions, QUICK_ACTIONS } from "./apps/quick-menu.mjs";
+import QuickMenuConfig from "./apps/quick-menu-config.mjs";
+import AzgaarApp, { AzgaarGenerator, importAzgaar } from "./apps/azgaar-app.mjs";
+import findFeature from "./apps/find-feature.mjs";
+import { checkForUpdate } from "./update-check.mjs";
 import {
   SOCKET, onSocket, onCheckMessage, onCheckUpdated, autoApplyTrusted, rollForClaim
 } from "./review/claims.mjs";
@@ -43,6 +49,23 @@ Hooks.once("init", () => {
     requiresReload: true
   });
 
+  game.settings.register(MODULE_ID, "quickMenu", {
+    scope: "client", config: false, type: Object, default: { items: null, collapsed: false },
+    onChange: () => QuickMenu.render()
+  });
+  game.settings.register(MODULE_ID, "quickMenuDefault", {
+    scope: "world", config: false, type: Array, default: [],
+    onChange: () => QuickMenu.render()
+  });
+  game.settings.register(MODULE_ID, "checkUpdates", {
+    name: "VMAP.Settings.checkUpdates.name",
+    hint: "VMAP.Settings.checkUpdates.hint",
+    scope: "world", config: true, type: Boolean, default: true
+  });
+  game.settings.register(MODULE_ID, "notifiedVersion", {
+    scope: "world", config: false, type: String, default: ""
+  });
+
   foundry.applications.handlebars.loadTemplates({
     vmapStatus: `modules/${MODULE_ID}/templates/status-row.hbs`,
     vmapClaim: `modules/${MODULE_ID}/templates/claim-card.hbs`,
@@ -50,18 +73,36 @@ Hooks.once("init", () => {
   });
 
   game.modules.get(MODULE_ID).api = {
+    /** Версия API. Растёт, когда что-то в нём меняется несовместимо. */
+    version: 1,
     openFeature: id => FeatureSheet.open(id),
     openClaims: () => ClaimsApp.open(),
     openGuide: () => GuideApp.open(),
     openAtlasConfig: () => game.user.isGM ? new AtlasConfig().render({ force: true }) : null,
+    openAzgaar: () => AzgaarApp.open(),
+    openAzgaarGenerator: () => AzgaarGenerator.open(),
+    openQuickMenuConfig: () => QuickMenuConfig.open(),
+    importAzgaar,
+    findFeature,
     activateLayer,
     getAtlas, ensureAtlas,
-    layer: () => canvas[LAYER_NAME]
+    layer: () => canvas[LAYER_NAME],
+    /** Данные: атлас, типы, слои, черновики, заявки и запись правок. */
+    store,
+    /** Меню быстрых действий: добавить свою кнопку, убрать, перерисовать. */
+    quickActions: QUICK_ACTIONS,
+    registerQuickAction,
+    unregisterQuickAction,
+    refreshQuickMenu: () => QuickMenu.render(),
+    refreshMap: () => canvas[LAYER_NAME]?.refresh()
   };
+  registerBuiltInActions();
+  Hooks.callAll("artarius.init", game.modules.get(MODULE_ID).api);
 });
 
 /** Включить группу «Карта мира» в панели слева. */
 function activateLayer(tool = "select") {
+  if ( !canvas?.ready ) return;
   if ( ui.controls?.activate ) ui.controls.activate({ control: LAYER_NAME, tool });
   else canvas[LAYER_NAME]?.activate();
 }
@@ -81,7 +122,15 @@ Hooks.once("ready", () => {
     GuideApp.open();
     game.settings.set(MODULE_ID, "guideSeen", true);
   }
+  QuickMenu.render();
+  checkForUpdate();
+  Hooks.callAll("artarius.ready", game.modules.get(MODULE_ID).api);
 });
+
+// Меню быстрых действий следит за инструментами, сценой и заявками.
+for ( const hook of ["renderSceneControls", "canvasReady", "renderPlayers", "renderPlayerList"] ) {
+  Hooks.on(hook, () => QuickMenu.render());
+}
 
 /* ------------------------------------------------------------------ */
 /*  Ошибки модуля не должны пропадать молча                            */
@@ -123,6 +172,7 @@ Hooks.on("updateUser", (user, changes) => {
   if ( !foundry.utils.hasProperty(changes, `flags.${MODULE_ID}`) ) return;
   if ( user.isSelf || game.user.isGM ) refreshMap();
   ClaimsApp.refresh();
+  QuickMenu.render();
   canvas?.[LAYER_NAME]?.palette?.render();
   if ( user.isSelf ) announceDecisions(user);
   if ( game.user.isGM ) autoApplyTrusted(user);
