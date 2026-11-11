@@ -73,7 +73,12 @@ export default class MapLayer extends InteractionLayer {
           visible: game.user.isGM,
           onChange: () => game.modules.get(MODULE_ID).api.openAtlasConfig()
         }),
-        guide: t("guide", "fa-solid fa-circle-question", 8, {
+        azgaar: t("azgaar", "fa-solid fa-earth-europe", 8, {
+          button: true,
+          visible: game.user.isGM,
+          onChange: () => game.modules.get(MODULE_ID).api.openAzgaar()
+        }),
+        guide: t("guide", "fa-solid fa-circle-question", 9, {
           button: true,
           onChange: () => game.modules.get(MODULE_ID).api.openGuide()
         })
@@ -222,7 +227,7 @@ export default class MapLayer extends InteractionLayer {
     const type = this.typeFor(kind);
     const sys = {
       kind, typeId: type?.id ?? "", demiurge: "", statuses: [], aspects: [], style: {}, geometry,
-      layerId: "", blend: "replace", sort: 0, links: [], rev: 0
+      layerId: "", blend: "replace", sort: 0, links: [], rev: 0, ext: {}
     };
     if ( kind === "area" ) {
       sys.layerId = this.layerForNewArea()?.id ?? "";

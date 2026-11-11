@@ -162,3 +162,76 @@
 .vmap-guide-body table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
 .vmap-guide-body th, .vmap-guide-body td { padding: 5px 8px; border-bottom: 1px solid var(--vm-line); text-align: left; vertical-align: top; }
 .vmap-guide-body th { color: var(--vm-muted); font-weight: 600; }
+
+/* ------------------------------------------------------------------ */
+/*  Меню быстрых действий слева снизу                                  */
+/* ------------------------------------------------------------------ */
+
+.vitruvium.vmap-quick {
+  --vm-panel: var(--v-panel, #171719);
+  --vm-line-2: var(--v-line-2, rgba(220, 220, 235, 0.2));
+  --vm-ink: var(--v-ink, #fff0e0);
+  --vm-accent: var(--v-accent, #ff8562);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: 320px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--vm-panel) 92%, transparent);
+  border: 1px solid var(--vm-line-2);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  z-index: 40;
+}
+.vitruvium.vmap-quick.docked { margin: 0 0 8px; width: max-content; }
+.vitruvium.vmap-quick.floating { position: fixed; left: 12px; bottom: 12px; }
+.vitruvium.vmap-quick.collapsed { max-width: none; }
+.vmap-quick .vmap-qm-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--vm-ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.vmap-quick .vmap-qm-btn:hover { border-color: var(--vm-line-2); background: rgba(255, 255, 255, 0.06); }
+.vmap-quick .vmap-qm-btn.active { border-color: var(--vm-accent); color: var(--vm-accent); }
+.vmap-quick .vmap-qm-btn img { width: 24px; height: 24px; border: none; object-fit: contain; }
+.vmap-quick .vmap-qm-toggle, .vmap-quick .vmap-qm-config { width: 22px; font-size: 11px; opacity: 0.7; }
+.vmap-quick .vmap-qm-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: #1a0f0b;
+  background: var(--vm-accent);
+  border-radius: 999px;
+}
+
+.vmap-qm-rows li { display: flex; align-items: center; gap: 6px; }
+.vmap-qm-rows li.off { opacity: 0.55; }
+.vmap-qm-rows .vmap-qm-icon { width: 22px; text-align: center; }
+.vmap-qm-rows .vmap-qm-icon img { width: 20px; height: 20px; border: none; }
+.vmap-qm-rows .vmap-qm-label { flex: 1; min-width: 0; }
+
+/* Azgaar */
+.vmap-azgaar { display: flex; flex-direction: column; gap: 4px; }
+.vmap-azgaar .vmap-grid { margin: 6px 0; }
+.vmap-azgaar-frame .window-content { padding: 0; overflow: hidden; }
+.vmap-azgaar-frame iframe { width: 100%; height: 100%; border: none; background: #fff; }
