@@ -1,7 +1,9 @@
 import { MODULE_ID, CLAIM_STATUS } from "../constants.mjs";
 import {
-  getAtlas, ensureAtlas, getDraft, setDraft, getClaims, setClaims, revOf, applyPlan, atlasStates
+  getAtlas, ensureAtlas, getDraft, setDraft, getClaims, setClaims, revOf, applyPlan, atlasStates,
+  getTypes, getAtlasTypes, setTypes
 } from "../data/store.mjs";
+import { personalTypesUsed } from "../data/world.mjs";
 import { addToDraft, draftOps, buildApplyPlan, conflictOf, randomId } from "./ops.mjs";
 
 /**
@@ -156,6 +158,9 @@ export async function applyClaims(entries, { ask = true } = {}) {
       }
       if ( force ) plan = planFor(list, atlas, { force: true });
     }
+    // Личные типы игроков, которыми пользуются правки, становятся общими.
+    const used = personalTypesUsed(list.flatMap(e => e.claim.ops ?? []), getTypes(atlas));
+    if ( used.length ) await setTypes(atlas, [...getAtlasTypes(atlas), ...used]);
     await applyPlan(atlas, plan);
   }
   for ( const { user, claim } of entries ) {

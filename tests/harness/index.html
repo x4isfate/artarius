@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Артарий: стенд</title>
+<link rel="stylesheet" href="../../styles/artarius.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #map text.lbl { fill: #fff0e0; text-anchor: middle; paint-order: stroke; stroke: #111; stroke-width: 3px; font-weight: 700; pointer-events: none; }
+  #map text.ico { text-anchor: middle; font-weight: 700; pointer-events: none; }
+  #who { position: fixed; right: 8px; bottom: 8px; z-index: 100; display: flex; gap: 4px; }
+  #who button { padding: 4px 8px; }
+  #who button.on { outline: 2px solid #e8c27a; }
+  /* В игре значки даёт Font Awesome из Foundry; на стенде показываем имя значка. */
+  #artarius-ui i.fa-solid::before { content: attr(data-i); }
+</style>
+</head>
+<body>
+<svg id="map"></svg>
+<div id="who"></div>
+<script type="module">
+import MemoryBackend from "./memory-backend.mjs";
+import Studio from "../../scripts/studio.mjs";
+import ArtariusUI from "../../scripts/ui/panels.mjs";
+import SvgView from "./svg-view.mjs";
+const ru = await (await fetch("../../lang/ru.json")).json();
+const lang = { ART: ru.ART, VMAP: ru.VMAP };
+const backend = new MemoryBackend({ lang });
+const studio = new Studio(backend);
+const view = new SvgView(studio, backend, document.getElementById("map"));
+const ui = new ArtariusUI(studio, backend);
+// Подписи значков вместо шрифта.
+new MutationObserver(() => {
+  for ( const i of document.querySelectorAll("#artarius-ui i.fa-solid:not([data-i])") ) {
+    const name = [...i.classList].find(c => c.startsWith("fa-") && c !== "fa-solid");
+    i.dataset.i = ({ "fa-plus": "+", "fa-minus": "−", "fa-xmark": "×", "fa-check": "✓", "fa-star": "★", "fa-eye": "◉", "fa-trash": "🗑", "fa-arrow-up": "↑", "fa-arrow-down": "↓", "fa-arrow-right": "→", "fa-rotate-left": "↺" })[name] ?? (name ?? "").slice(3, 5);
+  }
+}).observe(document.body, { subtree: true, childList: true });
+const who = document.getElementById("who");
+function drawWho() {
+  who.innerHTML = backend.users.map(u => `<button data-u="${u.id}" class="${u.id === backend.me ? "on" : ""}">${u.name}</button>`).join("");
+}
+who.addEventListener("click", ev => {
+  const id = ev.target.dataset.u;
+  if ( !id ) return;
+  studio.flush();
+  backend.switchUser(id);
+  drawWho();
+});
+drawWho();
+window.art = { backend, studio, ui, view };
+window.artErrors = [];
+window.addEventListener("error", e => window.artErrors.push(String(e.message)));
+window.addEventListener("unhandledrejection", e => window.artErrors.push(String(e.reason?.message ?? e.reason)));
+</script>
+</body>
+</html>
