@@ -1,11 +1,12 @@
 import { MODULE_ID, FEATURE_TYPE } from "../constants.mjs";
-import { getAtlas, ensureAtlas, getTypes, getLayers, setTypes, setLayers, applyPlan } from "../data/store.mjs";
+import { getAtlas, ensureAtlas, getAtlasTypes, getLayers, setTypes, setLayers, applyPlan } from "../data/store.mjs";
 import { AZGAAR_URL, AZGAAR_PARTS, validateAzgaar, buildAzgaarFeatures, mergeTypesAndLayers } from "../import/azgaar.mjs";
+import { esc } from "../ui/dom.mjs";
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const { ApplicationV2 } = foundry.applications.api;
 const L = k => game.i18n.localize(k);
 
-/** Azgaar's generator inside Foundry, in an iframe. The map is exported from there as JSON. */
+/** Генератор Azgaar прямо в Foundry, во фрейме. Карту оттуда выгружают в JSON. */
 export class AzgaarGenerator extends ApplicationV2 {
   static #instance = null;
 
@@ -15,8 +16,8 @@ export class AzgaarGenerator extends ApplicationV2 {
   }
 
   static DEFAULT_OPTIONS = {
-    id: "vmap-azgaar-generator",
-    classes: ["vmap-azgaar-frame"],
+    id: "artarius-azgaar-generator",
+    classes: ["artarius-azgaar-frame"],
     window: { title: "VMAP.Azgaar.generator", resizable: true, icon: "fa-solid fa-earth-europe" },
     position: { width: Math.min(1400, window.innerWidth - 120), height: Math.min(900, window.innerHeight - 80) }
   };
@@ -32,18 +33,17 @@ export class AzgaarGenerator extends ApplicationV2 {
 
   /** @override */
   _replaceHTML(result, content) {
-    // Keep the generator alive between re-renders: the map lives in the iframe.
+    // Генератор живёт во фрейме: при перерисовке окна фрейм не трогаем.
     if ( !content.querySelector("iframe") ) content.replaceChildren(result);
   }
 }
 
 /**
- * Generate or import a world from Azgaar's Fantasy Map Generator. GM only.
- * Import reads "Export → JSON → Full" and turns states, provinces, burgs, rivers and
- * routes into Artarius features on the current scene. The exported picture can become
- * the scene background.
+ * Генерация и импорт мира из Azgaar. Только мастер.
+ * Окно собрано без шаблона: HTML строкой, события через data-action.
+ * Свои настройки окно держит в importOptions: имя form в ApplicationV2 занято.
  */
-export default class AzgaarApp extends HandlebarsApplicationMixin(ApplicationV2) {
+export default class AzgaarApp extends ApplicationV2 {
   static #instance = null;
 
   static open() {
@@ -53,60 +53,56 @@ export default class AzgaarApp extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   static DEFAULT_OPTIONS = {
-    id: "vmap-azgaar",
-    classes: ["vitruvium", "vmap-sheet"],
-    tag: "form",
+    id: "artarius-azgaar",
+    classes: ["artarius-window"],
     window: { title: "VMAP.Azgaar.title", resizable: true, icon: "fa-solid fa-earth-europe" },
-    position: { width: 520, height: "auto" },
+    position: { width: 480, height: "auto" },
     actions: {
       generator: () => AzgaarGenerator.open(),
       browser: () => window.open(AZGAAR_URL, "_blank", "noopener"),
-      pickImage: AzgaarApp.#onPickImage,
       import: AzgaarApp.#onImport
     }
   };
 
-  static PARTS = {
-    body: { template: `modules/${MODULE_ID}/templates/azgaar.hbs` }
-  };
-
-  /** Form state survives re-renders. */
-  form = { parts: { ...AZGAAR_PARTS }, image: "", setBackground: true, replace: true };
+  importOptions = { parts: { ...AZGAAR_PARTS }, replace: true };
   busy = false;
 
   /** @override */
-  async _prepareContext() {
-    return {
-      form: this.form,
-      busy: this.busy,
-      scene: canvas.scene?.name ?? "—",
-      parts: Object.keys(AZGAAR_PARTS).map(k => ({ key: k, label: L(`VMAP.Azgaar.part.${k}`), on: !!this.form.parts[k] }))
-    };
+  async _renderHTML() {
+    const o = this.importOptions;
+    const parts = Object.keys(AZGAAR_PARTS).map(k => `<label class="art-check"><input type="checkbox" data-part="${k}" ${o.parts[k] ? "checked" : ""}> ${esc(L(`VMAP.Azgaar.part.${k}`))}</label>`).join("");
+    const div = document.createElement("div");
+    div.className = "artarius-azgaar";
+    div.innerHTML = `
+      <section>
+        <h3>${esc(L("VMAP.Azgaar.generate"))}</h3>
+        <p class="hint">${esc(L("VMAP.Azgaar.generateHint"))}</p>
+        <div class="art-row">
+          <button type="button" data-action="generator"><i class="fa-solid fa-wand-magic-sparkles"></i> ${esc(L("VMAP.Azgaar.openGenerator"))}</button>
+          <button type="button" data-action="browser"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${esc(L("VMAP.Azgaar.openBrowser"))}</button>
+        </div>
+      </section>
+      <section>
+        <h3>${esc(L("VMAP.Azgaar.import"))}</h3>
+        <p class="hint">${esc(L("VMAP.Azgaar.importHint"))}</p>
+        <label class="art-file">${esc(L("VMAP.Azgaar.file"))} <input type="file" name="file" accept=".json,application/json"></label>
+        <div class="art-parts">${parts}</div>
+        <label class="art-check"><input type="checkbox" name="replace" ${o.replace ? "checked" : ""}> ${esc(L("VMAP.Azgaar.replace"))}</label>
+        <p class="hint">${esc(L("VMAP.Azgaar.scene"))}: <b>${esc(canvas.scene?.name ?? "—")}</b></p>
+        <button type="button" data-action="import" ${this.busy ? "disabled" : ""}>
+          <i class="fa-solid ${this.busy ? "fa-spinner fa-spin" : "fa-file-import"}"></i> ${esc(L("VMAP.Azgaar.doImport"))}</button>
+      </section>`;
+    div.addEventListener("change", ev => {
+      const el = ev.target;
+      if ( el.dataset.part ) this.importOptions.parts[el.dataset.part] = el.checked;
+      else if ( el.name === "replace" ) this.importOptions.replace = el.checked;
+    });
+    return div;
   }
 
   /** @override */
-  _onFirstRender(context, options) {
-    super._onFirstRender(context, options);
-    this.element.addEventListener("change", ev => {
-      const el = ev.target;
-      if ( el.dataset.part ) this.form.parts[el.dataset.part] = el.checked;
-      else if ( el.name === "image" ) this.form.image = el.value.trim();
-      else if ( el.name === "setBackground" ) this.form.setBackground = el.checked;
-      else if ( el.name === "replace" ) this.form.replace = el.checked;
-    });
-  }
-
-  static #onPickImage() {
-    const FP = foundry.applications.apps.FilePicker.implementation;
-    new FP({
-      type: "image",
-      current: this.form.image || "",
-      callback: path => {
-        this.form.image = path;
-        const input = this.element.querySelector("[name=image]");
-        if ( input ) input.value = path;
-      }
-    }).browse();
+  _replaceHTML(result, content) {
+    content.replaceChildren(result);
   }
 
   static async #onImport() {
@@ -122,11 +118,10 @@ export default class AzgaarApp extends HandlebarsApplicationMixin(ApplicationV2)
     }
     const problem = validateAzgaar(data);
     if ( problem ) return ui.notifications.error(L(`VMAP.Azgaar.error.${problem}`));
-
     this.busy = true;
     this.render();
     try {
-      const result = await importAzgaar(data, scene, this.form);
+      const result = await importAzgaar(data, scene, this.importOptions);
       ui.notifications.info(game.i18n.format("VMAP.Azgaar.done", result.stats));
     } finally {
       this.busy = false;
@@ -136,32 +131,32 @@ export default class AzgaarApp extends HandlebarsApplicationMixin(ApplicationV2)
 }
 
 /**
- * Import an Azgaar export into a scene. Exposed through the API for macros.
- * options: { parts, image, setBackground, replace }.
+ * Импорт выгрузки Azgaar на гексы сцены. Есть в API для макросов.
+ * options: { parts, replace }.
  */
-export async function importAzgaar(data, scene = canvas.scene, { parts = AZGAAR_PARTS, image = "", setBackground = true, replace = true } = {}) {
+export async function importAzgaar(data, scene = canvas.scene, { parts = AZGAAR_PARTS, replace = true } = {}) {
   if ( !game.user.isGM ) throw new Error(L("VMAP.Azgaar.gmOnly"));
-  if ( image && setBackground ) {
-    const tex = await foundry.canvas.loadTexture(image);
-    const width = tex?.width ?? data.info.width;
-    const height = tex?.height ?? data.info.height;
-    await scene.update({ "background.src": image, width, height });
-  }
-  const rect = scene.getDimensions?.().sceneRect ?? canvas.dimensions.sceneRect;
+  if ( scene !== canvas.scene ) throw new Error(L("VMAP.Azgaar.noScene"));
+  const api = game.modules.get(MODULE_ID).api;
+  const grid = api.backend.grid;
+  const rect = canvas.dimensions.sceneRect;
   const atlas = getAtlas(scene) ?? await ensureAtlas(scene);
-  const merged = mergeTypesAndLayers(getTypes(atlas), getLayers(atlas));
+  const merged = mergeTypesAndLayers(getAtlasTypes(atlas), getLayers(atlas));
   await setTypes(atlas, merged.types);
   await setLayers(atlas, merged.layers);
 
-  const built = buildAzgaarFeatures(data, { rect, parts, newId: () => foundry.utils.randomID() });
+  const built = buildAzgaarFeatures(data, {
+    rect, parts, hexes: grid.allCells(), center: grid.center, cellAt: grid.cellAt,
+    newId: () => foundry.utils.randomID()
+  });
   const old = replace
     ? atlas.pages.filter(p => p.type === FEATURE_TYPE && p._source.system?.ext?.azgaar).map(p => p.id)
     : [];
   const create = built.features.map(f => ({ ...f, system: { ...f.system, rev: 1 } }));
-  // Крупная карта даёт тысячи страниц: пишем частями, чтобы не упереться в размер одного запроса.
+  // Большая карта даёт сотни страниц: пишем частями, чтобы не упереться в размер запроса.
   if ( old.length ) await applyPlan(atlas, { create: [], update: [], delete: old, skipped: [] });
-  for ( let i = 0; i < create.length; i += 250 ) {
-    await applyPlan(atlas, { create: create.slice(i, i + 250), update: [], delete: [], skipped: [] });
+  for ( let i = 0; i < create.length; i += 200 ) {
+    await applyPlan(atlas, { create: create.slice(i, i + 200), update: [], delete: [], skipped: [] });
   }
   if ( built.name && !atlas.getFlag(MODULE_ID, "azgaarName") ) await atlas.setFlag(MODULE_ID, "azgaarName", built.name);
   Hooks.callAll("artarius.importAzgaar", { scene, atlas, data, built, removed: old.length });

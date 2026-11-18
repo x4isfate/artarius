@@ -1,0 +1,671 @@
+/**
+ * Интерфейс гекс-мира на чистом DOM: круглое меню инструментов внизу слева,
+ * панель инструмента слева, карточка гекса и заявки справа, полоска хода сверху.
+ *
+ * Окна Foundry здесь не используются: панели живут поверх холста в своём корне,
+ * все кнопки работают через data-action и одну делегированную подписку.
+ * tools/check-buttons.mjs проверяет, что у каждого data-action есть обработчик.
+ */
+import { esc, data, patch, icon, htmlToText } from "./dom.mjs";
+import { cellKey, zoneCells, layerIdOf } from "../data/world.mjs";
+import { formatStatus, changedFields } from "../review/ops.mjs";
+import { KIND_TOOL } from "../constants.mjs";
+
+/** Значки меток на выбор при создании типа. Можно указать и свой путь. */
+export const MARK_ICONS = [
+  "icons/svg/city.svg", "icons/svg/village.svg", "icons/svg/castle.svg", "icons/svg/temple.svg",
+  "icons/svg/tower.svg", "icons/svg/ruins.svg", "icons/svg/cave.svg", "icons/svg/mountain.svg",
+  "icons/svg/house.svg", "icons/svg/windmill.svg", "icons/svg/skull.svg", "icons/svg/hanging-sign.svg",
+  "icons/svg/tree.svg", "icons/svg/fire.svg", "icons/svg/sun.svg", "icons/svg/coins.svg"
+];
+
+const TOOL_ICONS = { select: "arrow-pointer", zone: "draw-polygon", mark: "location-dot", line: "route" };
+
+/** Дополнительные кнопки меню от других модулей: id → { label, icon, onClick, visible? }. */
+export const EXTRA_ACTIONS = new Map();
+
+export default class ArtariusUI {
+  constructor(studio, backend, { mount = document.body } = {}) {
+    this.studio = studio;
+    this.backend = backend;
+    this.t = (k, d) => backend.t(k, d);
+    this.root = document.createElement("div");
+    this.root.id = "artarius-ui";
+    this.root.className = "artarius";
+    this.root.innerHTML = `
+      <div class="art-turnbar" data-part="turn"></div>
+      <section class="art-panel art-left" data-part="left" hidden></section>
+      <section class="art-panel art-right" data-part="right" hidden></section>
+      <nav class="art-wheel" data-part="wheel"></nav>`;
+    this.parts = Object.fromEntries([...this.root.querySelectorAll("[data-part]")].map(el => [el.dataset.part, el]));
+    this.turnMenu = false;
+    this._bind();
+    mount.appendChild(this.root);
+    this._unsub = studio.subscribe(what => { if ( what !== "overlay" ) this.render(); });
+    this.render();
+  }
+
+  destroy() {
+    this._unsub?.();
+    this.root.remove();
+  }
+
+  set hidden(v) { this.root.hidden = !!v; }
+
+  /* ---------------------------------------------------------------- */
+  /*  События                                                           */
+  /* ---------------------------------------------------------------- */
+
+  _bind() {
+    this.root.addEventListener("click", ev => {
+      const el = ev.target.closest("[data-action]");
+      if ( !el || !this.root.contains(el) || el.disabled ) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const fn = this.actions[el.dataset.action];
+      if ( !fn ) return console.warn("artarius | no handler for", el.dataset.action);
+      Promise.resolve().then(() => fn.call(this, el, ev)).catch(err => {
+        console.error("artarius | action", el.dataset.action, err);
+        this.backend.notify("error", String(err?.message ?? err));
+      });
+    });
+    const onInput = ev => {
+      const el = ev.target;
+      if ( el.dataset.model ) {
+        this._setModel(el.dataset.model, el.type === "checkbox" ? el.checked : el.value);
+        this.studio.changed("ui");
+        if ( el.dataset.model.startsWith("zone.") ) this.studio.changed("overlay");
+      } else if ( el.dataset.field && el.dataset.id ) {
+        if ( ev.type === "input" && (el.tagName === "SELECT" || el.type === "color") ) return;
+        this.studio.setField(el.dataset.id, el.dataset.field, el.value);
+      }
+    };
+    this.root.addEventListener("input", onInput);
+    this.root.addEventListener("change", onInput);
+    // Клавиши в полях не должны уходить в Foundry (WASD двигает камеру, Delete удаляет токены).
+    this.root.addEventListener("keydown", ev => {
+      if ( ev.target.matches("input, textarea, select") ) {
+        ev.stopPropagation();
+        if ( ev.key === "Enter" && ev.target.dataset.enter ) {
+          ev.preventDefault();
+          ev.target.dispatchEvent(new Event("change", { bubbles: true }));
+          this.actions[ev.target.dataset.enter]?.call(this, ev.target, ev);
+        }
+      }
+    });
+    // Колесо над панелью крутит панель, а не масштаб карты.
+    this.root.addEventListener("wheel", ev => ev.stopPropagation(), { passive: true });
+  }
+
+  _setModel(path, value) {
+    const [obj, key] = path.split(".");
+    if ( obj === "typeForm" ) { if ( this.studio.typeForm ) this.studio.typeForm[key] = value; return; }
+    if ( obj === "claimForm" ) { this.studio.claimForm[key] = value; return; }
+    if ( this.studio[obj] ) this.studio[obj][key] = value;
+  }
+
+  get actions() {
+    const s = this.studio;
+    return {
+      tool: el => s.setTool(el.dataset.tool),
+      toggleMenu: () => s.setTool(s.tool ? null : "select"),
+      extra: el => EXTRA_ACTIONS.get(el.dataset.id)?.onClick?.(),
+      help: () => this.backend.openGuide?.(),
+      // Зона
+      attach: () => s.attach(),
+      detach: () => s.detach(),
+      clearSelection: () => s.clearSelection(),
+      zoneTarget: el => s.setZoneTarget(el.dataset.id),
+      // Метка, линия
+      placeMarks: () => s.placeMarks(),
+      finishLine: () => s.finishLine(),
+      undoPoint: () => s.undoPoint(),
+      clearLine: () => s.clearLine(),
+      // Типы
+      pickType: el => s.pickType(el.dataset.kind, el.dataset.id),
+      newType: el => s.openTypeForm(el.dataset.kind),
+      editType: el => s.openTypeForm(el.dataset.kind, el.dataset.id),
+      saveType: () => s.saveTypeForm(),
+      cancelType: () => { s.typeForm = null; s.changed("ui"); },
+      deleteType: el => s.deleteType(el.dataset.id),
+      pickIcon: el => { if ( s.typeForm ) { s.typeForm.icon = el.dataset.icon; s.changed("ui"); } },
+      browseIcon: () => this.backend.pickFile?.(s.typeForm?.icon ?? "", path => {
+        if ( s.typeForm ) { s.typeForm.icon = path; s.changed("ui"); }
+      }),
+      // Слои и мир
+      toggleLayer: el => this.backend.toggleLayer?.(el.dataset.id),
+      worldSettings: () => this.backend.openWorldSettings?.(),
+      azgaar: () => this.backend.openAzgaar?.(),
+      // Карточка
+      closeRight: () => s.closeRight(),
+      rightTab: el => s.setRightTab(el.dataset.tab),
+      openItem: el => s.toggleOpen(el.dataset.id),
+      pan: el => s.panTo(el.dataset.id),
+      deleteFeature: el => s.deleteFeature(el.dataset.id),
+      removeCell: el => s.removeCellFromZone(el.dataset.id),
+      addStatus: el => s.addStatus(el.dataset.id, el.dataset.path),
+      removeStatus: el => s.removeStatus(el.dataset.id, el.dataset.path, Number(el.dataset.n)),
+      stepLevel: el => s.stepLevel(el.dataset.id, el.dataset.path, Number(el.dataset.n), Number(el.dataset.delta)),
+      toAspect: el => s.statusToAspect(el.dataset.id, Number(el.dataset.n)),
+      addAspect: el => s.addAspect(el.dataset.id),
+      removeAspect: el => s.removeAspect(el.dataset.id, Number(el.dataset.n)),
+      // Ходы
+      passTurn: () => s.passTurn(),
+      toggleTurns: () => s.toggleTurns(),
+      turnMenu: () => { this.turnMenu = !this.turnMenu; this.render(); },
+      orderUp: el => s.moveInOrder(el.dataset.id, -1),
+      orderDown: el => s.moveInOrder(el.dataset.id, 1),
+      orderRemove: el => s.moveInOrder(el.dataset.id, 0),
+      orderAdd: el => s.moveInOrder(el.dataset.id, 1),
+      setTurn: el => s.setTurnTo(el.dataset.id),
+      // Заявки
+      openQueue: () => s.openQueue(),
+      submit: () => s.submit(),
+      undoOp: el => s.undoDraftOp(el.dataset.id),
+      preview: el => s.togglePreview(el.dataset.id),
+      check: el => s.toggleChecked(el.dataset.id),
+      checkAll: () => s.checkAll(),
+      apply: el => s.applyClaims([el.dataset.id]),
+      reject: el => s.rejectClaims([el.dataset.id]),
+      applyChecked: () => s.applyClaims([...s.checkedIds]),
+      rejectChecked: () => s.rejectClaims([...s.checkedIds]),
+      requestCheck: el => s.requestCheck(el.dataset.id),
+      returnToDraft: el => this.backend.returnToDraft(el.dataset.id),
+      dropClaim: el => this.backend.dropClaim(el.dataset.id)
+    };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Отрисовка                                                         */
+  /* ---------------------------------------------------------------- */
+
+  render() {
+    const s = this.studio;
+    try {
+      patch(this.parts.wheel, this.renderWheel());
+      patch(this.parts.turn, this.renderTurn());
+      this.parts.left.hidden = !s.tool;
+      if ( s.tool ) patch(this.parts.left, this.renderLeft());
+      this.parts.right.hidden = !s.rightOpen;
+      if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
+    } catch(err) {
+      console.error("artarius | render", err);
+    }
+  }
+
+  /* Круглое меню ---------------------------------------------------- */
+
+  renderWheel() {
+    const s = this.studio;
+    const open = !!s.tool;
+    const items = [
+      ...["select", "zone", "mark", "line"].map(tool => ({
+        action: "tool", attrs: { tool }, icon: TOOL_ICONS[tool], label: this.t(`ART.Tool.${tool}`), active: s.tool === tool
+      })),
+      { action: "openQueue", icon: "scroll", label: this.t("ART.Queue.title"), badge: this._queueBadge() },
+      { action: "help", icon: "circle-question", label: this.t("ART.Guide.title") }
+    ];
+    for ( const [id, a] of EXTRA_ACTIONS ) {
+      if ( a.gmOnly && !this.backend.isGM ) continue;
+      if ( a.visible && !a.visible() ) continue;
+      items.push({ action: "extra", attrs: { id }, icon: a.icon ?? "star", label: a.label ?? id });
+    }
+    // Дуга над и справа от центра: от −100° (почти вверх) до +20°. Лишние кнопки — во втором кольце.
+    const ring = items.map((it, k) => {
+      const outer = k >= 6;
+      const r = outer ? 170 : 118;
+      const count = outer ? items.length - 6 : Math.min(items.length, 6);
+      const idx = outer ? k - 6 : k;
+      const a = (-100 + ((120 / Math.max(1, count - 1)) * idx)) * Math.PI / 180;
+      const x = Math.round(Math.cos(a) * r), y = Math.round(Math.sin(a) * r);
+      return `<button type="button" class="art-wheel-btn${it.active ? " active" : ""}" data-action="${it.action}"${data(it.attrs ?? {})}
+        style="--x:${x}px;--y:${y}px" title="${esc(it.label)}" aria-label="${esc(it.label)}">${icon(it.icon)}${it.badge ? `<span class="art-badge">${it.badge}</span>` : ""}</button>`;
+    }).join("");
+    return `<div class="art-wheel-inner${open ? " open" : ""}">
+      ${open ? ring : ""}
+      <button type="button" class="art-wheel-hub${open ? " active" : ""}" data-action="toggleMenu"
+        title="${esc(this.t(open ? "ART.Menu.close" : "ART.Menu.open"))}" aria-label="${esc(this.t("ART.Menu.open"))}">${icon("dice-d6")}<span>${esc(this.t("ART.Menu.hub"))}</span></button>
+    </div>`;
+  }
+
+  _queueBadge() {
+    if ( this.backend.isGM ) return this.backend.claims().filter(e => ["pending", "rolled"].includes(e.claim.status)).length || "";
+    return this.backend.draftOps().length || "";
+  }
+
+  /* Полоска хода ---------------------------------------------------- */
+
+  renderTurn() {
+    const s = this.studio;
+    const turn = s.turn();
+    const gm = this.backend.isGM;
+    const players = this.backend.players();
+    const nameOf = id => players.find(p => p.id === id)?.name ?? "—";
+    const colorOf = id => players.find(p => p.id === id)?.color ?? "#888";
+    const cur = s.currentPlayerId();
+    const draftN = gm ? 0 : this.backend.draftOps().length;
+    let html = `<div class="art-turn">`;
+    if ( turn.enabled ) {
+      html += `<span class="art-turn-round">${esc(this.t("ART.Turn.round", { n: turn.round ?? 1 }))}</span>`;
+      html += `<span class="art-turn-cur" style="--c:${esc(colorOf(cur))}"><i class="art-dot"></i>${esc(cur === this.backend.userId ? this.t("ART.Turn.yours") : this.t("ART.Turn.of", { name: nameOf(cur) }))}</span>`;
+      if ( gm ) html += `<button type="button" class="art-btn art-accent" data-action="passTurn">${esc(this.t("ART.Turn.pass"))} ${icon("arrow-right")}</button>`;
+    } else {
+      html += `<span class="art-turn-off">${esc(this.t("ART.Turn.free"))}</span>`;
+    }
+    if ( !gm ) {
+      html += `<button type="button" class="art-btn" data-action="openQueue" title="${esc(this.t("ART.Queue.draftHint"))}">${icon("pen-ruler")} ${esc(this.t("ART.Turn.draft", { n: draftN }))}</button>`;
+      if ( draftN ) html += `<button type="button" class="art-btn art-accent" data-action="openQueue"${s.canSubmit() ? "" : " disabled"}>${esc(this.t("ART.Queue.submit"))}</button>`;
+    }
+    if ( gm ) html += `<button type="button" class="art-icon-btn${this.turnMenu ? " active" : ""}" data-action="turnMenu" title="${esc(this.t("ART.Turn.settings"))}">${icon("gear")}</button>`;
+    html += `</div>`;
+    if ( gm && this.turnMenu ) html += this.renderTurnMenu(turn, players);
+    return html;
+  }
+
+  renderTurnMenu(turn, players) {
+    const order = turn.order ?? [];
+    const cur = this.studio.currentPlayerId();
+    const rows = order.map((id, n) => {
+      const p = players.find(x => x.id === id);
+      return `<li class="${id === cur ? "current" : ""}"><i class="art-dot" style="--c:${esc(p?.color ?? "#888")}"></i>
+        <button type="button" class="art-link" data-action="setTurn" data-id="${esc(id)}" title="${esc(this.t("ART.Turn.giveTurn"))}">${esc(p?.name ?? "?")}</button>
+        <button type="button" class="art-icon-btn" data-action="orderUp" data-id="${esc(id)}" ${n === 0 ? "disabled" : ""}>${icon("arrow-up")}</button>
+        <button type="button" class="art-icon-btn" data-action="orderDown" data-id="${esc(id)}" ${n === order.length - 1 ? "disabled" : ""}>${icon("arrow-down")}</button>
+        <button type="button" class="art-icon-btn" data-action="orderRemove" data-id="${esc(id)}" title="${esc(this.t("ART.Turn.remove"))}">${icon("xmark")}</button></li>`;
+    }).join("");
+    const rest = players.filter(p => !order.includes(p.id)).map(p =>
+      `<button type="button" class="art-chip" data-action="orderAdd" data-id="${esc(p.id)}">${icon("plus")} ${esc(p.name)}</button>`).join("");
+    return `<div class="art-turn-menu">
+      <label class="art-check"><input type="checkbox" ${turn.enabled ? "checked" : ""} data-action="toggleTurns"> ${esc(this.t("ART.Turn.enabled"))}</label>
+      <p class="art-hint">${esc(this.t("ART.Turn.hint"))}</p>
+      <ol class="art-order">${rows || `<li class="art-empty">${esc(this.t("ART.Turn.noOrder"))}</li>`}</ol>
+      ${rest ? `<div class="art-chips">${rest}</div>` : ""}
+    </div>`;
+  }
+
+  /* Левая панель: инструмент ---------------------------------------- */
+
+  renderLeft() {
+    const s = this.studio;
+    const title = this.t(`ART.Tool.${s.tool}`);
+    let body = "";
+    if ( s.tool === "zone" ) body = this.renderZoneTool();
+    else if ( s.tool === "mark" ) body = this.renderMarkTool();
+    else if ( s.tool === "line" ) body = this.renderLineTool();
+    else body = this.renderSelectTool();
+    return `<header class="art-head">${icon(TOOL_ICONS[s.tool])}<h3>${esc(title)}</h3>
+      <button type="button" class="art-icon-btn" data-action="tool" data-tool="${esc(s.tool)}" title="${esc(this.t("ART.Menu.close"))}">${icon("xmark")}</button></header>
+      <div class="art-body" data-scroll="left">${body}</div>`;
+  }
+
+  renderSelectTool() {
+    const gm = this.backend.isGM;
+    const layers = this.studio.layers.map(l => `<li><button type="button" class="art-icon-btn" data-action="toggleLayer" data-id="${esc(l.id)}"
+      title="${esc(this.t(l.visible === false ? "ART.Layer.show" : "ART.Layer.hide"))}">${icon(l.visible === false ? "eye-slash" : "eye")}</button>
+      <span>${esc(l.name)}</span><span class="art-muted">${esc(this.t(l.exclusive === false ? "ART.Layer.free" : "ART.Layer.exclusive"))}</span></li>`).join("");
+    return `<p class="art-hint">${esc(this.t("ART.Select.hint"))}</p>
+      <section class="art-block"><h4>${esc(this.t("ART.Layer.title"))}</h4><ul class="art-layers">${layers}</ul></section>
+      ${gm ? `<section class="art-block art-row-btns">
+        <button type="button" class="art-btn" data-action="worldSettings">${icon("sliders")} ${esc(this.t("ART.World.settings"))}</button>
+        <button type="button" class="art-btn" data-action="azgaar">${icon("earth-europe")} ${esc(this.t("ART.World.azgaar"))}</button>
+      </section>` : ""}`;
+  }
+
+  /** Сетка типов вида с кнопкой «новый тип». */
+  renderTypes(kind, selectedId) {
+    const s = this.studio;
+    const list = s.typesOf(kind);
+    const layers = s.layers;
+    const chip = t => {
+      const st = t.style ?? {};
+      const sw = kind === "object"
+        ? `<img src="${esc(st.icon ?? "")}" alt="" style="--c:${esc(st.color ?? "#ccc")}">`
+        : kind === "line" ? `<i class="art-line-sw" style="--c:${esc(st.color ?? "#ccc")}"></i>`
+          : `<i class="art-swatch" style="--c:${esc(st.color ?? "#ccc")}"></i>`;
+      return `<button type="button" class="art-type${t.id === selectedId ? " active" : ""}" data-action="pickType" data-kind="${kind}" data-id="${esc(t.id)}"
+        title="${esc(t.name)}${t.personal ? ` · ${esc(this.t("ART.Type.personal"))}` : ""}">${sw}<span>${esc(t.name)}</span></button>`;
+    };
+    let groups;
+    if ( kind === "area" ) {
+      groups = layers.map(l => {
+        const items = list.filter(t => (t.layerId ?? "overlay") === l.id);
+        return items.length ? `<div class="art-type-group"><span class="art-eyebrow">${esc(l.name)}</span><div class="art-types">${items.map(chip).join("")}</div></div>` : "";
+      }).join("");
+      const orphan = list.filter(t => !layers.some(l => l.id === (t.layerId ?? "overlay")));
+      if ( orphan.length ) groups += `<div class="art-types">${orphan.map(chip).join("")}</div>`;
+    } else groups = `<div class="art-types">${list.map(chip).join("")}</div>`;
+    const selected = list.find(t => t.id === selectedId);
+    const tools = `<div class="art-row-btns">
+      <button type="button" class="art-btn" data-action="newType" data-kind="${kind}">${icon("plus")} ${esc(this.t("ART.Type.new"))}</button>
+      ${selected && s.canEditType(selected) ? `<button type="button" class="art-btn" data-action="editType" data-kind="${kind}" data-id="${esc(selected.id)}">${icon("pen")} ${esc(this.t("ART.Type.edit"))}</button>` : ""}
+    </div>`;
+    return `${groups}${s.typeForm?.kind === kind ? this.renderTypeForm() : tools}`;
+  }
+
+  renderTypeForm() {
+    const f = this.studio.typeForm;
+    const layers = this.studio.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("");
+    const icons = f.kind === "object" ? `<div class="art-field"><span>${esc(this.t("ART.Type.icon"))}</span>
+      <div class="art-icons">${MARK_ICONS.map(p => `<button type="button" class="art-icon-pick${p === f.icon ? " active" : ""}" data-action="pickIcon" data-icon="${esc(p)}"><img src="${esc(p)}" alt=""></button>`).join("")}
+      <button type="button" class="art-icon-pick" data-action="browseIcon" title="${esc(this.t("ART.Type.browse"))}">${icon("folder-open")}</button></div>
+      <input type="text" data-model="typeForm.icon" data-key="tf-icon" value="${esc(f.icon)}" placeholder="icons/svg/…"></div>` : "";
+    return `<div class="art-form">
+      <h4>${esc(this.t(f.id ? "ART.Type.editTitle" : "ART.Type.newTitle"))}</h4>
+      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+        <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t("ART.Type.namePh"))}"></label>
+      <label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span><input type="color" data-model="typeForm.color" value="${esc(f.color)}"></label>
+      ${f.kind === "area" ? `<label class="art-field"><span>${esc(this.t("ART.Layer.one"))}</span><select data-model="typeForm.layerId">${layers}</select></label>` : ""}
+      ${icons}
+      <div class="art-row-btns">
+        <button type="button" class="art-btn art-accent" data-action="saveType">${icon("check")} ${esc(this.t("ART.Save"))}</button>
+        <button type="button" class="art-btn" data-action="cancelType">${esc(this.t("ART.Cancel"))}</button>
+        ${f.id ? `<button type="button" class="art-btn art-danger" data-action="deleteType" data-id="${esc(f.id)}">${icon("trash")}</button>` : ""}
+      </div>
+    </div>`;
+  }
+
+  renderSelectionBar() {
+    const n = this.studio.selection.size;
+    return `<div class="art-selbar"><span>${esc(this.t("ART.Sel.count", { n }))}</span>
+      ${n ? `<button type="button" class="art-link" data-action="clearSelection">${esc(this.t("ART.Sel.clear"))}</button>` : ""}</div>`;
+  }
+
+  renderZoneTool() {
+    const s = this.studio;
+    const z = s.zone;
+    const types = s.types;
+    const layers = s.layers;
+    const zones = s.zones();
+    const filter = z.filter.trim().toLowerCase();
+    const target = z.target !== "new" && s.states.has(z.target) ? s.states.get(z.target) : null;
+    const typeName = id => types.find(t => t.id === id)?.name ?? "";
+    const colorOf = st => st.system.style?.color ?? types.find(t => t.id === st.system.typeId)?.style?.color ?? "#ccc";
+
+    const byLayer = layers.map(l => {
+      const list = zones.filter(zz => layerIdOf(zz, types) === l.id)
+        .filter(zz => !filter || zz.name.toLowerCase().includes(filter) || typeName(zz.system.typeId).toLowerCase().includes(filter))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if ( !list.length ) return "";
+      return `<span class="art-eyebrow">${esc(l.name)}</span>` + list.map(zz => `<button type="button" class="art-zone${zz.id === z.target ? " active" : ""}"
+        data-action="zoneTarget" data-id="${esc(zz.id)}"><i class="art-swatch" style="--c:${esc(colorOf(zz))}"></i>
+        <span class="art-zone-name">${esc(zz.name || this.t("ART.Card.unnamed"))}</span>
+        <span class="art-muted">${esc(typeName(zz.system.typeId))} · ${zoneCells(zz).length}</span></button>`).join("");
+    }).join("");
+
+    const n = s.selection.size;
+    const layerOpts = [`<option value="">${esc(this.t("ART.Zone.allLayers"))}</option>`,
+      ...layers.map(l => `<option value="${esc(l.id)}"${l.id === z.detachLayer ? " selected" : ""}>${esc(l.name)}</option>`)].join("");
+    const newType = types.find(t => t.id === z.typeId);
+    const terrain = newType?.layerId === "terrain";
+    return `<p class="art-hint">${esc(this.t("ART.Zone.hint"))}</p>
+      ${this.renderSelectionBar()}
+      <section class="art-block">
+        <h4>${esc(this.t("ART.Zone.where"))}</h4>
+        <button type="button" class="art-zone art-zone-new${z.target === "new" || !target ? " active" : ""}" data-action="zoneTarget" data-id="new">
+          ${icon("plus")}<span class="art-zone-name">${esc(this.t("ART.Zone.newZone"))}</span></button>
+        ${z.target === "new" || !target ? `<div class="art-sub">
+          ${this.renderTypes("area", z.typeId)}
+          <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+            <input type="text" data-model="zone.name" data-key="zone-name" value="${esc(z.name)}" placeholder="${esc(newType?.name ?? "")}"></label>
+          ${terrain ? "" : `<label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>
+            <input type="color" data-model="zone.color" value="${esc(z.color || "#c96f4a")}"></label>`}
+        </div>` : ""}
+        ${zones.length ? `<input type="search" class="art-search" data-model="zone.filter" data-key="zone-filter" value="${esc(z.filter)}" placeholder="${esc(this.t("ART.Zone.find"))}">
+        <div class="art-zone-list" data-scroll="zones">${byLayer}</div>` : ""}
+      </section>
+      <div class="art-row-btns art-sticky">
+        <button type="button" class="art-btn art-accent" data-action="attach" ${n ? "" : "disabled"}>${icon("check")} ${esc(this.t(target ? "ART.Zone.attachTo" : "ART.Zone.create", { n, name: target?.name ?? "" }))}</button>
+      </div>
+      <label class="art-check"><input type="checkbox" data-model="zone.paint" ${z.paint ? "checked" : ""}> ${esc(this.t("ART.Zone.paint"))}</label>
+      <section class="art-block">
+        <h4>${esc(this.t("ART.Zone.detachTitle"))}</h4>
+        <div class="art-row-btns"><select data-model="zone.detachLayer">${layerOpts}</select>
+        <button type="button" class="art-btn" data-action="detach" ${n ? "" : "disabled"}>${icon("eraser")} ${esc(this.t("ART.Zone.detach"))}</button></div>
+      </section>`;
+  }
+
+  renderMarkTool() {
+    const s = this.studio;
+    const m = s.mark;
+    const n = s.selection.size;
+    const type = s.typeById(m.typeId);
+    return `<p class="art-hint">${esc(this.t("ART.Mark.hint"))}</p>
+      ${this.renderSelectionBar()}
+      <section class="art-block"><h4>${esc(this.t("ART.Mark.type"))}</h4>${this.renderTypes("object", m.typeId)}</section>
+      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+        <input type="text" data-model="mark.name" data-key="mark-name" data-enter="placeMarks" value="${esc(m.name)}" placeholder="${esc(type?.name ?? "")}"></label>
+      <div class="art-row-btns art-sticky">
+        <button type="button" class="art-btn art-accent" data-action="placeMarks" ${n ? "" : "disabled"}>${icon("location-dot")} ${esc(this.t("ART.Mark.place", { n }))}</button>
+      </div>
+      <label class="art-check"><input type="checkbox" data-model="mark.paint" ${m.paint ? "checked" : ""}> ${esc(this.t("ART.Mark.paint"))}</label>`;
+  }
+
+  renderLineTool() {
+    const s = this.studio;
+    const l = s.line;
+    const n = l.points.length;
+    const type = s.typeById(l.typeId);
+    return `<p class="art-hint">${esc(this.t("ART.Line.hint"))}</p>
+      <section class="art-block"><h4>${esc(this.t("ART.Line.type"))}</h4>${this.renderTypes("line", l.typeId)}</section>
+      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+        <input type="text" data-model="line.name" data-key="line-name" data-enter="finishLine" value="${esc(l.name)}" placeholder="${esc(type?.name ?? "")}"></label>
+      <label class="art-check"><input type="checkbox" data-model="line.snap" ${l.snap ? "checked" : ""}> ${esc(this.t("ART.Line.snap"))}</label>
+      <div class="art-selbar"><span>${esc(this.t("ART.Line.points", { n }))}</span></div>
+      <div class="art-row-btns art-sticky">
+        <button type="button" class="art-btn art-accent" data-action="finishLine" ${n >= 2 ? "" : "disabled"}>${icon("check")} ${esc(this.t("ART.Line.finish"))}</button>
+        <button type="button" class="art-btn" data-action="undoPoint" ${n ? "" : "disabled"}>${icon("rotate-left")}</button>
+        <button type="button" class="art-btn" data-action="clearLine" ${n ? "" : "disabled"}>${icon("xmark")}</button>
+      </div>`;
+  }
+
+  /* Правая панель --------------------------------------------------- */
+
+  renderRight() {
+    const s = this.studio;
+    const tab = s.rightTab;
+    const tabs = `<nav class="art-tabs">
+      <button type="button" class="${tab === "tile" ? "active" : ""}" data-action="rightTab" data-tab="tile">${icon("hexagon")} ${esc(this.t("ART.Card.tab"))}</button>
+      <button type="button" class="${tab === "queue" ? "active" : ""}" data-action="rightTab" data-tab="queue">${icon("scroll")} ${esc(this.t("ART.Queue.title"))}${this._queueBadge() ? ` <span class="art-badge">${this._queueBadge()}</span>` : ""}</button>
+      <button type="button" class="art-icon-btn" data-action="closeRight" title="${esc(this.t("ART.Close"))}">${icon("xmark")}</button>
+    </nav>`;
+    const body = tab === "queue" ? this.renderQueue() : this.renderTile();
+    return `${tabs}<div class="art-body" data-scroll="right-${tab}">${body}</div>`;
+  }
+
+  renderTile() {
+    const s = this.studio;
+    if ( !s.inspected ) return `<p class="art-empty">${esc(this.t("ART.Card.pick"))}</p>`;
+    const { zones, marks, lines } = s.contents();
+    const [i, j] = s.inspected;
+    const section = (key, list) => list.length ? `<section class="art-block"><h4>${esc(this.t(`ART.Card.${key}`))} <span class="art-muted">${list.length}</span></h4>
+      ${list.map(st => this.renderItem(s.stateOf(st.id) ?? st)).join("")}</section>` : "";
+    const empty = !zones.length && !marks.length && !lines.length;
+    return `<header class="art-tile-head"><h3>${esc(this.t("ART.Card.hex", { i, j }))}</h3></header>
+      ${empty ? `<p class="art-empty">${esc(this.t("ART.Card.empty"))}</p>` : ""}
+      ${section("zones", zones)}${section("marks", marks)}${section("lines", lines)}`;
+  }
+
+  /** Строка элемента в карточке; раскрытая — с полями. */
+  renderItem(st) {
+    const s = this.studio;
+    const types = s.types;
+    const type = types.find(t => t.id === st.system.typeId);
+    const color = st.system.style?.color ?? type?.style?.color ?? "#ccc";
+    const owner = this.backend.actors().find(a => a.id === st.system.demiurge);
+    const draft = this.backend.isGM ? null : this.backend.draftOps().find(op => op.id === st.id);
+    const open = s.openId === st.id;
+    const statuses = (st.system.statuses ?? []).filter(x => x.name).map(x => `<span class="art-status">${esc(formatStatus(x))}</span>`).join("");
+    const aspects = (st.system.aspects ?? []).filter(x => x.name).map(x => `<span class="art-status art-aspect">${icon("star")} ${esc(formatStatus(x))}</span>`).join("");
+    const kind = st.system.kind;
+    const head = `<button type="button" class="art-item-head" data-action="openItem" data-id="${esc(st.id)}" aria-expanded="${open}">
+      ${kind === "object" && type?.style?.icon ? `<img class="art-item-icon" src="${esc(st.system.style?.icon ?? type.style.icon)}" alt="" style="--c:${esc(color)}">` : `<i class="art-swatch" style="--c:${esc(color)}"></i>`}
+      <span class="art-item-title"><b>${esc(st.name || this.t("ART.Card.unnamed"))}</b>
+      <span class="art-muted">${esc(type?.name ?? "")}${owner ? ` · ${esc(owner.name)}` : ""}${draft ? ` · <em>${esc(this.t("ART.Card.inDraft"))}</em>` : ""}</span></span>
+      ${icon(open ? "chevron-up" : "chevron-down")}</button>`;
+    const tags = !open && (statuses || aspects) ? `<div class="art-tags">${statuses}${aspects}</div>` : "";
+    return `<article class="art-item${open ? " open" : ""}">${head}${tags}${open ? this.renderEditor(st, type) : ""}</article>`;
+  }
+
+  renderEditor(st, type) {
+    const id = st.id;
+    const s = this.studio;
+    const kind = st.system.kind;
+    const f = (field, extra = "") => `data-id="${esc(id)}" data-field="${esc(field)}" data-key="${esc(`${id}:${field}`)}"${extra}`;
+    const typeOpts = s.typesOf(kind).map(t => `<option value="${esc(t.id)}"${t.id === st.system.typeId ? " selected" : ""}>${esc(t.name)}</option>`).join("");
+    const actors = this.backend.actors();
+    const ownerOpts = [`<option value="">${esc(this.t("ART.Card.noOwner"))}</option>`,
+      ...actors.map(a => `<option value="${esc(a.id)}"${a.id === st.system.demiurge ? " selected" : ""}>${esc(a.name)}</option>`)].join("");
+    const color = st.system.style?.color ?? type?.style?.color ?? "#cccccc";
+    const terrain = kind === "area" && type?.layerId === "terrain";
+    return `<div class="art-editor">
+      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span><input type="text" value="${esc(st.name)}" ${f("name")}></label>
+      <div class="art-grid2">
+        <label class="art-field"><span>${esc(this.t("ART.Field.type"))}</span><select ${f("typeId")}>${typeOpts}</select></label>
+        ${terrain ? "" : `<label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span><input type="color" value="${esc(color)}" ${f("color")}></label>`}
+      </div>
+      <label class="art-field"><span>${esc(this.t("ART.Field.owner"))}</span><select ${f("demiurge")}>${ownerOpts}</select></label>
+      <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span><textarea rows="3" ${f("text")}>${esc(htmlToText(st.text))}</textarea></label>
+      ${this.renderStatuses(id, "statuses", st.system.statuses ?? [], true)}
+      <section class="art-sub-block"><h5>${esc(this.t("ART.Card.aspects"))}
+        <button type="button" class="art-icon-btn" data-action="addAspect" data-id="${esc(id)}" title="${esc(this.t("ART.Card.addAspect"))}">${icon("plus")}</button></h5>
+        ${(st.system.aspects ?? []).map((a, n) => this.renderAspect(id, a, n)).join("") || `<p class="art-empty">${esc(this.t("ART.Card.noAspects"))}</p>`}
+      </section>
+      <div class="art-row-btns">
+        <button type="button" class="art-btn" data-action="pan" data-id="${esc(id)}">${icon("crosshairs")} ${esc(this.t("ART.Card.pan"))}</button>
+        ${kind === "area" ? `<button type="button" class="art-btn" data-action="removeCell" data-id="${esc(id)}">${icon("eraser")} ${esc(this.t("ART.Card.removeCell"))}</button>` : ""}
+        <button type="button" class="art-btn art-danger" data-action="deleteFeature" data-id="${esc(id)}" title="${esc(this.t("ART.Card.delete"))}">${icon("trash")}</button>
+      </div>
+    </div>`;
+  }
+
+  renderStatuses(id, path, list, withAspect) {
+    const rows = list.map((x, n) => {
+      const base = `${path}.${n}`;
+      const f = key => `data-id="${esc(id)}" data-field="${esc(`${base}.${key}`)}" data-key="${esc(`${id}:${base}.${key}`)}"`;
+      return `<li class="art-status-row">
+        <input type="text" class="art-st-name" value="${esc(x.name)}" placeholder="${esc(this.t("ART.Card.statusPh"))}" ${f("name")}>
+        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" data-delta="-1" title="−1">${icon("minus")}</button>
+        <input type="number" class="art-num" value="${x.value ?? ""}" placeholder="—" ${f("value")}>
+        <span class="art-muted">/</span>
+        <input type="number" class="art-num" value="${x.max ?? ""}" placeholder="—" ${f("max")}>
+        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" data-delta="1" title="+1">${icon("plus")}</button>
+        ${withAspect ? `<button type="button" class="art-icon-btn" data-action="toAspect" data-id="${esc(id)}" data-n="${n}" title="${esc(this.t("ART.Card.toAspect"))}">${icon("star")}</button>` : ""}
+        <button type="button" class="art-icon-btn" data-action="removeStatus" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" title="${esc(this.t("ART.Card.remove"))}">${icon("xmark")}</button>
+      </li>`;
+    }).join("");
+    return `<section class="art-sub-block"><h5>${esc(this.t(path === "statuses" ? "ART.Card.statuses" : "ART.Card.aspectStatuses"))}
+      <button type="button" class="art-icon-btn" data-action="addStatus" data-id="${esc(id)}" data-path="${esc(path)}" title="${esc(this.t("ART.Card.addStatus"))}">${icon("plus")}</button></h5>
+      ${rows ? `<ul class="art-status-list">${rows}</ul>` : `<p class="art-empty">${esc(this.t("ART.Card.noStatuses"))}</p>`}</section>`;
+  }
+
+  renderAspect(id, a, n) {
+    const base = `aspects.${n}`;
+    const f = key => `data-id="${esc(id)}" data-field="${esc(`${base}.${key}`)}" data-key="${esc(`${id}:${base}.${key}`)}"`;
+    return `<div class="art-aspect-box">
+      <div class="art-status-row">
+        ${icon("star", "art-aspect-star")}
+        <input type="text" class="art-st-name" value="${esc(a.name)}" placeholder="${esc(this.t("ART.Card.aspectPh"))}" ${f("name")}>
+        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="aspects" data-n="${n}" data-delta="-1">${icon("minus")}</button>
+        <input type="number" class="art-num" value="${a.value ?? ""}" placeholder="—" ${f("value")}>
+        <span class="art-muted">/</span>
+        <input type="number" class="art-num" value="${a.max ?? ""}" placeholder="—" ${f("max")}>
+        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="aspects" data-n="${n}" data-delta="1">${icon("plus")}</button>
+        <button type="button" class="art-icon-btn" data-action="removeAspect" data-id="${esc(id)}" data-n="${n}" title="${esc(this.t("ART.Card.remove"))}">${icon("xmark")}</button>
+      </div>
+      <textarea rows="2" placeholder="${esc(this.t("ART.Field.text"))}" ${f("description")}>${esc(a.description ?? "")}</textarea>
+      ${this.renderStatuses(id, `${base}.statuses`, a.statuses ?? [], false)}
+    </div>`;
+  }
+
+  /* Заявки ---------------------------------------------------------- */
+
+  /** Короткое описание правки: «Зона «Лес»: +12 гексов». */
+  describeOp(op, base) {
+    const before = base.get(op.id);
+    const st = op.state ?? before;
+    const kind = st?.system?.kind ?? "object";
+    const what = this.t(`ART.Kind.${KIND_TOOL[kind] ?? "mark"}`);
+    const name = st?.name || op.name || this.t("ART.Card.unnamed");
+    if ( op.action === "delete" ) return this.t("ART.Op.delete", { what, name });
+    if ( op.action === "create" ) {
+      const n = kind === "area" ? zoneCells(st).length : 0;
+      return n ? this.t("ART.Op.createZone", { name, n }) : this.t("ART.Op.create", { what, name });
+    }
+    if ( kind === "area" && before ) {
+      const d = zoneCells(st).length - zoneCells(before).length;
+      if ( d ) return this.t(d > 0 ? "ART.Op.cellsPlus" : "ART.Op.cellsMinus", { name, n: Math.abs(d) });
+    }
+    const fields = changedFields(before, st).map(k => this.t(`ART.Diff.${k}`)).join(", ");
+    return this.t("ART.Op.update", { what, name, fields: fields || "—" });
+  }
+
+  renderQueue() {
+    return this.backend.isGM ? this.renderQueueGM() : this.renderQueuePlayer();
+  }
+
+  renderQueuePlayer() {
+    const s = this.studio;
+    const base = this.backend.atlasStates();
+    const ops = this.backend.draftOps();
+    const turnOk = s.canSubmit();
+    const cur = s.currentPlayerId();
+    const players = this.backend.players();
+    const draft = ops.length ? `<ul class="art-ops">${ops.map(op => `<li class="art-op art-op-${op.action}">
+        <span>${esc(this.describeOp(op, base))}</span>
+        <button type="button" class="art-icon-btn" data-action="undoOp" data-id="${esc(op.id)}" title="${esc(this.t("ART.Queue.undo"))}">${icon("rotate-left")}</button></li>`).join("")}</ul>
+      <label class="art-field"><span>${esc(this.t("ART.Queue.claimTitle"))}</span>
+        <input type="text" data-model="claimForm.title" data-key="claim-title" value="${esc(s.claimForm.title)}" placeholder="${esc(this.t("ART.Queue.claimTitlePh"))}"></label>
+      <label class="art-field"><span>${esc(this.t("ART.Queue.claimNote"))}</span>
+        <textarea rows="2" data-model="claimForm.note" data-key="claim-note">${esc(s.claimForm.note)}</textarea></label>
+      ${turnOk ? "" : `<p class="art-warn">${esc(this.t("ART.Turn.waitFor", { name: players.find(p => p.id === cur)?.name ?? "—" }))}</p>`}
+      <button type="button" class="art-btn art-accent art-wide" data-action="submit" ${turnOk ? "" : "disabled"}>${icon("paper-plane")} ${esc(this.t("ART.Queue.submit"))}</button>`
+      : `<p class="art-empty">${esc(this.t("ART.Queue.emptyDraft"))}</p>`;
+    const mine = this.backend.myClaims();
+    const claims = mine.length ? mine.map(c => `<article class="art-claim art-st-${esc(c.status)}">
+        <header><b>${esc(c.title)}</b><span class="art-pill">${esc(this.t(`VMAP.ClaimStatus.${c.status}`))}</span></header>
+        ${c.comment ? `<p class="art-muted">${esc(c.comment)}</p>` : ""}
+        <div class="art-row-btns">
+          ${["pending", "rejected"].includes(c.status) ? `<button type="button" class="art-btn" data-action="returnToDraft" data-id="${esc(c.id)}">${icon("rotate-left")} ${esc(this.t("ART.Queue.toDraft"))}</button>` : ""}
+          ${["applied", "rejected", "pending"].includes(c.status) ? `<button type="button" class="art-btn" data-action="dropClaim" data-id="${esc(c.id)}">${icon("trash")}</button>` : ""}
+        </div></article>`).join("") : `<p class="art-empty">${esc(this.t("ART.Queue.noClaims"))}</p>`;
+    return `<section class="art-block"><h4>${esc(this.t("ART.Queue.draft"))}</h4>${draft}</section>
+      <section class="art-block"><h4>${esc(this.t("ART.Queue.mine"))}</h4>${claims}</section>`;
+  }
+
+  renderQueueGM() {
+    const s = this.studio;
+    const base = this.backend.atlasStates();
+    const entries = this.backend.claims();
+    if ( !entries.length ) return `<p class="art-empty">${esc(this.t("ART.Queue.none"))}</p>`;
+    const allChecked = entries.every(e => s.checkedIds.has(e.claim.id));
+    const n = [...s.checkedIds].filter(id => entries.some(e => e.claim.id === id)).length;
+    const list = entries.map(({ user, claim }) => {
+      const id = claim.id;
+      const conflicts = this.backend.conflicts?.(claim) ?? {};
+      const outcome = claim.status === "rolled" ? `<span class="art-pill art-out-${esc(claim.outcome)}">${esc(this.t(`VMAP.Outcome.${claim.outcome}`))}${claim.partial ? ` · ${esc(this.t("ART.Queue.partial"))}` : ""}</span>` : "";
+      return `<article class="art-claim art-st-${esc(claim.status)}${s.previewIds.has(id) ? " previewing" : ""}">
+        <header>
+          <input type="checkbox" data-action="check" data-id="${esc(id)}" ${s.checkedIds.has(id) ? "checked" : ""}>
+          <i class="art-dot" style="--c:${esc(user.color)}"></i><b>${esc(claim.title)}</b>
+          <span class="art-muted">${esc(user.name)}</span>
+          <span class="art-pill">${esc(this.t(`VMAP.ClaimStatus.${claim.status}`))}</span>${outcome}
+        </header>
+        ${claim.note ? `<p class="art-note">${esc(claim.note)}</p>` : ""}
+        <ul class="art-ops">${(claim.ops ?? []).map(op => `<li class="art-op art-op-${op.action}">${esc(this.describeOp(op, base))}${conflicts[op.id] ? ` <em class="art-warn">${esc(this.t(`VMAP.Conflict.${conflicts[op.id]}`))}</em>` : ""}</li>`).join("")}</ul>
+        <div class="art-row-btns">
+          <button type="button" class="art-btn${s.previewIds.has(id) ? " active" : ""}" data-action="preview" data-id="${esc(id)}" title="${esc(this.t("ART.Queue.preview"))}">${icon("eye")}</button>
+          <button type="button" class="art-btn art-accent" data-action="apply" data-id="${esc(id)}">${icon("check")} ${esc(this.t("ART.Queue.apply"))}</button>
+          <button type="button" class="art-btn" data-action="reject" data-id="${esc(id)}">${icon("xmark")} ${esc(this.t("ART.Queue.reject"))}</button>
+          ${claim.status === "pending" ? `<button type="button" class="art-btn" data-action="requestCheck" data-id="${esc(id)}" title="${esc(this.t("ART.Queue.checkHint"))}">${icon("dice-six")}</button>` : ""}
+        </div>
+      </article>`;
+    }).join("");
+    return `<div class="art-row-btns art-sticky">
+        <label class="art-check"><input type="checkbox" data-action="checkAll" ${allChecked ? "checked" : ""}> ${esc(this.t("ART.Queue.all"))}</label>
+        <button type="button" class="art-btn art-accent" data-action="applyChecked" ${n ? "" : "disabled"}>${esc(this.t("ART.Queue.applyN", { n }))}</button>
+        <button type="button" class="art-btn" data-action="rejectChecked" ${n ? "" : "disabled"}>${esc(this.t("ART.Queue.rejectN", { n }))}</button>
+      </div>${list}`;
+  }
+}
+
+export { cellKey };

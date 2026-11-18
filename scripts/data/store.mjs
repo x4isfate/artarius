@@ -1,7 +1,12 @@
-import { MODULE_ID, FEATURE_TYPE, DEFAULT_STYLES, STARTER_TYPES, STARTER_LAYERS, CLAIM_STATUS } from "../constants.mjs";
+import { MODULE_ID, FEATURE_TYPE, STARTER_TYPES, STARTER_LAYERS, CLAIM_STATUS } from "../constants.mjs";
 
 const OPEN_STATUSES = [CLAIM_STATUS.pending, CLAIM_STATUS.check, CLAIM_STATUS.rolled];
 import { addToDraft, draftOps, applyOps, buildApplyPlan } from "../review/ops.mjs";
+import { mergeTypes } from "./world.mjs";
+import { resolveStyleOf } from "../canvas/style.mjs";
+
+/** Версия формата атласа. 3 — гекс-мир: слои с exclusive, типы зон знают свой слой. */
+export const ATLAS_VERSION = 3;
 
 /**
  * Где лежат данные карты.
@@ -33,10 +38,35 @@ export async function ensureAtlas(scene = canvas?.scene) {
   const atlas = await JournalEntry.implementation.create({
     name: game.i18n.format("VMAP.Atlas.name", { scene: scene.name }),
     ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER },
-    flags: { [MODULE_ID]: { sceneId: scene.id, types: STARTER_TYPES, layers: STARTER_LAYERS } }
+    flags: { [MODULE_ID]: { sceneId: scene.id, types: STARTER_TYPES, layers: STARTER_LAYERS, version: ATLAS_VERSION } }
   });
   await scene.setFlag(MODULE_ID, "atlas", atlas.id);
   return atlas;
+}
+
+/**
+ * Атлас старой версии: добавить недостающие слои и типы гекс-мира, свои не трогать.
+ * Вызывает мастер. Возвращает true, если атлас поменялся.
+ */
+export async function upgradeAtlas(atlas) {
+  if ( !atlas || !game.user.isGM ) return false;
+  if ( (atlas.getFlag(MODULE_ID, "version") ?? 0) >= ATLAS_VERSION ) return false;
+  const { types, layers } = upgradedTypesAndLayers(atlas.getFlag(MODULE_ID, "types") ?? [], atlas.getFlag(MODULE_ID, "layers") ?? []);
+  await atlas.update({
+    [`flags.${MODULE_ID}.types`]: types,
+    [`flags.${MODULE_ID}.layers`]: layers,
+    [`flags.${MODULE_ID}.version`]: ATLAS_VERSION
+  });
+  return true;
+}
+
+/** Чистая часть обновления: старые записи плюс недостающие из стартового набора. */
+export function upgradedTypesAndLayers(oldTypes, oldLayers) {
+  const layers = oldLayers.map(l => ({ exclusive: l.id !== "overlay" && l.exclusive !== false, ...l }));
+  for ( const l of STARTER_LAYERS ) if ( !layers.some(x => x.id === l.id) ) layers.push({ ...l });
+  const types = [...oldTypes];
+  for ( const t of STARTER_TYPES ) if ( !types.some(x => x.id === t.id) ) types.push(foundry.utils.deepClone(t));
+  return { types, layers: layers.map((l, i) => ({ ...l, sort: i })) };
 }
 
 /** Страница журнала → состояние элемента для черновиков и рендера. */
@@ -59,7 +89,17 @@ export function atlasStates(atlas) {
   return out;
 }
 
-export const getTypes = atlas => foundry.utils.deepClone(atlas?.getFlag(MODULE_ID, "types") ?? STARTER_TYPES);
+/** Типы атласа без личных типов игроков. */
+export const getAtlasTypes = atlas => foundry.utils.deepClone(atlas?.getFlag(MODULE_ID, "types") ?? STARTER_TYPES);
+
+/** Личные типы пользователей: их игроки создают сами, пока мастер не перенёс их в атлас. */
+export function personalTypes() {
+  return (game.users?.contents ?? []).map(u => ({ userId: u.id, types: u.getFlag(MODULE_ID, "types") ?? [] }))
+    .filter(p => p.types.length);
+}
+
+/** Все типы: атлас и личные типы игроков. */
+export const getTypes = atlas => mergeTypes(getAtlasTypes(atlas), foundry.utils.deepClone(personalTypes()));
 export const getLayers = atlas => foundry.utils.deepClone(atlas?.getFlag(MODULE_ID, "layers") ?? STARTER_LAYERS)
   .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
@@ -70,12 +110,38 @@ export async function setLayers(atlas, layers) {
   return atlas.update({ [`flags.${MODULE_ID}.layers`]: layers.map((l, i) => ({ ...l, sort: i })) });
 }
 
-/** Итоговый вид элемента: умолчания вида, потом тип, потом свои правки. */
-export function resolveStyle(state, types) {
-  const kind = state.system?.kind ?? "object";
-  const type = types.find(t => t.id === state.system?.typeId);
-  return { ...DEFAULT_STYLES[kind], ...(type?.style ?? {}), ...(state.system?.style ?? {}) };
+/**
+ * Добавить или поменять тип. Мастер пишет в атлас, игрок — в свои личные типы.
+ * Игрок может менять только свои личные типы.
+ */
+export async function saveType(type, scene = canvas?.scene) {
+  const { personal, ...clean } = type;
+  if ( game.user.isGM ) {
+    const atlas = getAtlas(scene) ?? await ensureAtlas(scene);
+    const types = getAtlasTypes(atlas);
+    const n = types.findIndex(t => t.id === clean.id);
+    if ( n >= 0 ) types[n] = clean; else types.push(clean);
+    return setTypes(atlas, types);
+  }
+  const mine = foundry.utils.deepClone(game.user.getFlag(MODULE_ID, "types") ?? []);
+  const n = mine.findIndex(t => t.id === clean.id);
+  if ( n >= 0 ) mine[n] = clean; else mine.push(clean);
+  return game.user.update({ [`flags.${MODULE_ID}.types`]: mine });
 }
+
+/** Удалить тип (мастер — из атласа, игрок — свой личный). */
+export async function deleteType(id, scene = canvas?.scene) {
+  if ( game.user.isGM ) {
+    const atlas = getAtlas(scene);
+    if ( atlas ) await setTypes(atlas, getAtlasTypes(atlas).filter(t => t.id !== id));
+    return;
+  }
+  const mine = (game.user.getFlag(MODULE_ID, "types") ?? []).filter(t => t.id !== id);
+  return game.user.update({ [`flags.${MODULE_ID}.types`]: mine });
+}
+
+/** Итоговый вид элемента (см. canvas/style.mjs). */
+export const resolveStyle = resolveStyleOf;
 
 /* ---------------------------------------------------------------- */
 /*  Черновик и заявки                                                */
@@ -146,6 +212,36 @@ export async function commit(op, scene = canvas?.scene) {
     result = await setDraft(addToDraft(draft, { ...op, baseRev }), game.user, scene.id);
   }
   Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM });
+  return result;
+}
+
+/**
+ * Записать несколько правок разом (например, зона забрала гексы у соседей).
+ * Мастер применяет их одним планом, игрок кладёт в черновик одним обновлением.
+ */
+export async function commitOps(ops, scene = canvas?.scene) {
+  ops = ops.filter(Boolean);
+  if ( !ops.length ) return;
+  const atlas = getAtlas(scene) ?? await ensureAtlas(scene);
+  if ( !atlas ) {
+    ui.notifications.warn(game.i18n.localize("VMAP.Notify.noAtlas"));
+    return;
+  }
+  const allowed = ops.filter(op => Hooks.call("artarius.preCommit", op, { scene, direct: game.user.isGM }) !== false);
+  if ( !allowed.length ) return;
+  let result;
+  if ( game.user.isGM ) {
+    const plan = buildApplyPlan(allowed.map(op => ({ ...op, baseRev: revOf(atlas, op.id) })), id => revOf(atlas, id), { force: true });
+    result = await applyPlan(atlas, plan);
+  } else {
+    let draft = getDraft(game.user, scene.id);
+    for ( const op of allowed ) {
+      const baseRev = draft[op.id]?.baseRev ?? revOf(atlas, op.id) ?? null;
+      draft = addToDraft(draft, { ...op, baseRev });
+    }
+    result = await setDraft(draft, game.user, scene.id);
+  }
+  for ( const op of allowed ) Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM });
   return result;
 }
 
