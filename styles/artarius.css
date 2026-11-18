@@ -169,7 +169,20 @@
 .artarius .art-form { padding: 10px; border: 1px solid var(--art-warn); border-radius: var(--art-radius); background: var(--art-bg-2); }
 .artarius .art-icons { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .artarius .art-icon-pick { width: 32px; height: 32px; padding: 3px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); }
-.artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; filter: invert(0.9); }
+.artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; object-fit: contain; }
+.artarius .art-icon-pick { display: grid; place-items: center; }
+/* Белый значок, окрашенный цветом типа: так же, как его красит холст. */
+.artarius .art-mask {
+  display: inline-block; background: var(--c, #ddd);
+  -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat;
+}
+.artarius .art-icon-img { width: 24px; height: 24px; }
+.artarius .art-icon-big { width: 40px; height: 40px; flex: none; object-fit: contain; }
+.artarius .art-icon-current { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.artarius .art-icon-current input { flex: 1; }
+.artarius .art-icon-cats { margin-bottom: 6px; }
+.artarius .art-icon-cats .art-btn { font-size: 11px; padding: 2px 6px; }
+.artarius .art-icons { max-height: 180px; overflow-y: auto; }
 .artarius .art-icon-pick.active { border-color: var(--art-warn); }
 .artarius .art-patterns { display: flex; flex-wrap: wrap; gap: 4px; }
 .artarius .art-pattern-pick { width: 32px; height: 32px; padding: 3px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); color: var(--art-text, #ddd); display: grid; place-items: center; }

@@ -12,16 +12,15 @@
 import { seededRandom } from "../geometry/geometry.mjs";
 import { REALM_COLORS } from "../constants.mjs";
 
-const RES = "modules/artarius/assets/res";
 
 /** Типы ресурсов: метки. Недостающие добавляются в атлас при генерации. */
 export const RESOURCE_TYPES = [
-  { id: "res-grain", kind: "object", name: "Зерно", style: { icon: `${RES}/grain.svg`, color: "#f0d17a", size: 0.38, labelSize: 0 } },
-  { id: "res-wood", kind: "object", name: "Древесина", style: { icon: `${RES}/wood.svg`, color: "#b98a57", size: 0.38, labelSize: 0 } },
-  { id: "res-stone", kind: "object", name: "Камень", style: { icon: `${RES}/stone.svg`, color: "#c9c3b8", size: 0.38, labelSize: 0 } },
-  { id: "res-iron", kind: "object", name: "Железо", style: { icon: `${RES}/iron.svg`, color: "#9fb3c8", size: 0.38, labelSize: 0 } },
-  { id: "res-gold", kind: "object", name: "Золото", style: { icon: `${RES}/gold.svg`, color: "#ffd24a", size: 0.38, labelSize: 0 } },
-  { id: "res-fish", kind: "object", name: "Рыба", style: { icon: `${RES}/fish.svg`, color: "#8fd0f0", size: 0.38, labelSize: 0 } }
+  { id: "res-grain", kind: "object", name: "Зерно", style: { icon: "modules/artarius/assets/icons/wheat.svg", color: "#f0d17a", size: 0.38, labelSize: 0 } },
+  { id: "res-wood", kind: "object", name: "Древесина", style: { icon: "modules/artarius/assets/icons/wood-pile.svg", color: "#b98a57", size: 0.38, labelSize: 0 } },
+  { id: "res-stone", kind: "object", name: "Камень", style: { icon: "modules/artarius/assets/icons/stone-pile.svg", color: "#c9c3b8", size: 0.38, labelSize: 0 } },
+  { id: "res-iron", kind: "object", name: "Железо", style: { icon: "modules/artarius/assets/icons/anvil.svg", color: "#9fb3c8", size: 0.38, labelSize: 0 } },
+  { id: "res-gold", kind: "object", name: "Золото", style: { icon: "modules/artarius/assets/icons/gold-bar.svg", color: "#ffd24a", size: 0.38, labelSize: 0 } },
+  { id: "res-fish", kind: "object", name: "Рыба", style: { icon: "modules/artarius/assets/icons/fishing.svg", color: "#8fd0f0", size: 0.38, labelSize: 0 } }
 ];
 
 /** Какие ресурсы бывают на какой местности (с весами). */
@@ -289,7 +288,12 @@ export function generateWorld(options) {
 
 /** Добавить недостающие типы ресурсов. */
 export function withResourceTypes(types) {
-  const out = types.slice();
+  const out = types.map(t => {
+    // Значки ресурсов 0.3 (assets/res) заменены значками библиотеки.
+    const base = RESOURCE_TYPES.find(r => r.id === t.id);
+    if ( base && String(t.style?.icon ?? "").includes("/assets/res/") ) return { ...t, style: { ...t.style, icon: base.style.icon } };
+    return t;
+  });
   for ( const t of RESOURCE_TYPES ) if ( !out.some(x => x.id === t.id) ) out.push(structuredClone(t));
   return out;
 }

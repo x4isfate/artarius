@@ -13,16 +13,17 @@ import { cellKey, zoneCells, layerIdOf } from "../data/world.mjs";
 import { formatStatus, changedFields } from "../review/ops.mjs";
 import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PARTS } from "../data/view.mjs";
+import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
 
-/** Значки меток на выбор при создании типа. Можно указать и свой путь. */
-export const MARK_ICONS = [
-  "icons/svg/city.svg", "icons/svg/village.svg", "icons/svg/castle.svg", "icons/svg/temple.svg",
-  "icons/svg/tower.svg", "icons/svg/ruins.svg", "icons/svg/cave.svg", "icons/svg/mountain.svg",
-  "icons/svg/house.svg", "icons/svg/windmill.svg", "icons/svg/skull.svg", "icons/svg/hanging-sign.svg",
-  "icons/svg/fire.svg", "icons/svg/sun.svg", "icons/svg/coins.svg",
-  // Свои значки модуля: в Foundry 14 нет icons/svg/tree.svg.
-  ...["grain", "wood", "stone", "iron", "gold", "fish"].map(n => `modules/artarius/assets/res/${n}.svg`)
-];
+/**
+ * Значок для показа в панели. Белые значки библиотеки рисуются маской цветом типа,
+ * как на карте; свои картинки показываются как есть.
+ */
+export function iconImg(path, color, { tint = true, cls = "art-icon-img" } = {}) {
+  if ( !path ) return "";
+  if ( tint ) return `<span class="${cls} art-mask" style="--src:url('${esc(path)}');--c:${esc(color || "#ddd")}"></span>`;
+  return `<img class="${cls}" src="${esc(path)}" alt="">`;
+}
 
 /** Штриховки зон поверх цвета. */
 export const PATTERNS = ["none", "hatch", "crosshatch", "cross", "dots", "vertical"];
@@ -220,9 +221,10 @@ export default class ArtariusUI {
       cancelType: () => { s.typeForm = null; s.changed("ui"); },
       deleteType: el => s.deleteType(el.dataset.id),
       pickPattern: el => { if ( s.typeForm ) { s.typeForm.pattern = el.dataset.pattern; s.changed("ui"); } },
-      pickIcon: el => { if ( s.typeForm ) { s.typeForm.icon = el.dataset.icon; s.changed("ui"); } },
+      pickIcon: el => s.pickIcon(el.dataset.icon),
+      iconCat: el => { if ( s.typeForm ) { s.typeForm.iconCat = el.dataset.cat; s.changed("ui"); } },
       browseIcon: () => this.backend.pickFile?.(s.typeForm?.icon ?? "", path => {
-        if ( s.typeForm ) { s.typeForm.icon = path; s.changed("ui"); }
+        s.pickIcon(path);
       }),
       // Слои и мир
       toggleLayer: el => this.backend.toggleLayer?.(el.dataset.id),
@@ -454,13 +456,30 @@ export default class ArtariusUI {
     return `${groups}${s.typeForm?.kind === kind ? this.renderTypeForm() : tools}`;
   }
 
+  /** Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить». */
+  renderIconPicker(f) {
+    const q = (f.iconQuery ?? "").trim();
+    const list = q ? searchIcons(q) : allIcons().filter(i => i.category === (f.iconCat || "settlements"));
+    const cats = Object.keys(ICON_LIBRARY).map(c => `<button type="button" class="art-btn${!q && c === f.iconCat ? " active" : ""}" data-action="iconCat" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
+    const grid = list.length
+      ? list.map(i => `<button type="button" class="art-icon-pick${i.path === f.icon ? " active" : ""}" data-action="pickIcon" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
+      : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
+    return `<div class="art-field"><span>${esc(this.t("ART.Type.icon"))}</span>
+      <div class="art-icon-current">${iconImg(f.icon, f.color, { tint: f.tint !== false, cls: "art-icon-big" })}
+        <input type="search" data-model="typeForm.iconQuery" data-key="tf-iq" value="${esc(q)}" placeholder="${esc(this.t("ART.Icons.search"))}"></div>
+      ${q ? "" : `<div class="art-seg art-icon-cats">${cats}</div>`}
+      <div class="art-icons">${grid}</div>
+      <div class="art-row-btns"><button type="button" class="art-btn" data-action="browseIcon">${icon("folder-open")} ${esc(this.t("ART.Icons.own"))}</button></div>
+      <p class="art-hint">${esc(this.t("ART.Icons.ownHint"))}</p>
+      <input type="text" data-model="typeForm.icon" data-key="tf-icon" value="${esc(f.icon)}" placeholder="worlds/…/my-icon.webp">
+      <label class="art-check"><input type="checkbox" data-model="typeForm.tint" ${f.tint !== false ? "checked" : ""}> ${esc(this.t("ART.Icons.tint"))}</label>
+      <p class="art-hint">${esc(this.t("ART.Icons.credit"))}</p></div>`;
+  }
+
   renderTypeForm() {
     const f = this.studio.typeForm;
     const layers = this.studio.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("");
-    const icons = f.kind === "object" ? `<div class="art-field"><span>${esc(this.t("ART.Type.icon"))}</span>
-      <div class="art-icons">${MARK_ICONS.map(p => `<button type="button" class="art-icon-pick${p === f.icon ? " active" : ""}" data-action="pickIcon" data-icon="${esc(p)}"><img src="${esc(p)}" alt=""></button>`).join("")}
-      <button type="button" class="art-icon-pick" data-action="browseIcon" title="${esc(this.t("ART.Type.browse"))}">${icon("folder-open")}</button></div>
-      <input type="text" data-model="typeForm.icon" data-key="tf-icon" value="${esc(f.icon)}" placeholder="icons/svg/…"></div>` : "";
+    const icons = f.kind === "object" ? this.renderIconPicker(f) : "";
     return `<div class="art-form">
       <h4>${esc(this.t(f.id ? "ART.Type.editTitle" : "ART.Type.newTitle"))}</h4>
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
