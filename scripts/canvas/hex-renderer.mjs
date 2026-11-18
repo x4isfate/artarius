@@ -230,7 +230,8 @@ export default class HexRenderer {
     if ( style.icon ) {
       const sprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
       sprite.anchor.set(0.5);
-      sprite.tint = color(style.color);
+      // Значки библиотеки белые и красятся цветом типа; свою цветную картинку можно не красить.
+      sprite.tint = style.tint === false ? 0xffffff : color(style.iconColor || style.color);
       c.addChild(sprite);
       const fit = tex => {
         if ( !tex || sprite.destroyed ) return;

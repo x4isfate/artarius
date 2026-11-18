@@ -100,6 +100,8 @@ await page.update({ "system.ext.my-module": { morale: 7 } });
 
 Что скрыто у пользователя, лежит в клиентской настройке `hiddenLayers`: id слоёв зон и виды элементов `@marks`, `@resources`, `@lines`, `@labels`. Ресурс — метка, у которой тип начинается с `res-`. `backend.hiddenIds()` и `backend.setHidden(ids)` читают и меняют этот список, `studio.applyPreset(id)` включает набор слоёв (`all`, `political`, `physical`, `resources`, `admin`, `terrain` или свой). Свои наборы лежат в `layerPresets`.
 
+У типа метки в `style` есть `icon` (путь к картинке), `tint` (`false` — не красить картинку цветом типа) и необязательный `iconColor` (цвет значка, если он должен отличаться от цвета кольца). Встроенные значки лежат в `modules/artarius/assets/icons/`, их список с подписями — в `scripts/data/icons.mjs`.
+
 У типа зоны в `style` есть штриховка: `pattern` (`none`, `hatch`, `crosshatch`, `cross`, `dots`, `vertical`), `patternColor`, `patternAlpha`.
 
 ## Что изменилось с API 1 (0.2)

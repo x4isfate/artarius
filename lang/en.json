@@ -409,6 +409,21 @@
       "resources": "Resources",
       "lines": "Lines",
       "labels": "Labels"
+    },
+    "Icons": {
+      "search": "Search: castle, ore, temple…",
+      "none": "Nothing found.",
+      "own": "Own image or upload",
+      "ownHint": "Opens the Foundry file picker, where you can also upload an image. SVG, PNG and WEBP work.",
+      "tint": "Tint the icon with the type color",
+      "credit": "Icons: game-icons.net, CC BY 3.0. Authors in assets/icons/CREDITS.md.",
+      "cat": {
+        "resources": "Resources",
+        "settlements": "Settlements",
+        "sacred": "Sacred",
+        "nature": "Nature",
+        "danger": "Events & danger"
+      }
     }
   }
 }
