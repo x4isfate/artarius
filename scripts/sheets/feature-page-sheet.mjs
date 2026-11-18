@@ -32,17 +32,16 @@ export default class FeaturePageSheet extends JournalEntryPageHandlebarsSheet {
     const atlas = page.parent;
     const type = getTypes(atlas).find(t => t.id === sys.typeId);
     const layer = getLayers(atlas).find(l => l.id === sys.layerId);
-    const demiurge = sys.demiurge ? await fromUuid(sys.demiurge) : null;
+    const demiurge = sys.demiurge ? (game.actors.get(sys.demiurge) ?? await fromUuid(sys.demiurge).catch(() => null)) : null;
     const pages = atlas?.pages;
     const enriched = await foundry.applications.ux.TextEditor.implementation.enrichHTML(page.text?.content ?? "", {
       relativeTo: page, secrets: page.isOwner
     });
     context.feature = {
       name: page.name,
-      kindLabel: game.i18n.localize(`VMAP.Kind.${sys.kind}`),
+      kindLabel: game.i18n.localize(`ART.Kind.${{ area: "zone", object: "mark", line: "line" }[sys.kind] ?? "mark"}`),
       typeName: type?.name ?? "",
       layerName: sys.kind === "area" ? (layer?.name ?? "") : "",
-      blendLabel: sys.kind === "area" ? game.i18n.localize(`VMAP.Blend.${sys.blend}`) : "",
       demiurge: demiurge?.name ?? "",
       description: enriched,
       statuses: (sys.statuses ?? []).map(formatStatus).filter(Boolean),
@@ -65,9 +64,6 @@ export default class FeaturePageSheet extends JournalEntryPageHandlebarsSheet {
       await scene.view();
       await new Promise(resolve => Hooks.once("canvasReady", resolve));
     }
-    const api = game.modules.get(MODULE_ID).api;
-    api.activateLayer();
-    canvas.vitruviumMap?.select(id);
-    canvas.vitruviumMap?.panTo(id);
+    game.modules.get(MODULE_ID).api.showFeature(id);
   }
 }
