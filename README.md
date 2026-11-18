@@ -26,6 +26,10 @@
 
 Данные лежат в журнале «Атлас: <сцена>», по странице на элемент. Расширения подключаются через `game.modules.get("artarius").api`, описание в [docs/API.md](docs/API.md).
 
+## Значки
+
+Встроенные значки меток взяты с [game-icons.net](https://game-icons.net) (Lorc, Delapouite и другие авторы) по лицензии [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Значки перекрашены в белый, чтобы Foundry мог красить их цветом типа. Полный список авторов: [assets/icons/CREDITS.md](assets/icons/CREDITS.md).
+
 ## Разработка
 
 ```sh

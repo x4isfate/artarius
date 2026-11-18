@@ -31,7 +31,7 @@ export const CLAIM_STATUS = {
 /** Вид по умолчанию для каждого вида элемента. Тип и сам элемент переопределяют поля поверх. */
 export const DEFAULT_STYLES = {
   object: {
-    icon: "icons/svg/village.svg",
+    icon: "modules/artarius/assets/icons/village.svg",
     color: "#e8d6c3",
     size: 0.62,           // доля размера гекса
     labelSize: 20,
@@ -90,12 +90,12 @@ export const STARTER_TYPES = [
   terrain("water", "Вода", "#3c6f9e"),
   { id: "realm", kind: "area", name: "Держава", layerId: "politics", style: { color: "#c96f4a", alpha: 0.28, borderWidth: 4 } },
   { id: "region", kind: "area", name: "Область", layerId: "regions", style: { color: "#d9c39a", alpha: 0.12, borderWidth: 2, labelSize: 20 } },
-  { id: "city", kind: "object", name: "Город", style: { icon: "icons/svg/city.svg", color: "#f2e3c9" } },
-  { id: "village", kind: "object", name: "Деревня", style: { icon: "icons/svg/village.svg", color: "#e8d6c3", size: 0.5, labelSize: 16 } },
-  { id: "fortress", kind: "object", name: "Крепость", style: { icon: "icons/svg/castle.svg", color: "#d9c39a" } },
-  { id: "temple", kind: "object", name: "Святилище", style: { icon: "icons/svg/temple.svg", color: "#f4d27a" } },
-  { id: "ruins", kind: "object", name: "Руины", style: { icon: "icons/svg/ruins.svg", color: "#b9b2a6", size: 0.5 } },
-  { id: "marker", kind: "object", name: "Отметка", style: { icon: "icons/svg/hanging-sign.svg", color: "#ff8562", size: 0.5 } },
+  { id: "city", kind: "object", name: "Город", style: { icon: "modules/artarius/assets/icons/castle.svg", color: "#f2e3c9" } },
+  { id: "village", kind: "object", name: "Деревня", style: { icon: "modules/artarius/assets/icons/village.svg", color: "#e8d6c3", size: 0.5, labelSize: 16 } },
+  { id: "fortress", kind: "object", name: "Крепость", style: { icon: "modules/artarius/assets/icons/military-fort.svg", color: "#d9c39a" } },
+  { id: "temple", kind: "object", name: "Святилище", style: { icon: "modules/artarius/assets/icons/greek-temple.svg", color: "#f4d27a" } },
+  { id: "ruins", kind: "object", name: "Руины", style: { icon: "modules/artarius/assets/icons/castle-ruins.svg", color: "#b9b2a6", size: 0.5 } },
+  { id: "marker", kind: "object", name: "Отметка", style: { icon: "modules/artarius/assets/icons/flying-flag.svg", color: "#ff8562", size: 0.5 } },
   { id: "river", kind: "line", name: "Река", style: { color: "#5b8fd6", widthStart: 2, widthEnd: 9, meander: 0.2 } },
   { id: "road", kind: "line", name: "Дорога", style: { color: "#d8c3a0", widthStart: 3, widthEnd: 3, outlineColor: "#3a2d22", outlineWidth: 1, dash: 12, gap: 7, meander: 0.05 } },
   { id: "border", kind: "line", name: "Граница", style: { color: "#ff6a5a", widthStart: 3, widthEnd: 3, dash: 6, gap: 6, meander: 0 } }
