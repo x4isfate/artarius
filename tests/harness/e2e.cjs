@@ -149,12 +149,12 @@ async function shot(page, name) {
   /* 7. Новый тип метки: создать, изменить, удалить ------------------ */
   await act("newType", '[data-kind="object"]');
   await page.fill('#artarius-ui [data-key="tf-name"]', "Маяк");
-  await act("pickIcon", '[data-icon="icons/svg/house.svg"]');
+  await act("pickIcon", '[data-icon$="/lighthouse.svg"]');
   await act("browseIcon");
   await act("saveType");
   let types = await ev(() => window.art.backend.atlasTypes);
   const beacon = types.find(t => t.name === "Маяк");
-  check(beacon && beacon.style.icon === "icons/svg/tower.svg" && (await ev(() => window.art.studio.mark.typeId)) === beacon.id, "новый тип «Маяк» сохранён и выбран");
+  check(beacon && beacon.style.icon === "icons/svg/tower.svg" && beacon.style.tint === false && (await ev(() => window.art.studio.mark.typeId)) === beacon.id, "новый тип «Маяк» сохранён и выбран");
   await act("editType", `[data-id="${beacon.id}"]`);
   await page.fill('#artarius-ui [data-key="tf-name"]', "Большой маяк");
   await act("saveType");

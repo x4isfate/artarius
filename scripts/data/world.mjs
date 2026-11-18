@@ -280,7 +280,7 @@ export function makeType({ id, kind, name, color, icon = "", layerId = "", layer
       : { color, alpha: lid === "politics" ? 0.28 : 0.15, borderWidth: lid === "politics" ? 4 : 2 };
     return { id, kind, name, layerId: layerById(layers, lid).id, style };
   }
-  if ( kind === "object" ) return { id, kind, name, style: { color, icon: icon || "icons/svg/hanging-sign.svg" } };
+  if ( kind === "object" ) return { id, kind, name, style: { color, icon: icon || "modules/artarius/assets/icons/flying-flag.svg" } };
   return { id, kind: "line", name, style: { color, widthStart: 3, widthEnd: 3, meander: 0.1 } };
 }
 

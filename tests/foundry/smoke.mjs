@@ -196,6 +196,30 @@ await check("линия по гексам и от руки на холсте", a
   s.setLineMode("free");
 });
 
+await check("выбор значка: разделы, поиск, своя картинка", async () => {
+  const s = api().studio;
+  s.setTool("mark", { toggle: false });
+  s.openTypeForm("object");
+  await tick();
+  const left = win("left");
+  assert(left.querySelectorAll('[data-action="pickIcon"]').length >= 10, "нет значков библиотеки");
+  left.querySelector('[data-action="iconCat"][data-cat="resources"]').click();
+  await tick();
+  const ore = win("left").querySelector('[data-icon$="/ore.svg"]');
+  assert(ore, "нет руды в разделе ресурсов");
+  ore.click();
+  await tick();
+  assert(s.typeForm.icon.endsWith("/ore.svg") && s.typeForm.tint, "значок не выбран");
+  const search = win("left").querySelector('[data-model="typeForm.iconQuery"]');
+  search.value = "храм";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await tick();
+  assert(win("left").querySelector('[data-icon$="/greek-temple.svg"]'), "поиск не нашёл храм");
+  assert(win("left").querySelector('[data-action="browseIcon"]'), "нет кнопки своей картинки");
+  s.typeForm = null;
+  s.changed("ui");
+});
+
 await check("крестик окна инструмента выключает инструмент", async () => {
   const ui2 = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
   api().studio.setTool("zone", { toggle: false });
@@ -354,6 +378,11 @@ if ( location.search.includes("shot") ) {
   await F.settle();
   app.stage.addChild(layer);
   layer.refresh(true);
+  // Окно метки с открытым выбором значка поверх карты.
+  api().studio.setTool("mark", { toggle: false });
+  api().studio.openTypeForm("object");
+  api().studio.typeForm.color = "#f0c96a";
+  api().studio.changed("ui");
   await new Promise(r => setTimeout(r, 1500));
 }
 

@@ -17,6 +17,10 @@ import {
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
+import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
+
+/** Раздел библиотеки, где лежит значок; для чужих картинок — первый раздел. */
+const iconCategory = path => Object.keys(ICON_LIBRARY).find(c => ICON_LIBRARY[c].some(([n]) => path === iconPath(n))) ?? "settlements";
 
 export const TOOLS = ["select", "zone", "mark", "line"];
 
@@ -411,12 +415,24 @@ export default class Studio {
       this.typeForm = {
         kind, id, name: existing.name, color: existing.style?.color ?? "#cccccc",
         icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay",
-        pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a"
+        pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a",
+        tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon)
       };
     } else {
       const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
-      this.typeForm = { kind, id: null, name: "", color: nextZoneColor(this.states), icon: "", layerId, pattern: "none", patternColor: "#1a1a1a" };
+      this.typeForm = {
+        kind, id: null, name: "", color: nextZoneColor(this.states), icon: kind === "object" ? iconPath("castle") : "", layerId,
+        pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements"
+      };
     }
+    this.changed("ui");
+  }
+
+  /** Выбрать значок формы типа. Значок библиотеки красится, своя картинка по умолчанию нет. */
+  pickIcon(path) {
+    if ( !this.typeForm ) return;
+    this.typeForm.icon = path;
+    this.typeForm.tint = isLibraryIcon(path);
     this.changed("ui");
   }
 
@@ -444,6 +460,8 @@ export default class Studio {
     if ( f.kind === "area" ) {
       type.style = { ...(type.style ?? {}), pattern: f.pattern || "none", patternColor: f.patternColor || "#1a1a1a" };
     }
+    // Свою цветную картинку можно не красить цветом типа.
+    if ( f.kind === "object" ) type.style = { ...(type.style ?? {}), tint: f.tint !== false };
     await this.backend.saveType(type);
     const slot = { area: "zone", object: "mark", line: "line" }[f.kind];
     this[slot].typeId = type.id;
