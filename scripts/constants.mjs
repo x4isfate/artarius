@@ -2,13 +2,21 @@
 
 export const MODULE_ID = "artarius";
 
-/** Подтип страницы журнала для объекта, линии и области. */
+/** Подтип страницы журнала для зоны, метки и линии. */
 export const FEATURE_TYPE = `${MODULE_ID}.feature`;
 
-/** Три вида элементов карты. */
+/**
+ * Три вида элементов карты. Внутренние имена остались с версии 0.1,
+ * чтобы старые атласы читались без переноса:
+ * area — зона (набор гексов), object — метка (на одном гексе), line — линия (точки).
+ */
 export const KINDS = ["object", "line", "area"];
 
-/** Режимы наложения области. */
+/** Инструмент → вид элемента, который он создаёт. */
+export const TOOL_KIND = { zone: "area", mark: "object", line: "line" };
+export const KIND_TOOL = { area: "zone", object: "mark", line: "line" };
+
+/** Режимы наложения зоны (с 0.3 решает слой, поле осталось для старых данных). */
 export const BLENDS = ["replace", "overlay"];
 
 /** Статусы заявки игрока. */
@@ -25,45 +33,83 @@ export const DEFAULT_STYLES = {
   object: {
     icon: "icons/svg/village.svg",
     color: "#e8d6c3",
-    size: 48,
-    labelSize: 22,
+    size: 0.62,           // доля размера гекса
+    labelSize: 20,
     labelColor: "#fff0e0"
   },
   line: {
     color: "#5b8fd6",
     widthStart: 3,
-    widthEnd: 10,
+    widthEnd: 8,
     outlineColor: "#1d2a3a",
     outlineWidth: 0,
     dash: 0,
     gap: 0,
     meander: 0.15,
     alpha: 1,
-    labelSize: 18,
+    labelSize: 0,
     labelColor: "#fff0e0"
   },
   area: {
     color: "#c96f4a",
     alpha: 0.35,
-    borderColor: "#c96f4a",
+    borderColor: "",       // пусто — цвет зоны
     borderWidth: 3,
-    borderAlpha: 0.9,
-    labelSize: 28,
+    borderAlpha: 0.95,
+    labelSize: 26,
     labelColor: "#fff0e0"
   }
 };
 
-/** Типы, которые атлас получает при создании. Мастер может их менять и удалять. */
-export const STARTER_TYPES = [
-  { id: "city", kind: "object", name: "Город", style: { icon: "icons/svg/village.svg" } },
-  { id: "fortress", kind: "object", name: "Крепость", style: { icon: "icons/svg/castle.svg", color: "#d9c39a" } },
-  { id: "river", kind: "line", name: "Река", style: { color: "#5b8fd6", widthStart: 2, widthEnd: 12, meander: 0.2 } },
-  { id: "road", kind: "line", name: "Дорога", style: { color: "#d8c3a0", widthStart: 3, widthEnd: 3, outlineColor: "#3a2d22", outlineWidth: 2, dash: 14, gap: 8, meander: 0 } },
-  { id: "realm", kind: "area", name: "Страна", style: { color: "#c96f4a", alpha: 0.3, borderColor: "#c96f4a" } },
-  { id: "region", kind: "area", name: "Край", style: { color: "#6f9c5a", alpha: 0.25, borderColor: "#6f9c5a" } }
+/**
+ * Слои зон. В исключающем слое гекс принадлежит только одной зоне:
+ * новая зона забирает гекс у старой. В свободном слое зоны могут перекрываться.
+ * Порядок в списке — порядок рисования снизу вверх.
+ */
+export const STARTER_LAYERS = [
+  { id: "terrain", name: "Местность", sort: 0, visible: true, exclusive: true },
+  { id: "regions", name: "Области", sort: 1, visible: true, exclusive: true },
+  { id: "politics", name: "Владения", sort: 2, visible: true, exclusive: true },
+  { id: "overlay", name: "Прочее", sort: 3, visible: true, exclusive: false }
 ];
 
-export const STARTER_LAYERS = [
-  { id: "politics", name: "Политика", sort: 0, visible: true },
-  { id: "nature", name: "Природа", sort: 1, visible: true }
+const terrain = (id, name, color) => ({
+  id, kind: "area", name, layerId: "terrain",
+  style: { color, alpha: 1, borderWidth: 0, labelSize: 0 }
+});
+
+/** Типы, которые атлас получает при создании. Мастер может их менять и удалять, игроки добавляют свои. */
+export const STARTER_TYPES = [
+  terrain("plains", "Равнина", "#9bb164"),
+  terrain("forest", "Лес", "#3f6b3a"),
+  terrain("hills", "Холмы", "#a8975c"),
+  terrain("mountains", "Горы", "#8a8079"),
+  terrain("swamp", "Болото", "#5e6b4b"),
+  terrain("desert", "Пустыня", "#dcc48e"),
+  terrain("snow", "Снега", "#e4ecee"),
+  terrain("water", "Вода", "#3c6f9e"),
+  { id: "realm", kind: "area", name: "Держава", layerId: "politics", style: { color: "#c96f4a", alpha: 0.28, borderWidth: 4 } },
+  { id: "region", kind: "area", name: "Область", layerId: "regions", style: { color: "#d9c39a", alpha: 0.12, borderWidth: 2, labelSize: 20 } },
+  { id: "city", kind: "object", name: "Город", style: { icon: "icons/svg/city.svg", color: "#f2e3c9" } },
+  { id: "village", kind: "object", name: "Деревня", style: { icon: "icons/svg/village.svg", color: "#e8d6c3", size: 0.5, labelSize: 16 } },
+  { id: "fortress", kind: "object", name: "Крепость", style: { icon: "icons/svg/castle.svg", color: "#d9c39a" } },
+  { id: "temple", kind: "object", name: "Святилище", style: { icon: "icons/svg/temple.svg", color: "#f4d27a" } },
+  { id: "ruins", kind: "object", name: "Руины", style: { icon: "icons/svg/ruins.svg", color: "#b9b2a6", size: 0.5 } },
+  { id: "marker", kind: "object", name: "Отметка", style: { icon: "icons/svg/hanging-sign.svg", color: "#ff8562", size: 0.5 } },
+  { id: "river", kind: "line", name: "Река", style: { color: "#5b8fd6", widthStart: 2, widthEnd: 9, meander: 0.2 } },
+  { id: "road", kind: "line", name: "Дорога", style: { color: "#d8c3a0", widthStart: 3, widthEnd: 3, outlineColor: "#3a2d22", outlineWidth: 1, dash: 12, gap: 7, meander: 0.05 } },
+  { id: "border", kind: "line", name: "Граница", style: { color: "#ff6a5a", widthStart: 3, widthEnd: 3, dash: 6, gap: 6, meander: 0 } }
 ];
+
+/** Цвета для новых держав и областей: следующий берётся по кругу. */
+export const REALM_COLORS = [
+  "#d64545", "#3f7fd6", "#e0b23c", "#8e5bd6", "#2fa37a", "#e07b39", "#c2459c", "#5bb8d6", "#9bbf3a", "#7a5230"
+];
+
+/** Настройки сцены по умолчанию. */
+export const WORLD_DEFAULTS = {
+  enabled: false,
+  baseColor: "#24496b",     // цвет пустого гекса: море
+  gridColor: "#000000",
+  gridAlpha: 0.18
+};

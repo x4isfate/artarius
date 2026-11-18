@@ -281,5 +281,189 @@
         "notFull": "This is not a full export. In Azgaar choose Export to JSON → Full."
       }
     }
+  },
+  "ART": {
+    "Save": "Save",
+    "Cancel": "Cancel",
+    "Close": "Close",
+    "Menu": {
+      "open": "Artarius: map tools",
+      "close": "Hide tools",
+      "hub": "World"
+    },
+    "Tool": {
+      "select": "Inspect",
+      "zone": "Zone",
+      "mark": "Mark",
+      "line": "Line"
+    },
+    "Kind": {
+      "zone": "Zone",
+      "mark": "Mark",
+      "line": "Line"
+    },
+    "Field": {
+      "name": "Name",
+      "color": "Color",
+      "type": "Type",
+      "owner": "Demiurge",
+      "text": "Description"
+    },
+    "Guide": {
+      "title": "How to play"
+    },
+    "Sel": {
+      "count": "Hexes selected: {n}",
+      "clear": "clear"
+    },
+    "Select": {
+      "hint": "Click a hex to see everything on it on the right: zones, marks, lines, their owners, statuses and aspects."
+    },
+    "Layer": {
+      "title": "Layers",
+      "one": "Layer",
+      "show": "Show layer",
+      "hide": "Hide layer",
+      "exclusive": "one zone per hex",
+      "free": "zones overlap"
+    },
+    "World": {
+      "settings": "World settings",
+      "azgaar": "Import from Azgaar"
+    },
+    "Type": {
+      "new": "New type",
+      "edit": "Edit type",
+      "newTitle": "New type",
+      "editTitle": "Type",
+      "namePh": "E.g. Ash Wastes",
+      "icon": "Icon",
+      "browse": "Browse files",
+      "needName": "Give the type a name.",
+      "notYours": "Another player created this type.",
+      "personal": "your type, becomes shared once approved",
+      "deleteUsed": "Type “{name}” is already on the map. Delete it anyway? Items stay but lose the type's look."
+    },
+    "Zone": {
+      "hint": "Click or drag to select hexes, Shift to deselect. Alt-click opens a hex. Then attach the hexes to a zone.",
+      "where": "Attach to",
+      "newZone": "New zone",
+      "find": "Find a zone",
+      "create": "Create zone ({n})",
+      "attachTo": "Into “{name}” ({n})",
+      "paint": "Paint directly: dragging goes straight into the zone",
+      "detachTitle": "Remove hexes from zones",
+      "detach": "Remove",
+      "allLayers": "From all layers",
+      "noCells": "Select hexes on the map first.",
+      "noType": "Pick a zone type.",
+      "nothingToDetach": "Selected hexes have no zones on this layer."
+    },
+    "Mark": {
+      "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
+      "type": "Mark type",
+      "place": "Place ({n})",
+      "paint": "Place on click",
+      "noCells": "Select hexes first.",
+      "noType": "Pick a mark type."
+    },
+    "Line": {
+      "hint": "Click the map to add points. Right-click removes the last point, Esc clears the line. Hold Ctrl to snap to the hex center.",
+      "type": "Line type",
+      "points": "Points: {n}",
+      "finish": "Done",
+      "snap": "Snap points to hex centers",
+      "needTwo": "A line needs at least two points.",
+      "noType": "Pick a line type."
+    },
+    "Card": {
+      "tab": "Hex",
+      "hex": "Hex {i}:{j}",
+      "pick": "Click a hex with Inspect, or Alt-click.",
+      "empty": "Nothing here yet. Use Zone, Mark or Line.",
+      "zones": "Zones",
+      "marks": "Marks",
+      "lines": "Lines",
+      "unnamed": "Unnamed",
+      "noOwner": "— nobody —",
+      "inDraft": "in draft",
+      "statuses": "Statuses",
+      "aspectStatuses": "Aspect statuses",
+      "aspects": "Aspects",
+      "addStatus": "Add status",
+      "addAspect": "Add aspect",
+      "toAspect": "Turn into aspect",
+      "remove": "Remove",
+      "statusPh": "Famine",
+      "aspectPh": "Fortified keep",
+      "noStatuses": "No statuses.",
+      "noAspects": "No aspects.",
+      "pan": "Show",
+      "removeCell": "Remove hex from zone",
+      "delete": "Delete entirely",
+      "deleteConfirm": "Delete “{name}” from the map?"
+    },
+    "Turn": {
+      "round": "Round {n}",
+      "of": "{name}'s turn",
+      "yours": "Your turn",
+      "pass": "Pass turn",
+      "free": "Turns are off",
+      "draft": "Draft: {n}",
+      "settings": "Turn order",
+      "enabled": "Play in turns",
+      "hint": "Everyone can draw. Only the current player can submit a claim. The GM passes the turn.",
+      "noOrder": "Order is empty: add players.",
+      "remove": "Remove from order",
+      "giveTurn": "Give the turn",
+      "notYourTurn": "It's not your turn. Your draft is kept; submit it on your turn.",
+      "waitFor": "It's {name}'s turn. You can submit on your turn.",
+      "announce": "Turn passes to {name}",
+      "announceRound": "Round {round}. {name}'s turn"
+    },
+    "Queue": {
+      "title": "Claims",
+      "draft": "Draft",
+      "mine": "My claims",
+      "draftHint": "Your edits the GM hasn't seen yet",
+      "emptyDraft": "Draft is empty. Everything you draw lands here first.",
+      "claimTitle": "Claim title",
+      "claimTitlePh": "Fire takes the valley",
+      "claimNote": "Note for the GM",
+      "submit": "Submit claim",
+      "undo": "Undo edit",
+      "noClaims": "No claims yet.",
+      "toDraft": "Back to draft",
+      "none": "No claims.",
+      "all": "All",
+      "applyN": "Accept ({n})",
+      "rejectN": "Reject ({n})",
+      "apply": "Accept",
+      "reject": "Reject",
+      "preview": "Show on map",
+      "checkHint": "Request a Vitruvium check",
+      "rejectReason": "Why rejected (the player will see it):",
+      "partial": "partial"
+    },
+    "Op": {
+      "create": "{what} “{name}”: new",
+      "createZone": "Zone “{name}”: new, {n} hexes",
+      "delete": "{what} “{name}”: delete",
+      "update": "{what} “{name}”: {fields}",
+      "cellsPlus": "Zone “{name}”: +{n} hexes",
+      "cellsMinus": "Zone “{name}”: −{n} hexes"
+    },
+    "Diff": {
+      "name": "name",
+      "text": "description",
+      "type": "type",
+      "demiurge": "demiurge",
+      "statuses": "statuses",
+      "aspects": "aspects",
+      "geometry": "place",
+      "style": "look",
+      "layer": "layer",
+      "links": "links"
+    }
   }
 }
