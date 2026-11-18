@@ -80,6 +80,8 @@ export default class HexLayer extends InteractionLayer {
   async _draw(options) {
     await super._draw(options);
     if ( !runtime.isWorld() || !runtime.studio ) return;
+    // Сетка могла смениться вместе со сценой: кэш центров и вершин сбрасываем до первой отрисовки.
+    runtime.backend.grid.reset();
     this.renderer = new HexRenderer(runtime.backend.grid);
     this.addChild(this.renderer.container);
     this._unsub = runtime.studio.subscribe(what => {

@@ -148,7 +148,7 @@ async function shot(page, name) {
   /* 7. Новый тип метки: создать, изменить, удалить ------------------ */
   await act("newType", '[data-kind="object"]');
   await page.fill('#artarius-ui [data-key="tf-name"]', "Маяк");
-  await act("pickIcon", '[data-icon="icons/svg/anchor.svg"]');
+  await act("pickIcon", '[data-icon="icons/svg/house.svg"]');
   await act("browseIcon");
   await act("saveType");
   let types = await ev(() => window.art.backend.atlasTypes);

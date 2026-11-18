@@ -7,7 +7,7 @@
  * Линия (kind "line"): system.geometry.points = [[x, y], …].
  */
 import { REALM_COLORS, STARTER_LAYERS } from "../constants.mjs";
-import { distToPolyline } from "../geometry/geometry.mjs";
+import { distToPolyline, pointInRings } from "../geometry/geometry.mjs";
 
 export const cellKey = ([i, j]) => `${i},${j}`;
 export const parseKey = k => k.split(",").map(Number);
@@ -80,9 +80,6 @@ export function attachOps({ states, types, layers, cells, target = null, newZone
   const adding = new Set(cells.map(cellKey));
   const have = new Set(zoneCells(zone).map(cellKey));
   const merged = [...have, ...[...adding].filter(k => !have.has(k))].map(parseKey);
-  if ( target && merged.length === have.size ) {
-    // Ничего нового, но в исключающем слое гексы могли быть и у соседей: их всё равно забираем.
-  }
   if ( isExclusive(layers, layerId) ) {
     for ( const other of zonesOf(states) ) {
       if ( other.id === zone.id || layerIdOf(other, types) !== layerId ) continue;
@@ -114,6 +111,19 @@ export function detachOps({ states, types, cells, zoneId = null, layerId = null 
     else ops.push({ action: "delete", id: z.id, name: z.name });
   }
   return ops;
+}
+
+/**
+ * Свободный контур из 0.2 → гексы: гекс входит, если его центр внутри контура.
+ * shapes — кольца [[x, y], …] (дыры обходом в обратную сторону), cells — все гексы поля.
+ */
+export function cellsInShapes(shapes, cells, center) {
+  const rings = (shapes ?? []).filter(r => Array.isArray(r) && r.length >= 3);
+  if ( !rings.length ) return [];
+  return cells.filter(c => {
+    const p = center(c);
+    return pointInRings([p.x, p.y], rings);
+  }).map(c => [c[0], c[1]]);
 }
 
 /** Метки на гексы: по одной на гекс. center(cell) → { x, y }. */

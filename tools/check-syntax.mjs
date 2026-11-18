@@ -47,14 +47,14 @@ for ( const file of files.filter(f => f.endsWith(".hbs")) ) {
   if ( n !== 1 ) fail(file, `корневых элементов ${n}, нужен 1`);
 }
 
-// Ключи VMAP.* из кода и шаблонов есть в ru.json и en.json, языки совпадают.
+// Ключи VMAP.* и ART.* из кода и шаблонов есть в ru.json и en.json, языки совпадают.
 const flat = (o, p = "") => Object.entries(o).flatMap(([k, v]) => typeof v === "object" ? flat(v, `${p}${k}.`) : [`${p}${k}`]);
 const langs = Object.fromEntries(["ru", "en"].map(l => [l, new Set(flat(JSON.parse(readFileSync(path.join(root, "lang", `${l}.json`), "utf8"))))]));
 for ( const k of langs.ru ) if ( !langs.en.has(k) ) fail(path.join(root, "lang/en.json"), `нет ключа ${k}`);
 for ( const k of langs.en ) if ( !langs.ru.has(k) ) fail(path.join(root, "lang/ru.json"), `нет ключа ${k}`);
 const prefixes = [...langs.ru].map(k => k.split(".").slice(0, -1).join("."));
 for ( const file of files.filter(f => /\.(mjs|hbs)$/.test(f) && !f.includes(`${path.sep}tools${path.sep}`)) ) {
-  for ( const [key] of readFileSync(file, "utf8").matchAll(/VMAP\.[A-Za-z]+(?:\.[A-Za-z]+)*/g) ) {
+  for ( const [key] of readFileSync(file, "utf8").matchAll(/\b(?:VMAP|ART)\.[A-Z][A-Za-z]*(?:\.[A-Za-z]+)*/g) ) {
     if ( !langs.ru.has(key) && !prefixes.includes(key) ) fail(file, `нет перевода ${key}`);
   }
 }
