@@ -278,7 +278,8 @@
       "notYourTurn": "It's not your turn. Your draft is kept; submit it on your turn.",
       "waitFor": "It's {name}'s turn. You can submit on your turn.",
       "announce": "Turn passes to {name}",
-      "announceRound": "Round {round}. {name}'s turn"
+      "announceRound": "Round {round}. {name}'s turn",
+      "title": "Turn"
     },
     "Queue": {
       "title": "Claims",
@@ -339,6 +340,24 @@
       "cols": "Hexes across",
       "rows": "Hexes down",
       "size": "Hex size, px"
+    },
+    "Gen": {
+      "title": "World generator",
+      "gmOnly": "Only the GM can generate a world.",
+      "hint": "A test world over the whole scene: terrain from height and moisture, resources as marks and starting realms with capitals.",
+      "seed": "Seed",
+      "water": "Water, %",
+      "mountains": "Mountains, % of land",
+      "resources": "Resources, % of hexes",
+      "realms": "Starting realms",
+      "realmsHint": "One per player by default. The player character becomes the realm demiurge.",
+      "clear": "Clear the scene",
+      "clearHint": "Delete every zone, mark and line on this scene. Unchecked, only what the generator made before is replaced.",
+      "go": "Create world",
+      "done": "World ready (seed {seed}): hexes {hexes}, terrain zones {terrain}, realms {realms}, resources {resources}.",
+      "realmOf": "Realm of {name}",
+      "realmN": "Realm {n}",
+      "capitalN": "Capital {n}"
     }
   }
 }

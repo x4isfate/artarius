@@ -15,7 +15,7 @@ Hooks.once("artarius.ready", api => {
 });
 ```
 
-## Кнопка в круглом меню
+## Кнопка в группе Артария
 
 ```js
 Hooks.once("artarius.init", api => {
@@ -30,7 +30,7 @@ Hooks.once("artarius.init", api => {
 });
 ```
 
-Кнопка встаёт в круглое меню после встроенных. `api.unregisterQuickAction(id)` её убирает.
+Кнопка встаёт в группу Артария в колонке инструментов слева, после встроенных. `api.unregisterQuickAction(id)` её убирает.
 
 ## Сцена и инструменты
 
@@ -88,7 +88,9 @@ await page.update({ "system.ext.my-module": { morale: 7 } });
 
 ## Окна
 
-`openGuide()`, `openWorldSettings()`, `openAzgaar()`, `openAzgaarGenerator()`.
+`openGuide()`, `openWorldSettings()`, `openAzgaar()`, `openAzgaarGenerator()`, `openGenerator()`.
+
+`generateTestWorld({ seed, water, mountains, resources, realmCount, realms, clear })` создаёт тестовый мир без окна. `realms` — свои державы `[{ name, color, demiurge }]`, без них по державе на игрока. После генерации вызывается хук `artarius.generate` с `{ scene, atlas, built, removed }`. Элементы генератора помечены `system.ext.artariusGen = { seed, kind }`.
 
 `importAzgaar(data, scene, { parts, replace })` импортирует разобранный JSON из Azgaar без окна, например из макроса. `parts`: `{ terrain, states, provinces, burgs, rivers, routes }`.
 

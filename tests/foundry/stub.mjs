@@ -216,18 +216,35 @@ const fields = Object.fromEntries(["SchemaField", "StringField", "NumberField", 
 
 class ApplicationV2 {
   static DEFAULT_OPTIONS = {};
-  constructor(options = {}) { this.options = options; this.rendered = false; }
+  constructor(options = {}) {
+    this.options = { ...options, window: { ...(options.window ?? {}) }, position: { ...(options.position ?? {}) } };
+    this.rendered = false;
+  }
   get element() { return this._el ?? null; }
   get form() { return this.element?.querySelector("form") ?? null; }
-  async render() {
-    const html = await this._renderHTML?.({}, {});
-    this._el ??= document.createElement("div");
-    if ( html ) this._replaceHTML?.(html, this._el, {});
+  get title() { return this.options.window.title ?? ""; }
+  async render(options = {}) {
+    if ( options.window?.title ) this.options.window.title = options.window.title;
+    const html = await this._renderHTML?.({}, options);
+    if ( !this._el ) {
+      this._el = document.createElement("div");
+      this._el.className = ["application", ...(this.options.classes ?? [])].join(" ");
+      if ( this.options.id ) this._el.id = this.options.id;
+      this._el.innerHTML = '<header class="window-header"><h1 class="window-title"></h1></header><section class="window-content"></section>';
+    }
+    this._el.querySelector(".window-title").textContent = this.title;
+    if ( !this._el.isConnected ) document.body.appendChild(this._el);
+    if ( html ) this._replaceHTML?.(html, this._el.querySelector(".window-content"), options);
     this.rendered = true;
     return this;
   }
-  setPosition() {}
-  close() { this.rendered = false; }
+  setPosition(p = {}) { Object.assign(this.options.position, p); this._onPosition?.(this.options.position); return this.options.position; }
+  async close() {
+    this.rendered = false;
+    this._el?.remove();
+    this._onClose?.({});
+    return this;
+  }
 }
 
 export const dialogs = [];
