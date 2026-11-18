@@ -11,6 +11,7 @@ import {
 import { draftOps } from "./review/ops.mjs";
 import { TURN_DEFAULT, cellKey } from "./data/world.mjs";
 import { LAYER_NAME } from "./canvas/hex-layer.mjs";
+import { oddRNeighbors } from "./gen/mapgen.mjs";
 
 const OPEN = [CLAIM_STATUS.pending, CLAIM_STATUS.check, CLAIM_STATUS.rolled];
 
@@ -56,6 +57,15 @@ export class FoundryGrid {
       this._v.set(k, v);
     }
     return v;
+  };
+
+  /** Соседние гексы: из сетки Foundry, иначе по правилу HEXODDR. */
+  neighbors = c => {
+    try {
+      const list = canvas.grid.getAdjacentOffsets?.({ i: c[0], j: c[1] });
+      if ( list?.length ) return list.map(o => [o.i, o.j]);
+    } catch { /* старый Foundry */ }
+    return oddRNeighbors(c);
   };
 
   /** Гекс на поле, если его центр внутри прямоугольника сцены. */

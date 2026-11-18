@@ -26,7 +26,8 @@ const TYPES = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/ja
   page.on("response", r => {
     if ( r.status() === 404 && !/\/icons\//.test(r.url()) ) errors.push(`404 ${r.url()}`);
   });
-  await page.goto(`http://localhost:${server.address().port}/tests/foundry/index.html`);
+  const shot = process.env.ART_SHOT;
+  await page.goto(`http://localhost:${server.address().port}/tests/foundry/index.html${shot ? "?shot" : ""}`);
   await page.waitForFunction(() => window.__done || window.__steps?.some(s => !s[1]), null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(300);
   const steps = await page.evaluate(() => window.__steps ?? []);
@@ -36,6 +37,7 @@ const TYPES = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/ja
     if ( !ok ) { bad++; console.log(`  ${String(err).split("\n").slice(0, 6).join("\n  ")}`); }
   }
   const done = await page.evaluate(() => !!window.__done);
+  if ( shot ) await page.screenshot({ path: shot });
   if ( !done ) { bad++; console.log("✗ сценарий не дошёл до конца"); }
   const extra = errors.filter(e => !steps.some(s => !s[1] && e.includes(s[0])));
   if ( extra.length ) { bad++; console.log("✗ ошибки в консоли:\n  " + extra.join("\n  ")); }

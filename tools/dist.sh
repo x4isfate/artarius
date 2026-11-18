@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 rm -rf dist && mkdir -p dist
-zip -qr dist/artarius.zip module.json LICENSE README.md CHANGELOG.md docs scripts templates styles lang
+zip -qr dist/artarius.zip module.json LICENSE README.md CHANGELOG.md docs scripts templates styles lang assets
 node -e '
 const fs = require("fs");
 const m = JSON.parse(fs.readFileSync("module.json", "utf8"));
