@@ -27,12 +27,15 @@ await import("../../scripts/main.mjs");
 const api = () => game.modules.get("artarius").api;
 const LAYER = "artarius";
 
-/** Нажатие мыши на холсте так, как его видит PIXI: событие на canvas.stage. */
-const press = (pt, { button = 0, shift = false, type = "both" } = {}) => {
-  const ev = { button, shiftKey: shift, altKey: false, ctrlKey: false, metaKey: false, target: canvas.stage,
-    global: { x: pt.x, y: pt.y }, getLocalPosition: () => ({ x: pt.x, y: pt.y }) };
-  if ( type !== "up" ) canvas.stage.emit("pointerdown", ev);
-  if ( type !== "down" ) canvas.stage.emit("pointerup", ev);
+/** Нажатие мыши на холсте: настоящее DOM-событие на элементе <canvas>, координаты экрана. */
+const press = (pt, { button = 0, shift = false, alt = false, type = "both" } = {}) => {
+  const el = canvas.app.view;
+  canvas.stage.transform.updateTransform(PIXI.Transform.IDENTITY);
+  const g = canvas.stage.worldTransform.apply(new PIXI.Point(pt.x, pt.y));
+  const r = el.getBoundingClientRect();
+  const init = { bubbles: true, cancelable: true, button, shiftKey: shift, altKey: alt, clientX: r.left + g.x, clientY: r.top + g.y, pointerId: 1 };
+  if ( type !== "up" ) el.dispatchEvent(new PointerEvent("pointerdown", init));
+  if ( type !== "down" ) el.dispatchEvent(new PointerEvent("pointerup", init));
 };
 const hexAt = c => grid.hm.center(c);
 const win = name => document.getElementById(`artarius-${name}`);
@@ -146,6 +149,51 @@ await check("Осмотр: щелчок по гексу открывает ка�
   assert(s.inspected?.join() === "2,3", `осмотрен ${s.inspected}`);
   assert(win("right")?.textContent.includes("Лес"), "в карточке нет зоны");
   s.closeRight();
+});
+
+await check("щелчок при чужой группе слева уходит Foundry", async () => {
+  const s = api().studio;
+  s.setTool("select", { toggle: false });
+  s.inspected = null;
+  const prev = { control: ui.controls.control, active: layer.active };
+  ui.controls.control = { name: "tokens" };
+  layer.active = false;
+  press(hexAt([4, 4]));
+  ui.controls.control = prev.control;
+  layer.active = prev.active;
+  assert(!s.inspected, `осмотрен ${s.inspected}`);
+  assert(api().debugInput(false) === false, "нет api.debugInput");
+  press(hexAt([4, 4]));
+  assert(s.inspected?.join() === "4,4", "после возврата группы щелчок не дошёл");
+  s.closeRight();
+});
+
+await check("линия по гексам и от руки на холсте", async () => {
+  const s = api().studio;
+  s.setTool("line", { toggle: false });
+  s.setLineMode("hex");
+  press(hexAt([1, 1]));
+  press(hexAt([1, 4]));
+  assert(s.line.points.length === 4, `точек ${s.line.points.length}`);
+  s.clearLine();
+  s.setLineMode("draw");
+  const before = api().getAtlas(scene).pages.size;
+  press({ x: 300, y: 300 }, { type: "down" });
+  const el = canvas.app.view;
+  const r = el.getBoundingClientRect();
+  for ( let x = 310; x <= 600; x += 15 ) {
+    const g = canvas.stage.worldTransform.apply(new PIXI.Point(x, 300 + (x % 30)));
+    el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: r.left + g.x, clientY: r.top + g.y, pointerId: 1 }));
+  }
+  press({ x: 600, y: 300 }, { type: "up" });
+  await F.settle();
+  const atlas = api().getAtlas(scene);
+  assert(atlas.pages.size === before + 1, "линия от руки не записана");
+  // Убрать линию, чтобы счёт страниц дальше не сбился.
+  const ids = atlas.pages.contents.filter(p => p.system.kind === "line").map(p => p.id);
+  await atlas.deleteEmbeddedDocuments("JournalEntryPage", [ids.at(-1)]);
+  await F.settle();
+  s.setLineMode("free");
 });
 
 await check("крестик окна инструмента выключает инструмент", async () => {
@@ -284,7 +332,7 @@ await check("импорт Azgaar ложится на гексы", async () => {
 await check("генератор: местность, ресурсы, державы игроков", async () => {
   Hooks.callAll("canvasReady", canvas);
   await F.settle();
-  const r = await api().generateTestWorld({ seed: "smoke", realmCount: 2, clear: true, water: 0.3, resources: 0.2 });
+  const r = await api().generateTestWorld({ seed: "smoke", realmCount: 2, clear: true, water: 0.3, resources: 0.2, rough: true });
   const pages = api().getAtlas(scene).pages.contents;
   assert(r.stats.terrain >= 3 && r.stats.realms === 2 && r.stats.resources > 0, JSON.stringify(r.stats));
   assert(pages.length === r.features.length, "старые элементы не удалены");
@@ -301,6 +349,9 @@ if ( location.search.includes("shot") ) {
   app.view.style.cssText = "position:fixed;left:0;top:0;z-index:0";
   const k = Math.min(1400 / grid.rect.width, 900 / grid.rect.height);
   layer.scale.set(k);
+  const realm = api().studio.types.find(t => t.id === "realm");
+  if ( realm ) await api().backend.saveType({ ...realm, style: { ...realm.style, pattern: "hatch" } });
+  await F.settle();
   app.stage.addChild(layer);
   layer.refresh(true);
   await new Promise(r => setTimeout(r, 1500));

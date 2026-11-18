@@ -111,5 +111,6 @@ export const WORLD_DEFAULTS = {
   enabled: false,
   baseColor: "#24496b",     // цвет пустого гекса: море
   gridColor: "#000000",
-  gridAlpha: 0.18
+  gridAlpha: 0.18,
+  rough: false              // неровные границы местности (данные всё равно по гексам)
 };

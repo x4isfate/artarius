@@ -1,6 +1,6 @@
 // Every button has a handler:
 //  - data-action in templates → actions of the owning window;
-//  - data-action / data-enter / action: "…" in the panels → keys of ArtariusUI#actions;
+//  - data-action / data-enter / data-change / action: "…" in the panels → keys of ArtariusUI#actions;
 //  - api.X() calls → keys of the module API in main.mjs.
 // Plus: no class field in an ApplicationV2 subclass may shadow a getter of the base class
 // (0.2.0 broke every window this way: a `form` field hid ApplicationV2#form).
@@ -59,7 +59,7 @@ for ( const file of ["scripts/apps/azgaar-app.mjs"] ) {
   const keys = new Set([...block.matchAll(/^\s*([A-Za-z]\w*)\s*:/gm)].map(m => m[1]));
   if ( !keys.size ) fail(`${file}: не найден get actions()`);
   const used = new Set([
-    ...[...src.matchAll(/data-(?:action|enter)="([A-Za-z]\w*)"/g)].map(m => m[1]),
+    ...[...src.matchAll(/data-(?:action|enter|change)="([A-Za-z]\w*)"/g)].map(m => m[1]),
     ...[...src.matchAll(/\baction:\s*"([A-Za-z]\w*)"/g)].map(m => m[1])
   ]);
   for ( const a of used ) if ( !keys.has(a) ) fail(`${file}: действие "${a}" без обработчика в get actions()`);
