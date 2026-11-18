@@ -1,9 +1,11 @@
 /**
- * Интерфейс гекс-мира на чистом DOM: круглое меню инструментов внизу слева,
- * панель инструмента слева, карточка гекса и заявки справа, полоска хода сверху.
+ * Интерфейс гекс-мира на чистом DOM: части turn (ход), left (инструмент),
+ * right (гекс и заявки), wheel (круглое меню, только в стенде без Foundry).
  *
- * Окна Foundry здесь не используются: панели живут поверх холста в своём корне,
- * все кнопки работают через data-action и одну делегированную подписку.
+ * Без хозяина части лежат поверх холста в своём корне #artarius-ui.
+ * С хозяином (ui/windows.mjs в Foundry) каждая часть живёт в своём окне
+ * ApplicationV2, а кнопки инструментов стоят в группе Артария слева.
+ * Все кнопки работают через data-action и делегированную подписку на части.
  * tools/check-buttons.mjs проверяет, что у каждого data-action есть обработчик.
  */
 import { esc, data, patch, icon, htmlToText } from "./dom.mjs";
@@ -25,9 +27,16 @@ const TOOL_ICONS = { select: "arrow-pointer", zone: "draw-polygon", mark: "locat
 export const EXTRA_ACTIONS = new Map();
 
 export default class ArtariusUI {
-  constructor(studio, backend, { mount = document.body } = {}) {
+  /**
+   * host — куда класть части интерфейса. Без него всё лежит в одном слое поверх холста
+   * (стенд). В Foundry host раскладывает части по окнам ApplicationV2: их можно
+   * двигать и растягивать, темы интерфейса оформляют их как свои окна.
+   * host: { wheel: bool, attach(name, el), show(name, on, { title }), setHidden(bool) }.
+   */
+  constructor(studio, backend, { mount = document.body, host = null } = {}) {
     this.studio = studio;
     this.backend = backend;
+    this.host = host;
     this.t = (k, d) => backend.t(k, d);
     this.root = document.createElement("div");
     this.root.id = "artarius-ui";
@@ -39,8 +48,17 @@ export default class ArtariusUI {
       <nav class="art-wheel" data-part="wheel"></nav>`;
     this.parts = Object.fromEntries([...this.root.querySelectorAll("[data-part]")].map(el => [el.dataset.part, el]));
     this.turnMenu = false;
-    this._bind();
-    mount.appendChild(this.root);
+    /** Окно хода открыто вручную (кнопкой) или закрыто игроком до следующего хода. */
+    this.turnOpen = false;
+    this.turnClosedAt = null;
+    for ( const el of Object.values(this.parts) ) this._bind(el);
+    if ( host ) {
+      for ( const [name, el] of Object.entries(this.parts) ) {
+        el.hidden = false;
+        if ( name === "wheel" && !host.wheel ) { el.remove(); delete this.parts.wheel; continue; }
+        host.attach(name, el);
+      }
+    } else mount.appendChild(this.root);
     this._unsub = studio.subscribe(what => { if ( what !== "overlay" ) this.render(); });
     this.render();
   }
@@ -50,16 +68,61 @@ export default class ArtariusUI {
     this.root.remove();
   }
 
-  set hidden(v) { this.root.hidden = !!v; }
+  set hidden(v) {
+    this._hidden = !!v;
+    if ( this.host ) {
+      this.host.setHidden(this._hidden);
+      if ( !this._hidden ) this.render();
+    } else this.root.hidden = this._hidden;
+  }
+
+  get hidden() { return !!this._hidden; }
+
+  /** Окно закрыли крестиком: привести состояние студии в соответствие. */
+  windowClosed(name) {
+    const s = this.studio;
+    if ( name === "left" && s.tool ) s.setTool(null, { toggle: false });
+    else if ( name === "right" && s.rightOpen ) s.closeRight();
+    else if ( name === "turn" ) {
+      this.turnOpen = false;
+      this.turnClosedAt = this._turnKey();
+    }
+  }
+
+  /** Открыть или закрыть окно хода (кнопка в колонке инструментов). */
+  toggleTurn() {
+    const visible = this._turnVisible();
+    this.turnOpen = !visible;
+    this.turnClosedAt = visible ? this._turnKey() : null;
+    this.render();
+  }
+
+  _turnKey() {
+    const t = this.studio.turn();
+    return `${t.enabled}:${t.round}:${t.index}`;
+  }
+
+  /** Окно хода видно, когда ходы идут (пока игрок не закрыл его на этом ходу) или открыто вручную. */
+  _turnVisible() {
+    if ( !this.host ) return true;
+    if ( this.turnOpen ) return true;
+    return !!this.studio.turn().enabled && this.turnClosedAt !== this._turnKey();
+  }
+
+  _show(name, on, title) {
+    if ( this.host ) {
+      if ( !this._hidden ) this.host.show(name, on, { title });
+    } else if ( this.parts[name] ) this.parts[name].hidden = !on;
+  }
 
   /* ---------------------------------------------------------------- */
   /*  События                                                           */
   /* ---------------------------------------------------------------- */
 
-  _bind() {
-    this.root.addEventListener("click", ev => {
+  _bind(target) {
+    target.addEventListener("click", ev => {
       const el = ev.target.closest("[data-action]");
-      if ( !el || !this.root.contains(el) || el.disabled ) return;
+      if ( !el || !target.contains(el) || el.disabled ) return;
       ev.preventDefault();
       ev.stopPropagation();
       const fn = this.actions[el.dataset.action];
@@ -80,10 +143,10 @@ export default class ArtariusUI {
         this.studio.setField(el.dataset.id, el.dataset.field, el.value);
       }
     };
-    this.root.addEventListener("input", onInput);
-    this.root.addEventListener("change", onInput);
+    target.addEventListener("input", onInput);
+    target.addEventListener("change", onInput);
     // Клавиши в полях не должны уходить в Foundry (WASD двигает камеру, Delete удаляет токены).
-    this.root.addEventListener("keydown", ev => {
+    target.addEventListener("keydown", ev => {
       if ( ev.target.matches("input, textarea, select") ) {
         ev.stopPropagation();
         if ( ev.key === "Enter" && ev.target.dataset.enter ) {
@@ -94,7 +157,7 @@ export default class ArtariusUI {
       }
     });
     // Колесо над панелью крутит панель, а не масштаб карты.
-    this.root.addEventListener("wheel", ev => ev.stopPropagation(), { passive: true });
+    target.addEventListener("wheel", ev => ev.stopPropagation(), { passive: true });
   }
 
   _setModel(path, value) {
@@ -182,12 +245,14 @@ export default class ArtariusUI {
   render() {
     const s = this.studio;
     try {
-      patch(this.parts.wheel, this.renderWheel());
-      patch(this.parts.turn, this.renderTurn());
-      this.parts.left.hidden = !s.tool;
+      if ( this.parts.wheel ) patch(this.parts.wheel, this.renderWheel());
+      const turnOn = this._turnVisible();
+      if ( turnOn ) patch(this.parts.turn, this.renderTurn());
+      this._show("turn", turnOn, this.t("ART.Turn.title"));
       if ( s.tool ) patch(this.parts.left, this.renderLeft());
-      this.parts.right.hidden = !s.rightOpen;
+      this._show("left", !!s.tool, s.tool ? this.t(`ART.Tool.${s.tool}`) : "");
       if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
+      this._show("right", s.rightOpen, this.t(s.rightTab === "queue" ? "ART.Queue.title" : "ART.Card.tab"));
     } catch(err) {
       console.error("artarius | render", err);
     }

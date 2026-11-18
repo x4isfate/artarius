@@ -27,6 +27,17 @@ await import("../../scripts/main.mjs");
 const api = () => game.modules.get("artarius").api;
 const LAYER = "artarius";
 
+/** Нажатие мыши на холсте так, как его видит PIXI: событие на canvas.stage. */
+const press = (pt, { button = 0, shift = false, type = "both" } = {}) => {
+  const ev = { button, shiftKey: shift, altKey: false, ctrlKey: false, metaKey: false, target: canvas.stage,
+    global: { x: pt.x, y: pt.y }, getLocalPosition: () => ({ x: pt.x, y: pt.y }) };
+  if ( type !== "up" ) canvas.stage.emit("pointerdown", ev);
+  if ( type !== "down" ) canvas.stage.emit("pointerup", ev);
+};
+const hexAt = c => grid.hm.center(c);
+const win = name => document.getElementById(`artarius-${name}`);
+const tick = () => new Promise(r => setTimeout(r, 20));
+
 await check("init: слой, модель, настройки, API", async () => {
   Hooks.callAll("init");
   await F.settle();
@@ -36,10 +47,15 @@ await check("init: слой, модель, настройки, API", async () =>
   for ( const k of ["turn", "hiddenLayers", "autoApplyOnSuccess", "trustedUsers", "guideSeen", "checkUpdates", "notifiedVersion"] ) game.settings.get("artarius", k);
 });
 
-await check("ready: панели в DOM", async () => {
+await check("ready: панели собраны, круглого меню нет", async () => {
   Hooks.callAll("ready");
   await F.settle();
-  assert(document.getElementById("artarius-ui"), "нет #artarius-ui");
+  const parts = Object.keys(api().layer ? {} : {});
+  const ui2 = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
+  assert(ui2?.parts?.left && ui2.parts.right && ui2.parts.turn, "нет частей интерфейса");
+  assert(!ui2.parts.wheel, "круглое меню осталось");
+  assert(!document.getElementById("artarius-ui"), "слой поверх холста остался");
+  void parts;
 });
 
 let layer;
@@ -51,9 +67,7 @@ await check("canvasReady: атлас создан, панели видны", asy
   const atlas = api().getAtlas(scene);
   assert(atlas, "атлас не создан");
   assert(atlas.getFlag("artarius", "version") === 3, "версия атласа не 3");
-  assert(!document.getElementById("artarius-ui").hidden, "панели спрятаны на сцене Артария");
-  const left = getComputedStyle(document.getElementById("artarius-ui")).getPropertyValue("--art-left");
-  assert(left.trim() === "76px", `отступ от левой колонки ${left}`);
+  assert(!win("left") && !win("right"), "окна открыты без инструмента");
 });
 
 await check("слой рисует пустой мир", async () => {
@@ -66,9 +80,19 @@ await check("слой рисует пустой мир", async () => {
 await check("группа инструментов слева", async () => {
   const c = CONFIG.Canvas.layers[LAYER].layerClass.prepareSceneControls();
   assert(c.name === LAYER && c.layer === LAYER && c.visible === true, "группа не видна на сцене Артария");
-  assert(Object.keys(c.tools).join() === "select,zone,mark,line", "не те инструменты");
+  const names = Object.keys(c.tools);
+  for ( const n of ["select", "zone", "mark", "line", "queue", "turn", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
+  assert(c.tools.queue.button && c.tools.generator.visible, "кнопки не кнопки или генератор скрыт от мастера");
   c.onToolChange(new Event("x"), c.tools.mark, true);
   assert(api().studio.tool === "mark", "инструмент из панели не выбран");
+  await tick();
+  assert(win("left")?.textContent.includes("Метка"), "окно инструмента не открылось с заголовком");
+  c.tools.queue.onChange(new Event("x"), true);
+  await tick();
+  assert(api().studio.rightOpen && api().studio.rightTab === "queue" && win("right"), "заявки не открылись");
+  api().studio.closeRight();
+  await tick();
+  assert(!win("right"), "окно заявок не закрылось");
 });
 
 await check("мастер: зона из двух гексов пишется в атлас", async () => {
@@ -76,13 +100,13 @@ await check("мастер: зона из двух гексов пишется в
   s.setTool("zone", { toggle: false });
   assert(F.controlCalls.at(-1)?.control === LAYER, "слой не включён через ui.controls");
   layer.activate();
-  const a = grid.hm.center([2, 3]), b = grid.hm.center([2, 4]);
-  layer._onClickLeft({ interactionData: { origin: a } });
-  layer._onClickLeft({ interactionData: { origin: b } });
+  press(hexAt([2, 3]));
+  press(hexAt([2, 4]));
   await F.settle();
   assert(s.selection.size === 2, `выбрано ${s.selection.size}`);
   s.zone.typeId = "forest";
-  document.querySelector('#artarius-ui [data-action="attach"]').click();
+  await tick();
+  win("left").querySelector('[data-action="attach"]').click();
   await F.settle();
   const pages = api().getAtlas(scene).pages.contents;
   assert(pages.length === 1, `страниц ${pages.length}`);
@@ -93,26 +117,55 @@ await check("мастер: зона из двух гексов пишется в
 await check("мастер: метка и линия", async () => {
   const s = api().studio;
   s.setTool("mark", { toggle: false });
-  layer._onClickLeft({ interactionData: { origin: grid.hm.center([5, 5]) } });
-  await F.settle();
-  document.querySelector('#artarius-ui [data-action="placeMarks"]').click();
+  press(hexAt([5, 5]));
+  await tick();
+  win("left").querySelector('[data-action="placeMarks"]').click();
   await F.settle();
   s.setTool("line", { toggle: false });
-  layer._onClickLeft({ interactionData: { origin: { x: 50, y: 50 } } });
-  layer._onClickLeft({ interactionData: { origin: { x: 400, y: 300 } } });
-  layer._onClickLeft2({});
+  press({ x: 50, y: 50 });
+  const p1n = s.line.points.length;
+  await new Promise(r => setTimeout(r, 400));
+  press({ x: 400, y: 300 });
+  const p2n = s.line.points.length;
+  assert(p1n === 1 && p2n === 2, `точки после щелчков: ${p1n}, ${p2n}`);
+  await new Promise(r => setTimeout(r, 400));
+  press({ x: 600, y: 300 }, { button: 2 });
+  assert(s.line.points.length === 1, `правый щелчок не убрал точку: ${JSON.stringify(s.line.points)} tool=${s.tool}`);
+  press({ x: 400, y: 300 });
+  press({ x: 400, y: 300 });
   await F.settle();
   const kinds = api().getAtlas(scene).pages.contents.map(p => p.system.kind).sort();
   assert(kinds.join() === "area,line,object", `элементы ${kinds}`);
 });
 
-await check("Осмотр и showFeature открывают гекс", async () => {
+await check("Осмотр: щелчок по гексу открывает карточку", async () => {
+  const s = api().studio;
+  s.setTool("select", { toggle: false });
+  press(hexAt([2, 3]));
+  await tick();
+  assert(s.inspected?.join() === "2,3", `осмотрен ${s.inspected}`);
+  assert(win("right")?.textContent.includes("Лес"), "в карточке нет зоны");
+  s.closeRight();
+});
+
+await check("крестик окна инструмента выключает инструмент", async () => {
+  const ui2 = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
+  api().studio.setTool("zone", { toggle: false });
+  await tick();
+  await ui2.host.windows.left.close();
+  assert(api().studio.tool === null, "инструмент остался");
+  await tick();
+  assert(!win("left"), "окно снова открылось");
+});
+
+await check("showFeature открывает гекс", async () => {
   const zone = api().getAtlas(scene).pages.contents.find(p => p.system.kind === "area");
   api().showFeature(zone.id);
   const s = api().studio;
   assert(s.rightOpen && s.inspected, "карточка не открыта");
   assert(canvas.panned, "камера не сдвинута");
-  assert(document.querySelector("#artarius-ui .art-right:not([hidden])"), "правая панель скрыта");
+  await tick();
+  assert(win("right"), "окно гекса не открылось");
 });
 
 await check("скрытый слой сохраняется в настройке клиента", async () => {
@@ -126,7 +179,7 @@ await check("игрок: правка уходит в черновик, заяв
   const s = api().studio;
   s.setTool("zone", { toggle: false });
   s.clearSelection();
-  layer._onClickLeft({ interactionData: { origin: grid.hm.center([7, 7]) } });
+  press(hexAt([7, 7]));
   s.zone.target = "new";
   s.zone.typeId = "realm";
   await s.attach();
@@ -161,6 +214,8 @@ await check("ходы: порядок, передача, сообщение в �
   await s.passTurn();
   await F.settle();
   assert(F.created.messages.length >= 1, "нет сообщения о ходе");
+  await tick();
+  assert(win("turn"), "окно хода не открылось при включённых ходах");
 });
 
 await check("настройки сцены: галочка режима", async () => {
@@ -191,7 +246,8 @@ await check("обычная сцена: панели спрятаны, груп�
   canvas.scene = plain;
   Hooks.callAll("canvasReady", canvas);
   await F.settle();
-  assert(document.getElementById("artarius-ui").hidden, "панели видны на обычной сцене");
+  await tick();
+  assert(!document.querySelector(".artarius-part"), "окна открыты на обычной сцене");
   const c = CONFIG.Canvas.layers[LAYER].layerClass.prepareSceneControls();
   assert(c.visible === false, "группа видна на обычной сцене");
   const l2 = new CONFIG.Canvas.layers[LAYER].layerClass();
@@ -224,5 +280,30 @@ await check("импорт Azgaar ложится на гексы", async () => {
   const r = await api().importAzgaar(data, scene, {});
   assert(r.stats.terrain === 2 && r.stats.states === 2, JSON.stringify(r.stats));
 });
+
+await check("генератор: местность, ресурсы, державы игроков", async () => {
+  Hooks.callAll("canvasReady", canvas);
+  await F.settle();
+  const r = await api().generateTestWorld({ seed: "smoke", realmCount: 2, clear: true, water: 0.3, resources: 0.2 });
+  const pages = api().getAtlas(scene).pages.contents;
+  assert(r.stats.terrain >= 3 && r.stats.realms === 2 && r.stats.resources > 0, JSON.stringify(r.stats));
+  assert(pages.length === r.features.length, "старые элементы не удалены");
+  const types = api().getAtlas(scene).getFlag("artarius", "types").map(t => t.id);
+  assert(types.includes("res-iron") && types.includes("forest"), "типы ресурсов не добавлены");
+  const realm = pages.find(p => p.system.typeId === "realm");
+  assert(realm.name.includes("Огонь"), `держава ${realm.name}`);
+});
+
+// ?shot: показать холст слоя, чтобы снять картинку сгенерированного мира.
+if ( location.search.includes("shot") ) {
+  const app = new PIXI.Application({ width: 1400, height: 900, background: "#111111", antialias: true });
+  document.body.appendChild(app.view);
+  app.view.style.cssText = "position:fixed;left:0;top:0;z-index:0";
+  const k = Math.min(1400 / grid.rect.width, 900 / grid.rect.height);
+  layer.scale.set(k);
+  app.stage.addChild(layer);
+  layer.refresh(true);
+  await new Promise(r => setTimeout(r, 1500));
+}
 
 window.__done = true;
