@@ -88,8 +88,27 @@ export default class MemoryBackend {
   toggleLayer(id) {
     const l = this.atlasLayers.find(x => x.id === id);
     if ( l ) l.visible = l.visible === false;
+    else {
+      this._hiddenParts ??= new Set();
+      if ( this._hiddenParts.has(id) ) this._hiddenParts.delete(id); else this._hiddenParts.add(id);
+    }
     this.emit();
   }
+
+  hiddenIds() {
+    return new Set([...this.atlasLayers.filter(l => l.visible === false).map(l => l.id), ...(this._hiddenParts ?? [])]);
+  }
+
+  setHidden(ids) {
+    const h = new Set(ids);
+    for ( const l of this.atlasLayers ) l.visible = !h.has(l.id);
+    this._hiddenParts = new Set([...h].filter(id => id.startsWith("@")));
+    this.emit();
+  }
+
+  customPresets() { return clone(this._presets ?? []); }
+  setCustomPresets(list) { this._presets = clone(list); this.emit(); }
+  prompt(title, value = "") { return Promise.resolve(globalThis.prompt?.(title, value) ?? value); }
 
   revOf(id) { return this.atlas.get(id)?.system?.rev; }
 

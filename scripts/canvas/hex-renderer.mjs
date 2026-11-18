@@ -5,7 +5,8 @@
  */
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
-import { catmullRom, meander, ribbon, dashPolyline, midpoint } from "../geometry/geometry.mjs";
+import { isResourceType } from "../data/view.mjs";
+import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
 
 const color = c => {
   try { return foundry.utils.Color.from(c || "#ffffff").valueOf(); }
@@ -22,6 +23,32 @@ function makeLabel(text, size, fill) {
   const t = new PreciseText(text ?? "", style);
   t.anchor.set(0.5, 0.5);
   return t;
+}
+
+/**
+ * Отрезки параллельных линий направления dir с шагом step внутри выпуклого многоугольника ring.
+ * Линии привязаны к началу координат, поэтому у соседних гексов они продолжают друг друга.
+ */
+export function hatchSegments(ring, dir, step) {
+  const len = Math.hypot(dir[0], dir[1]) || 1;
+  const d = [dir[0] / len, dir[1] / len];
+  const n = [-d[1], d[0]];
+  const proj = ring.map(([x, y]) => (x * n[0]) + (y * n[1]));
+  const lo = Math.ceil(Math.min(...proj) / step), hi = Math.floor(Math.max(...proj) / step);
+  const out = [];
+  for ( let k = lo; k <= hi; k++ ) {
+    const c = k * step;
+    const hits = [];
+    for ( let e = 0; e < ring.length; e++ ) {
+      const a = ring[e], b = ring[(e + 1) % ring.length];
+      const pa = proj[e] - c, pb = proj[(e + 1) % ring.length] - c;
+      if ( (pa < 0) === (pb < 0) || pa === pb ) continue;
+      const t = pa / (pa - pb);
+      hits.push([a[0] + ((b[0] - a[0]) * t), a[1] + ((b[1] - a[1]) * t)]);
+    }
+    if ( hits.length >= 2 ) out.push([hits[0], hits[1]]);
+  }
+  return out;
 }
 
 const GHOST = { create: 0x5fcf6f, update: 0xe8c27a, delete: 0xff6a5a };
@@ -64,7 +91,9 @@ export default class HexRenderer {
   }
 
   /** Зоны, линии, метки и подписи. */
-  drawData(states, types, layers) {
+  drawData(states, types, layers, world = {}, view = {}) {
+    this.rough = !!world.rough;
+    const show = { marks: true, resources: true, lines: true, labels: true, ...view };
     for ( const c of [this.zones, this.lines, this.marks, this.labels] ) this._clear(c);
     const hidden = new Set(layers.filter(l => l.visible === false).map(l => l.id));
     const order = new Map(layers.map((l, n) => [l.id, n]));
@@ -73,19 +102,35 @@ export default class HexRenderer {
       .sort((a, b) => ((order.get(layerIdOf(a, types)) ?? 99) - (order.get(layerIdOf(b, types)) ?? 99))
         || ((a.system.sort ?? 0) - (b.system.sort ?? 0)));
     const vis = visibleZoneCells(zones, types, layers);
-    for ( const z of zones ) this._drawZone(z, vis.get(z.id) ?? [], resolveStyleOf(z, types));
-    for ( const l of all.filter(s => s.system.kind === "line") ) this._drawLine(l, resolveStyleOf(l, types));
-    for ( const m of all.filter(s => s.system.kind === "object") ) this._drawMark(m, resolveStyleOf(m, types));
+    const inside = c => this.grid.inBounds(c);
+    for ( const z of zones ) {
+      const cells = (vis.get(z.id) ?? []).filter(inside);
+      this._drawZone(z, cells, resolveStyleOf(z, types), layerIdOf(z, types));
+    }
+    if ( show.lines ) for ( const l of all.filter(s => s.system.kind === "line") ) this._drawLine(l, resolveStyleOf(l, types));
+    for ( const m of all.filter(s => s.system.kind === "object") ) {
+      if ( !(isResourceType(m.system.typeId) ? show.resources : show.marks) ) continue;
+      this._drawMark(m, resolveStyleOf(m, types));
+    }
+    this.labels.visible = show.labels;
   }
 
-  _drawZone(state, cells, style) {
+  _drawZone(state, cells, style, layerId) {
     if ( !cells.length ) return;
     const g = new PIXI.Graphics();
     const solid = (style.alpha ?? 0.3) >= 1;
+    // Неровные границы только у местности: державы и области остаются ровно по гексам.
+    const rough = this.rough && layerId === "terrain";
+    const amp = this.grid.radius * 0.3;
     g.beginFill(color(style.color), style.alpha ?? 0.3);
-    if ( solid ) g.lineStyle({ width: 1, color: 0x000000, alpha: 0.18 });
-    for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
+    for ( const c of cells ) g.drawPolygon(rough ? roughPolygon(this.grid.vertices(c), amp) : flatV(this.grid.vertices(c)));
     g.endFill();
+    if ( solid ) {
+      g.lineStyle({ width: 1, color: 0x000000, alpha: 0.18 });
+      for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
+      g.lineStyle(0);
+    }
+    if ( style.pattern && style.pattern !== "none" ) this._drawPattern(g, cells, style);
     if ( style.borderWidth > 0 ) {
       g.lineStyle({
         width: style.borderWidth, color: color(style.borderColor || style.color), alpha: style.borderAlpha ?? 0.95,
@@ -103,6 +148,42 @@ export default class HexRenderer {
       t.position.set(p.x, p.y);
       this.labels.addChild(t);
     }
+  }
+
+  /**
+   * Штриховка зоны. Значки (крестики, точки) ставятся в каждый гекс,
+   * линии считаются для каждого гекса отдельно и обрезаются его краями.
+   */
+  _drawPattern(g, cells, style) {
+    const r = this.grid.radius;
+    const col = color(style.patternColor || "#1a1a1a");
+    const alpha = style.patternAlpha ?? 0.55;
+    const width = Math.max(1.5, r / 22);
+    g.lineStyle({ width, color: col, alpha, cap: PIXI.LINE_CAP.ROUND });
+    const p = style.pattern;
+    for ( const c of cells ) {
+      const { x, y } = this.grid.center(c);
+      if ( p === "cross" ) {
+        const k = r * 0.16;
+        for ( const [dx, dy] of [[-0.38, -0.2], [0.38, -0.2], [0, 0.42]] ) {
+          const cx = x + (dx * r), cy = y + (dy * r);
+          g.moveTo(cx - k, cy - k).lineTo(cx + k, cy + k).moveTo(cx - k, cy + k).lineTo(cx + k, cy - k);
+        }
+      } else if ( p === "dots" ) {
+        g.lineStyle(0).beginFill(col, alpha);
+        for ( const [dx, dy] of [[-0.42, -0.25], [0.42, -0.25], [0, 0], [-0.42, 0.25], [0.42, 0.25], [0, -0.5], [0, 0.5]] ) {
+          g.drawCircle(x + (dx * r), y + (dy * r), width * 1.3);
+        }
+        g.endFill().lineStyle({ width, color: col, alpha, cap: PIXI.LINE_CAP.ROUND });
+      } else {
+        const ring = this.grid.vertices(c).map(v => [v.x, v.y]);
+        const dirs = { hatch: [[1, -1]], crosshatch: [[1, -1], [1, 1]], vertical: [[0, 1]] }[p] ?? [];
+        for ( const d of dirs ) {
+          for ( const [a, b] of hatchSegments(ring, d, r * 0.42) ) g.moveTo(a[0], a[1]).lineTo(b[0], b[1]);
+        }
+      }
+    }
+    g.lineStyle(0);
   }
 
   _drawLine(state, style) {

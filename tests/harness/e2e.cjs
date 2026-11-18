@@ -11,7 +11,8 @@ const TYPES = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/ja
 
 function serve() {
   const server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    // Foundry отдаёт модуль по modules/artarius/…: здесь это корень репозитория.
+    const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^.*\/modules\/artarius\//, "/");
     // Значков Foundry на стенде нет: отдаём простой кружок.
     if ( pathname.includes("/icons/") ) {
       res.writeHead(200, { "content-type": "image/svg+xml" });

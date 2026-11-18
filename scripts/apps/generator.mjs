@@ -7,6 +7,8 @@ import { getAtlas, ensureAtlas, getAtlasTypes, getLayers, setTypes, setLayers, a
 import { generateWorld, withResourceTypes, GEN_DEFAULTS } from "../gen/mapgen.mjs";
 import { upgradedTypesAndLayers } from "../data/store.mjs";
 import { esc } from "../ui/dom.mjs";
+import { resizeWorld, sceneDims } from "./world-size.mjs";
+import { worldOf } from "../foundry-backend.mjs";
 
 const L = k => game.i18n.localize(k);
 const players = () => game.users.filter(u => !u.isGM);
@@ -17,18 +19,29 @@ export async function openGenerator() {
   const api = game.modules.get(MODULE_ID).api;
   if ( !api.isWorldScene() ) return ui.notifications.warn(L("VMAP.Azgaar.noScene"));
   const seed = Math.floor(Math.random() * 1e9).toString(36);
-  const n = players().length;
+  // Без игроков тестовому миру всё равно нужны державы.
+  const n = players().length || 3;
+  const d = sceneDims(canvas.scene);
+  const rough = worldOf(canvas.scene).rough || !canvas.scene.getFlag(MODULE_ID, "world")?.roughSet;
   const pct = v => Math.round(v * 100);
   const result = await foundry.applications.api.DialogV2.prompt({
     window: { title: L("ART.Gen.title"), icon: "fa-solid fa-mountain-sun" },
     position: { width: 420 },
     content: `<p class="hint">${esc(L("ART.Gen.hint"))}</p>
+      <fieldset><legend>${esc(L("ART.World.size"))}</legend>
+        <div class="form-group"><label>${esc(L("ART.Scene.cols"))}</label><div class="form-fields"><input type="number" name="cols" value="${d.cols}" min="5" max="300"></div></div>
+        <div class="form-group"><label>${esc(L("ART.Scene.rows"))}</label><div class="form-fields"><input type="number" name="rows" value="${d.rows}" min="5" max="300"></div></div>
+        <div class="form-group"><label>${esc(L("ART.Scene.size"))}</label><div class="form-fields"><input type="number" name="size" value="${d.size}" min="30" max="400" step="5"></div>
+          <p class="hint">${esc(L("ART.Gen.sizeHint"))}</p></div>
+      </fieldset>
       <div class="form-group"><label>${esc(L("ART.Gen.seed"))}</label><div class="form-fields"><input type="text" name="seed" value="${esc(seed)}"></div></div>
       <div class="form-group"><label>${esc(L("ART.Gen.water"))}</label><div class="form-fields"><input type="number" name="water" value="${pct(GEN_DEFAULTS.water)}" min="0" max="80" step="5"></div></div>
       <div class="form-group"><label>${esc(L("ART.Gen.mountains"))}</label><div class="form-fields"><input type="number" name="mountains" value="${pct(GEN_DEFAULTS.mountains)}" min="0" max="40" step="1"></div></div>
       <div class="form-group"><label>${esc(L("ART.Gen.resources"))}</label><div class="form-fields"><input type="number" name="resources" value="${pct(GEN_DEFAULTS.resources)}" min="0" max="60" step="1"></div></div>
       <div class="form-group"><label>${esc(L("ART.Gen.realms"))}</label><div class="form-fields"><input type="number" name="realms" value="${n}" min="0" max="12" step="1"></div>
         <p class="hint">${esc(L("ART.Gen.realmsHint"))}</p></div>
+      <div class="form-group"><label>${esc(L("ART.World.rough"))}</label><div class="form-fields"><input type="checkbox" name="rough" ${rough ? "checked" : ""}></div>
+        <p class="hint">${esc(L("ART.World.roughHint"))}</p></div>
       <div class="form-group"><label>${esc(L("ART.Gen.clear"))}</label><div class="form-fields"><input type="checkbox" name="clear" checked></div>
         <p class="hint">${esc(L("ART.Gen.clearHint"))}</p></div>`,
     ok: {
@@ -43,7 +56,9 @@ export async function openGenerator() {
           mountains: num(f.mountains, 40) / 100,
           resources: num(f.resources, 60) / 100,
           realmCount: Math.round(num(f.realms, 12)),
-          clear: f.clear.checked
+          clear: f.clear.checked,
+          rough: f.rough.checked,
+          cols: Number(f.cols.value), rows: Number(f.rows.value), size: Number(f.size.value)
         };
       }
     },
@@ -57,12 +72,22 @@ export async function openGenerator() {
 
 /**
  * Создать тестовый мир на текущей сцене. Есть в API для макросов.
- * options: { seed, water, mountains, resources, realmCount, realms?, clear }.
+ * options: { seed, water, mountains, resources, realmCount, realms?, clear, cols?, rows?, size?, rough? }.
+ * cols, rows, size — размер поля: сцена перестраивается до генерации. rough — неровные берега.
  * realms — свои державы [{ name, color?, demiurge? }]; без них по державе на игрока.
  */
 export async function generateTestWorld(options = {}) {
   if ( !game.user.isGM ) throw new Error(L("ART.Gen.gmOnly"));
-  const scene = canvas.scene;
+  let scene = canvas.scene;
+  // Сначала поле нужного размера: генератор заполняет всё, что есть на сцене.
+  if ( options.cols || options.rows || options.size ) {
+    const d = sceneDims(scene);
+    await resizeWorld(scene, { cols: options.cols ?? d.cols, rows: options.rows ?? d.rows, size: options.size ?? d.size });
+    scene = canvas.scene;
+  }
+  if ( options.rough !== undefined ) {
+    await scene.update({ [`flags.${MODULE_ID}.world`]: { ...worldOf(scene), rough: !!options.rough, roughSet: true } });
+  }
   const api = game.modules.get(MODULE_ID).api;
   const grid = api.backend.grid;
   const atlas = getAtlas(scene) ?? await ensureAtlas(scene);

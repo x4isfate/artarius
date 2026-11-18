@@ -56,6 +56,8 @@
 }
 .artarius .art-btn:not(:disabled):hover { border-color: var(--art-ink); }
 .artarius .art-btn.active { border-color: var(--art-warn); color: var(--art-warn); }
+.artarius .art-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-seg .art-btn { flex: 1 1 auto; }
 .artarius .art-btn.art-accent { background: var(--art-accent); border-color: var(--art-accent); color: var(--art-accent-ink); }
 .artarius .art-btn.art-danger:not(:disabled):hover { border-color: var(--art-bad); color: var(--art-bad); }
 .artarius .art-btn.art-wide { width: 100%; }
@@ -169,6 +171,9 @@
 .artarius .art-icon-pick { width: 32px; height: 32px; padding: 3px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); }
 .artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; filter: invert(0.9); }
 .artarius .art-icon-pick.active { border-color: var(--art-warn); }
+.artarius .art-patterns { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-pattern-pick { width: 32px; height: 32px; padding: 3px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); color: var(--art-text, #ddd); display: grid; place-items: center; }
+.artarius .art-pattern-pick.active { border-color: var(--art-warn); }
 
 /* Зоны ------------------------------------------------------------- */
 
