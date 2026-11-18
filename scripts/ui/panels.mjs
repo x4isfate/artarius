@@ -15,7 +15,7 @@ import { KIND_TOOL } from "../constants.mjs";
 export const MARK_ICONS = [
   "icons/svg/city.svg", "icons/svg/village.svg", "icons/svg/castle.svg", "icons/svg/temple.svg",
   "icons/svg/tower.svg", "icons/svg/ruins.svg", "icons/svg/cave.svg", "icons/svg/mountain.svg",
-  "icons/svg/anchor.svg", "icons/svg/windmill.svg", "icons/svg/skull.svg", "icons/svg/hanging-sign.svg",
+  "icons/svg/house.svg", "icons/svg/windmill.svg", "icons/svg/skull.svg", "icons/svg/hanging-sign.svg",
   "icons/svg/tree.svg", "icons/svg/fire.svg", "icons/svg/sun.svg", "icons/svg/coins.svg"
 ];
 
@@ -206,6 +206,7 @@ export default class ArtariusUI {
       { action: "help", icon: "circle-question", label: this.t("ART.Guide.title") }
     ];
     for ( const [id, a] of EXTRA_ACTIONS ) {
+      if ( a.gmOnly && !this.backend.isGM ) continue;
       if ( a.visible && !a.visible() ) continue;
       items.push({ action: "extra", attrs: { id }, icon: a.icon ?? "star", label: a.label ?? id });
     }

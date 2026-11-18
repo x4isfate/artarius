@@ -59,4 +59,8 @@ export function patch(node, html) {
 }
 
 /** Иконка Font Awesome. */
-export const icon = (name, extra = "") => `<i class="fa-solid fa-${name}${extra ? ` ${extra}` : ""}" aria-hidden="true"></i>`;
+/** Значок Font Awesome: короткое имя ("scroll") или полные классы ("fa-solid fa-scroll"). */
+export const icon = (name, extra = "") => {
+  const cls = String(name).includes("fa-") ? String(name) : `fa-solid fa-${name}`;
+  return `<i class="${esc(cls)}${extra ? ` ${extra}` : ""}" aria-hidden="true"></i>`;
+};

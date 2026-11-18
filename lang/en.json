@@ -1,51 +1,7 @@
 {
   "VMAP": {
-    "Control": {
-      "title": "World map"
-    },
-    "Tool": {
-      "select": "Select",
-      "object": "Object",
-      "line": "Line",
-      "area": "Area",
-      "erase": "Eraser",
-      "claims": "Claims",
-      "atlas": "Types and layers",
-      "guide": "How to play",
-      "azgaar": "Map from Azgaar"
-    },
-    "Hint": {
-      "select": "Click selects, double-click opens the sheet. Drag objects and line points. Delete removes.",
-      "object": "Click places an object and opens its sheet.",
-      "line": "Click adds a point, double-click finishes, right-click removes the last point.",
-      "area": "Drag over cells to paint them. Hold Alt to draw a freehand outline.",
-      "erase": "Select an area and drag over cells to erase. Hold Alt to cut a freehand outline."
-    },
-    "Kind": {
-      "object": "Object",
-      "line": "Line",
-      "area": "Area"
-    },
-    "Blend": {
-      "replace": "Replaces",
-      "overlay": "Overlay (disputed land)"
-    },
     "Atlas": {
-      "name": "Atlas: {scene}",
-      "config": "Atlas types and layers",
-      "layers": "Layers",
-      "typesHint": "A type's look applies to all its features unless a feature overrides it.",
-      "layersHint": "Areas live on layers. A hidden layer is not drawn for anyone. The top layer in the list is drawn first.",
-      "addType": "New type",
-      "newType": "New type",
-      "removeType": "Delete type",
-      "removeTypeConfirm": "Delete type “{name}”? Its features stay and fall back to the default look.",
-      "addLayer": "New layer",
-      "newLayer": "New layer",
-      "removeLayer": "Delete layer",
-      "removeLayerConfirm": "Delete layer “{name}”? Its areas stay but belong to no layer.",
-      "toggleLayer": "Show or hide",
-      "lastLayer": "At least one layer is required."
+      "name": "Atlas: {scene}"
     },
     "Feature": {
       "unnamed": "Unnamed",
@@ -86,39 +42,6 @@
       "within": "Stands on:",
       "withinNone": "No area is drawn here."
     },
-    "Style": {
-      "icon": "Icon",
-      "color": "Color",
-      "size": "Size",
-      "labelSize": "Label size",
-      "widthStart": "Start width",
-      "widthEnd": "End width",
-      "dash": "Dash",
-      "gap": "Gap",
-      "meander": "Meander",
-      "outlineWidth": "Outline",
-      "outlineColor": "Outline color",
-      "alpha": "Fill opacity",
-      "borderColor": "Border color",
-      "borderWidth": "Border width"
-    },
-    "Field": {
-      "name": "name",
-      "text": "description",
-      "type": "type",
-      "demiurge": "demiurge",
-      "statuses": "statuses",
-      "aspects": "aspects",
-      "geometry": "shape",
-      "style": "look",
-      "layer": "layer",
-      "links": "links"
-    },
-    "Draft": {
-      "create": "New",
-      "update": "Edit",
-      "delete": "Removal"
-    },
     "Conflict": {
       "exists": "already created",
       "missing": "already deleted",
@@ -136,52 +59,15 @@
       "partial": "partial success",
       "failure": "failure"
     },
-    "Palette": {
-      "finishLine": "Finish line",
-      "open": "Open",
-      "queue": "Claims: {n}",
-      "draft": "Draft: {n}"
-    },
     "Claims": {
-      "title": "Claims",
-      "draft": "Draft",
-      "draftEmpty": "The draft is empty. Everything you change on the map lands here; the GM sees it only after you submit.",
       "emptyDraft": "The draft has no changes.",
-      "discardDraft": "Discard",
-      "discardConfirm": "Discard all draft changes?",
-      "discardOp": "Remove from draft",
-      "claimTitle": "Claim title, e.g. “The hill folk come to the valley”",
-      "claimNote": "What you want and why it is possible",
-      "submit": "Send to GM",
       "untitled": "Claim",
-      "mine": "My claims",
-      "noneMine": "No claims yet.",
-      "clearClosed": "Clear closed",
-      "returnDraft": "Back to draft",
-      "withdraw": "Withdraw",
-      "withdrawConfirm": "Withdraw the claim? Its changes will be lost.",
-      "remove": "Remove",
-      "selectAll": "All",
-      "preview": "On the map",
-      "apply": "Accept",
-      "applySelected": "Accept",
-      "reject": "Reject",
-      "rejectSelected": "Reject",
-      "rejectReason": "Reason (the player will see it)",
-      "check": "Check",
-      "showClosed": "Closed",
-      "hideClosed": "Open only",
-      "queueEmpty": "The queue is empty.",
-      "hasConflicts": "Some changes disagree with the map.",
       "conflictsTitle": "The map has changed",
       "conflictsText": "These changes were made against an older map:",
       "applyAnyway": "Apply over",
       "skipStale": "Skip them",
       "appliedN": "Claims accepted: {n}.",
       "newClaim": "New claim from {name}.",
-      "rules": "Queue rules",
-      "trustedHint": "Claims from trusted players are accepted at once:",
-      "noPlayers": "No players.",
       "youApplied": "Claim “{title}” accepted.",
       "youRejected": "Claim “{title}” rejected.",
       "youCheck": "Claim “{title}” needs a check."
@@ -198,13 +84,11 @@
       "roll": "Roll",
       "noActor": "A character is needed: select a token or assign a character to the user.",
       "noSystem": "Vitruvium checks are unavailable.",
-      "notYours": "The claim's author rolls.",
-      "cardMissing": "The check card is not in the chat."
+      "notYours": "The claim's author rolls."
     },
     "Notify": {
       "noAtlas": "This scene has no atlas yet. The GM creates it by opening the map.",
       "featureMissing": "The feature is no longer on the map.",
-      "selectAreaToErase": "Select the area to erase first.",
       "error": "Artarius error: “{message}”. See the console (F12).",
       "updateAvailable": "Artarius {latest} is out (you have {current}). To update: return to Foundry setup → Add-on Modules → update button on Artarius."
     },
@@ -216,10 +100,6 @@
         "name": "Accept a claim on success",
         "hint": "If a claim check succeeds, its changes go on the map at once. The GM decides partial successes and failures."
       },
-      "renderBelowTokens": {
-        "name": "Draw the map below tokens",
-        "hint": "Experimental. The map sits between the background and tokens instead of above the scene."
-      },
       "checkUpdates": {
         "name": "Notify about new versions",
         "hint": "The GM sees a message when a new module version is released on GitHub."
@@ -228,25 +108,6 @@
     "Guide": {
       "title": "Artarius: how to play",
       "missing": "Could not load the guide. It is in the module folder: docs/GUIDE.md."
-    },
-    "Quick": {
-      "layer": "World map",
-      "find": "Find on map",
-      "findLabel": "Name",
-      "findPlaceholder": "Start typing…",
-      "findEmpty": "The map is empty so far.",
-      "configure": "Configure menu",
-      "collapse": "Collapse menu",
-      "expand": "Expand menu",
-      "configHint": "The eye turns a button on or off, arrows change the order. Every player has their own set.",
-      "show": "Show in menu",
-      "hide": "Remove from menu",
-      "macros": "Macros",
-      "addMacro": "Add",
-      "noMacros": "No macros you can run.",
-      "reset": "Use default",
-      "saveDefault": "Make default for everyone",
-      "defaultSaved": "This button set is now the default for all players."
     },
     "Azgaar": {
       "title": "Map from Azgaar",
@@ -257,23 +118,21 @@
       "openGenerator": "Open generator",
       "openBrowser": "In browser",
       "import": "Import",
-      "importHint": "States, provinces, burgs, rivers and routes become map features on the current scene. The GM can edit them like any other.",
+      "importHint": "Heights and biomes become hex terrain. States, provinces, burgs, rivers and routes become zones, marks and lines on the current scene. The GM can edit them like any other.",
       "file": "JSON file (Full)",
-      "image": "Map picture for the background",
-      "imageHint": "PNG or SVG from Azgaar, uploaded to Foundry data",
-      "setBackground": "Use the picture as scene background and fit the scene size",
       "replace": "Replace what an earlier Azgaar import brought",
       "scene": "Scene",
       "doImport": "Import",
       "noFile": "Choose a JSON file from Azgaar.",
-      "noScene": "Open a scene first.",
-      "done": "Import done: states {states}, provinces {provinces}, burgs {burgs}, rivers {rivers}, routes {routes}.",
+      "noScene": "Open an Artarius scene first.",
+      "done": "Import done: terrain hexes {terrain}, states {states}, provinces {provinces}, burgs {burgs}, rivers {rivers}, routes {routes}.",
       "part": {
         "states": "States",
         "provinces": "Provinces",
         "burgs": "Burgs",
         "rivers": "Rivers",
-        "routes": "Roads and routes"
+        "routes": "Roads and routes",
+        "terrain": "Terrain"
       },
       "error": {
         "notJson": "This is not a JSON file.",
@@ -464,6 +323,22 @@
       "style": "look",
       "layer": "layer",
       "links": "links"
+    },
+    "Scene": {
+      "enabled": "Artarius scene",
+      "enabledHint": "Turns the scene into a hex world: blank hexes, zones, marks and lines. Needs a pointy-top (row) hex grid.",
+      "baseColor": "Blank hex colour",
+      "gridColor": "Grid colour",
+      "gridAlpha": "Grid opacity (0–1)",
+      "settingsHint": "Only affects Artarius scenes. Terrain colours come from zone types.",
+      "create": "Artarius world",
+      "createOk": "Create",
+      "createHint": "Creates a new scene with a hex grid and opens it.",
+      "name": "Name",
+      "defaultName": "Artarius world",
+      "cols": "Hexes across",
+      "rows": "Hexes down",
+      "size": "Hex size, px"
     }
   }
 }

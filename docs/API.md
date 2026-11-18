@@ -2,42 +2,59 @@
 
 Artarius задуман как основа: свои кнопки, данные и правила другие модули добавляют поверх, не меняя его код. Всё доступно через `game.modules.get("artarius").api`.
 
+`api.version` растёт, когда API меняется несовместимо. С гекс-миром (0.3) это 2.
+
 ## Когда подключаться
 
 ```js
 Hooks.once("artarius.init", api => {
-  // api уже собран, мир ещё грузится: регистрируйте кнопки и слушатели здесь
+  // api собран, мир ещё грузится: регистрируйте кнопки и слушатели здесь
 });
 Hooks.once("artarius.ready", api => {
-  // мир загружен, игра идёт
+  // мир загружен, панели на месте
 });
 ```
 
-## Кнопка в меню быстрых действий
+## Кнопка в круглом меню
 
 ```js
 Hooks.once("artarius.init", api => {
   api.registerQuickAction({
     id: "my-module.weather",            // уникальный id, лучше с именем модуля
-    module: "my-module",                // покажется в настройке меню
     label: "MYMOD.Weather",             // ключ перевода или просто текст
-    icon: "fa-solid fa-cloud-sun",      // классы Font Awesome
+    icon: "cloud-sun",                  // имя Font Awesome или классы "fa-solid fa-cloud-sun"
     gmOnly: false,                      // true — только у мастера
-    onClick: event => openWeather(),
-    badge: () => pendingStorms(),       // число на кнопке, необязательно
-    active: () => weatherOpen(),        // подсветка, необязательно
-    visible: () => !!canvas.scene       // скрыть кнопку, необязательно
+    onClick: () => openWeather(),
+    visible: () => true                 // скрыть кнопку, необязательно
   });
 });
 ```
 
-Новая кнопка появляется в списке «Настроить меню». Игрок включает её глазом. Чтобы она была у всех сразу, мастер включает её у себя и жмёт «Сделать набором для всех».
+Кнопка встаёт в круглое меню после встроенных. `api.unregisterQuickAction(id)` её убирает.
 
-`api.unregisterQuickAction(id)` убирает кнопку, `api.refreshQuickMenu()` перерисовывает меню, `api.quickActions` — все зарегистрированные кнопки.
+## Сцена и инструменты
 
-## Свои данные у элементов карты
+- `isWorldScene(scene?)`: включён ли на сцене режим Артария. `worldOf(scene?)`: настройки мира сцены (`enabled`, `baseColor`, `gridColor`, `gridAlpha`).
+- `createWorldScene({ name, cols, rows, size })`: новая сцена с гекс-сеткой. Без аргумента спрашивает мастера.
+- `setTool(tool)`: `"select" | "zone" | "mark" | "line"`, `null` убирает инструменты.
+- `inspect([i, j])`: открыть гекс в правой панели.
+- `showFeature(id)`: найти элемент, открыть его гекс и навести камеру.
+- `layer()`: слой холста Артария. `refresh()`: перерисовать панели и холст.
+- `studio`: состояние интерфейса (инструмент, выбор, панели). `backend`: доступ к данным Foundry, в том числе `backend.grid` с `cellAt`, `center`, `vertices`, `allCells`.
 
-У каждого элемента есть поле `system.ext`. Artarius его не трогает. Храните свои данные под id своего модуля:
+## Данные элементов
+
+Зона, метка и линия — это страницы журнала атласа сцены. Состояние элемента: `{ id, name, text, system }`.
+
+| `system.kind` | Что это | `system.geometry` |
+|---|---|---|
+| `area` | зона | `{ cells: [[i, j], …] }` |
+| `object` | метка | `{ x, y, cell: [i, j] }` |
+| `line` | линия | `{ points: [[x, y], …] }` |
+
+Кроме этого: `typeId`, `layerId`, `demiurge` (id актёра), `statuses`, `aspects`, `style` (поверх вида типа), `links`, `ext`.
+
+Поле `system.ext` Artarius не трогает. Храните свои данные под id своего модуля:
 
 ```js
 const page = api.getAtlas().pages.get(featureId);
@@ -56,24 +73,27 @@ await page.update({ "system.ext.my-module": { morale: 7 } });
 | `artarius.claimsRejected` | мастер отклонил заявки | `entries, comment` |
 | `artarius.importAzgaar` | импорт из Azgaar закончен | `{ scene, atlas, data, built, removed }` |
 
-`op` — это `{ action: "create" | "update" | "delete", id, state }`. `state` — `{ id, name, text, system }`. `entries` — `[{ user, claim }]`.
+`op` — это `{ action: "create" | "update" | "delete", id, state }`. `entries` — `[{ user, claim }]`.
 
-Окна модуля сделаны на ApplicationV2, поэтому Foundry сам зовёт хуки `renderFeatureSheet`, `renderClaimsApp`, `renderAtlasConfig`, `renderAzgaarApp`, `renderQuickMenuConfig`. Через них можно дописать в окно свои поля.
-
-## Данные напрямую
+## Хранилище
 
 `api.store` открывает функции хранилища:
 
 - `getAtlas(scene)`, `ensureAtlas(scene)`: журнал атласа сцены;
-- `getTypes(atlas)`, `setTypes(atlas, types)`, `getLayers(atlas)`, `setLayers(atlas, layers)`: типы и слои;
+- `getTypes(atlas)`: типы атласа вместе с личными типами игроков, `saveType(type)`, `deleteType(id)`;
+- `getLayers(atlas)`, `setLayers(atlas, layers)`: слои;
 - `atlasStates(atlas)`: все элементы атласа, `effectiveStates(scene)`: то, что видит этот пользователь вместе с черновиком;
-- `commit(op)`: записать правку так же, как это делает интерфейс: мастер сразу, игрок в черновик;
+- `commitOps(ops, scene)`: записать правки так же, как это делает интерфейс: мастер сразу, игрок в черновик;
 - `getDraft`, `getClaims`: черновик и заявки пользователя.
 
-## Окна и действия
+## Окна
 
-`openFeature(id)`, `openClaims()`, `openGuide()`, `openAtlasConfig()`, `openAzgaar()`, `openAzgaarGenerator()`, `openQuickMenuConfig()`, `findFeature()`, `activateLayer(tool)`, `layer()`, `refreshMap()`.
+`openGuide()`, `openWorldSettings()`, `openAzgaar()`, `openAzgaarGenerator()`.
 
-`importAzgaar(data, scene, { parts, image, setBackground, replace })` импортирует разобранный JSON из Azgaar без окна, например из макроса.
+`importAzgaar(data, scene, { parts, replace })` импортирует разобранный JSON из Azgaar без окна, например из макроса. `parts`: `{ terrain, states, provinces, burgs, rivers, routes }`.
 
-`api.version` растёт, когда API меняется несовместимо. Сейчас это 1.
+## Что изменилось с API 1 (0.2)
+
+- Нет `openFeature`, `openClaims`, `openAtlasConfig`, `openQuickMenuConfig`, `findFeature`, `activateLayer`, `refreshMap`, `quickActions`, `refreshQuickMenu`. Вместо них `showFeature`, `setTool`, `refresh`.
+- Окна `FeatureSheet`, `ClaimsApp`, `AtlasConfig`, `QuickMenuConfig` убраны, их заменили панели поверх холста. Хуки `render…` для них больше не вызываются.
+- `importAzgaar` больше не ставит картинку фоном: карта ложится на гексы.

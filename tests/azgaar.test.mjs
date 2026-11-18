@@ -1,16 +1,17 @@
-// Azgaar import: region outlines, transform, what gets built from an export.
+// Azgaar import onto hexes: transform, terrain, zones, marks and lines built from an export.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  validateAzgaar, makeTransform, regionRings, buildAzgaarFeatures, mergeTypesAndLayers, AZGAAR_TYPES
+  validateAzgaar, makeTransform, terrainOf, buildAzgaarFeatures, mergeTypesAndLayers, AZGAAR_TYPES, AZGAAR_LAYERS
 } from "../scripts/import/azgaar.mjs";
-import { signedArea } from "../scripts/geometry/geometry.mjs";
+import HexMath from "../scripts/hex/hexmath.mjs";
 
 /**
  * A tiny "Full" export: 6×4 square cells of 10 px on a 60×40 map.
  * Vertices are shared like in Azgaar's Voronoi graph. Every other cell lists its
  * vertices in the opposite order to check that orientation is normalized.
- * States: 1 on columns 0–2, 2 on columns 3–5 except cell (4,1) which is neutral (a hole).
+ * States: 1 on columns 0–2, 2 on columns 3–5 except cell (4,1) which is neutral.
+ * Terrain: column 0 is sea (h 10), the rest is temperate forest (biome 6, h 30).
  */
 function fixture() {
   const W = 6, H = 4, S = 10;
@@ -25,7 +26,7 @@ function fixture() {
       if ( i % 2 ) v = v.reverse();
       let state = x < 3 ? 1 : 2;
       if ( x === 4 && y === 1 ) state = 0;
-      cells.push({ i, v, p: [(x * S) + 5, (y * S) + 5], state, province: x < 3 ? 1 : 0, burg: 0 });
+      cells.push({ i, v, p: [(x * S) + 5, (y * S) + 5], h: x === 0 ? 10 : 30, biome: x === 0 ? 0 : 6, state, province: x < 3 ? 1 : 0, burg: 0 });
     }
   }
   return {
@@ -57,9 +58,25 @@ function fixture() {
   };
 }
 
-const rect = { x: 100, y: 200, width: 600, height: 400 };
+// Сцена 600×400 из гексов: 12 гексов в ряд по 50 px.
+const hm = new HexMath({ size: 50 / (Math.sqrt(3) / 2), rows: 10, cols: 12 });
+const rect = { x: 0, y: 0, width: hm.width, height: hm.height };
+const hexes = hm.allCells();
+const center = c => hm.center(c);
+const cellAt = p => hm.cellAt(p);
 let n = 0;
 const newId = () => `id${String(++n).padStart(14, "0")}`;
+const build = (extra = {}) => buildAzgaarFeatures(fixture(), { rect, hexes, center, cellAt, newId, ...extra });
+const k = ([i, j]) => `${i},${j}`;
+const tr = makeTransform({ width: 60, height: 40 }, rect);
+const toScene = ([x, y]) => { const [sx, sy] = tr.point([x, y]); return { x: sx, y: sy }; };
+
+/** Клетка Azgaar под центром гекса (клетки — квадраты 10×10 карты 60×40). */
+function azCell(hex) {
+  const t = makeTransform({ width: 60, height: 40 }, rect);
+  const [x, y] = t.back(center(hex));
+  return { x: Math.min(5, Math.max(0, Math.floor(x / 10))), y: Math.min(3, Math.max(0, Math.floor(y / 10))) };
+}
 
 test("проверка файла различает полный экспорт", () => {
   assert.equal(validateAzgaar(null), "notJson");
@@ -68,33 +85,41 @@ test("проверка файла различает полный экспорт
   assert.equal(validateAzgaar(fixture()), null);
 });
 
-test("координаты карты растягиваются на прямоугольник сцены", () => {
-  const t = makeTransform({ width: 60, height: 40 }, rect);
+test("координаты карты растягиваются на прямоугольник сцены и обратно", () => {
+  const r = { x: 100, y: 200, width: 600, height: 400 };
+  const t = makeTransform({ width: 60, height: 40 }, r);
   assert.deepEqual(t.point([0, 0]), [100, 200]);
   assert.deepEqual(t.point([60, 40]), [700, 600]);
-  assert.deepEqual(t.point([30, 20]), [400, 400]);
+  assert.deepEqual(t.back({ x: 400, y: 400 }), [30, 20]);
 });
 
-test("контур страны собирается из клеток с разным обходом", () => {
-  const d = fixture();
-  const rings = regionRings(d.pack.cells, d.pack.vertices, c => c.state === 1);
-  assert.equal(rings.length, 1);
-  assert.equal(Math.abs(signedArea(rings[0])), 30 * 40);
+test("местность: вода по высоте и биому, горы и холмы по высоте, остальное по биому", () => {
+  assert.equal(terrainOf({ h: 10, biome: 6 }), "water");
+  assert.equal(terrainOf({ h: 40, biome: 0 }), "water");
+  assert.equal(terrainOf({ h: 80, biome: 6 }), "mountains");
+  assert.equal(terrainOf({ h: 55, biome: 6 }), "hills");
+  assert.equal(terrainOf({ h: 30, biome: 9 }), "forest");
+  assert.equal(terrainOf({ h: 30, biome: 1 }), "desert");
+  assert.equal(terrainOf({ h: 30, biome: 12 }), "swamp");
 });
 
-test("нейтральная клетка внутри страны остаётся дырой", () => {
-  const d = fixture();
-  const rings = regionRings(d.pack.cells, d.pack.vertices, c => c.state === 2);
-  assert.equal(rings.length, 2);
-  const areas = rings.map(signedArea);
-  assert.equal(Math.abs(areas[0]) + Math.abs(areas[1]), (30 * 40) + 100);
-  assert.ok(Math.sign(areas[0]) !== Math.sign(areas[1]), "дыра идёт обратным обходом");
+test("каждый гекс сцены попадает ровно в одну зону местности", () => {
+  const { features, stats } = build();
+  const terrain = features.filter(f => f.system.ext.azgaar.kind === "terrain");
+  assert.equal(stats.terrain, 2);
+  assert.deepEqual(terrain.map(f => f.system.typeId).sort(), ["forest", "water"]);
+  for ( const f of terrain ) assert.equal(f.system.layerId, "terrain");
+  const seen = terrain.flatMap(f => f.system.geometry.cells.map(k));
+  assert.equal(seen.length, hexes.length);
+  assert.equal(new Set(seen).size, hexes.length);
+  const water = terrain.find(f => f.system.typeId === "water");
+  for ( const c of water.system.geometry.cells ) assert.equal(azCell(c).x, 0, "вода только в первом столбце карты");
 });
 
-test("из экспорта получаются страны, города, реки и дороги", () => {
-  const { features, stats, mapId } = buildAzgaarFeatures(fixture(), { rect, newId });
+test("страны становятся зонами владений из своих гексов", () => {
+  const { features, stats, mapId } = build();
   assert.equal(mapId, "777");
-  assert.deepEqual(stats, { states: 2, provinces: 0, burgs: 2, rivers: 1, routes: 2 });
+  assert.deepEqual(stats, { terrain: 2, states: 2, provinces: 0, burgs: 2, rivers: 1, routes: 2 });
   const realm = features.find(f => f.name === "Царство Кумачей");
   assert.equal(realm.system.kind, "area");
   assert.equal(realm.system.typeId, "realm");
@@ -102,45 +127,48 @@ test("из экспорта получаются страны, города, р�
   assert.equal(realm.system.style.color, "#aa3322");
   assert.match(realm.text, /Царство/);
   assert.deepEqual(realm.system.ext.azgaar, { mapId: "777", kind: "state", i: 1 });
-  for ( const p of realm.system.geometry.shapes.flat() ) {
-    assert.ok(p[0] >= 100 && p[0] <= 700 && p[1] >= 200 && p[1] <= 600, "точки внутри сцены");
+  assert.ok(realm.system.geometry.cells.length > 0);
+  for ( const c of realm.system.geometry.cells ) assert.ok(azCell(c).x < 3, `гекс ${c} лежит в клетках страны`);
+  const winter = features.find(f => f.name === "Винтер");
+  for ( const c of winter.system.geometry.cells ) {
+    const a = azCell(c);
+    assert.ok(a.x >= 3 && !(a.x === 4 && a.y === 1), "нейтральная клетка не входит в страну");
   }
 });
 
-test("столица связана со своей страной и стоит на месте", () => {
-  const { features } = buildAzgaarFeatures(fixture(), { rect, newId });
+test("столица стоит меткой на своём гексе и связана со страной", () => {
+  const { features } = build();
   const winter = features.find(f => f.name === "Винтер");
   const capital = features.find(f => f.name === "Винтерфол");
+  assert.equal(capital.system.kind, "object");
   assert.equal(capital.system.typeId, "capital");
-  assert.deepEqual(capital.system.geometry, { x: 550, y: 450 });
+  const hex = cellAt(toScene([45, 25]));
+  assert.deepEqual(capital.system.geometry.cell, hex);
+  const c = center(hex);
+  assert.deepEqual([capital.system.geometry.x, capital.system.geometry.y], [Math.round(c.x), Math.round(c.y)]);
   assert.deepEqual(capital.system.links, [{ target: winter.id, role: "столица" }]);
   assert.match(capital.text, /12\s?500/);
   assert.equal(features.find(f => f.name === "Деревня").system.typeId, "city");
   assert.equal(features.some(f => f.name === "Снесён"), false);
 });
 
-test("река идёт по центрам клеток, клетки за краем карты пропускаются", () => {
-  const { features } = buildAzgaarFeatures(fixture(), { rect, newId });
+test("реки и дороги остаются свободными линиями", () => {
+  const { features } = build();
   const river = features.find(f => f.system.typeId === "river");
   assert.equal(river.name, "Быстрая (River)");
   const pts = river.system.geometry.points;
-  assert.deepEqual(pts[0], [150, 250]);
-  assert.deepEqual(pts.at(-1), [150, 550]);
+  assert.deepEqual(pts[0], tr.point([5, 5]));
+  assert.deepEqual(pts.at(-1), tr.point([5, 35]));
   assert.equal(features.filter(f => f.system.typeId === "river").length, 1, "река из одной клетки не нужна");
-});
-
-test("группы дорог Azgaar переходят в свои типы", () => {
-  const { features } = buildAzgaarFeatures(fixture(), { rect, newId });
   assert.equal(features.find(f => f.name === "Тракт").system.typeId, "road");
   assert.ok(features.some(f => f.system.typeId === "searoute"));
 });
 
-test("можно взять только часть: провинции без стран", () => {
-  const { stats, features } = buildAzgaarFeatures(fixture(), {
-    rect, newId, parts: { states: false, provinces: true, burgs: false, rivers: false, routes: false }
-  });
-  assert.deepEqual(stats, { states: 0, provinces: 1, burgs: 0, rivers: 0, routes: 0 });
-  assert.equal(features[0].system.layerId, "provinces");
+test("можно взять только часть: провинции без остального", () => {
+  const { stats, features } = build({ parts: { terrain: false, states: false, provinces: true, burgs: false, rivers: false, routes: false } });
+  assert.deepEqual(stats, { terrain: 0, states: 0, provinces: 1, burgs: 0, rivers: 0, routes: 0 });
+  assert.equal(features[0].system.layerId, "regions");
+  assert.equal(features[0].system.typeId, "region");
 });
 
 test("недостающие типы и слои добавляются, свои не трогаются", () => {
@@ -148,5 +176,6 @@ test("недостающие типы и слои добавляются, сво
   const { types, layers } = mergeTypesAndLayers(mine, [{ id: "politics", name: "П", sort: 0 }]);
   assert.equal(types.find(t => t.id === "city").name, "Мой город");
   assert.equal(types.length, AZGAAR_TYPES.length);
-  assert.deepEqual(layers.map(l => l.id), ["politics", "provinces"]);
+  assert.deepEqual(layers.map(l => l.id).sort(), [...new Set(["politics", ...AZGAAR_LAYERS.map(l => l.id)])].sort());
+  assert.equal(layers.find(l => l.id === "politics").name, "П");
 });
