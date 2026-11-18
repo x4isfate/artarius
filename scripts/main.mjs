@@ -6,6 +6,8 @@ import HexLayer, { LAYER_NAME, runtime } from "./canvas/hex-layer.mjs";
 import FoundryBackend, { isWorldScene, worldOf } from "./foundry-backend.mjs";
 import Studio from "./studio.mjs";
 import ArtariusUI, { EXTRA_ACTIONS } from "./ui/panels.mjs";
+import FoundryHost from "./ui/windows.mjs";
+import { openGenerator, generateTestWorld } from "./apps/generator.mjs";
 import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
 import GuideApp from "./apps/guide-app.mjs";
 import AzgaarApp, { AzgaarGenerator, importAzgaar } from "./apps/azgaar-app.mjs";
@@ -46,12 +48,21 @@ Hooks.once("init", () => {
   S("notifiedVersion", { scope: "world", config: false, type: String, default: "" });
   S("turn", { scope: "world", config: false, type: Object, default: { ...TURN_DEFAULT }, onChange: () => runtime.backend?.emit() });
   S("hiddenLayers", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
+  S("windows", { scope: "client", config: false, type: Object, default: {} });
 
   const backend = new FoundryBackend();
   const studio = new Studio(backend);
   runtime.backend = backend;
   runtime.studio = studio;
   runtime.isWorld = () => isWorldScene();
+  // Кнопки в колонке инструментов (группа Артария слева).
+  runtime.buttons = {
+    queue: () => studio.openQueue(),
+    turn: () => runtime.ui?.toggleTurn(),
+    generator: () => openGenerator(),
+    guide: () => GuideApp.open()
+  };
+  runtime.extraButtons = () => [...EXTRA_ACTIONS.values()];
 
   game.modules.get(MODULE_ID).api = {
     /** Версия API. Растёт при несовместимых изменениях. 2 — гекс-мир (0.3). */
@@ -61,6 +72,9 @@ Hooks.once("init", () => {
     openGuide: () => GuideApp.open(),
     openAzgaar: () => AzgaarApp.open(),
     openAzgaarGenerator: () => AzgaarGenerator.open(),
+    /** Окно генератора тестового мира. generateTestWorld(options) — то же без окна. */
+    openGenerator: () => openGenerator(),
+    generateTestWorld: options => generateTestWorld(options),
     openWorldSettings: () => openWorldSettings(),
     createWorldScene: options => createWorldScene(options),
     importAzgaar,
@@ -72,7 +86,7 @@ Hooks.once("init", () => {
     /** Найти элемент по id: открыть его гекс, раскрыть карточку и навести камеру. */
     showFeature: id => showFeature(id),
     /**
-     * Своя кнопка в круглом меню: { id, label, icon, onClick, visible? }.
+     * Своя кнопка в группе Артария слева: { id, label, icon, onClick, gmOnly?, visible? }.
      * icon — имя Font Awesome ("cloud-sun") или классы ("fa-solid fa-cloud-sun"). Можно и (id, { … }).
      */
     registerQuickAction: (idOrDef, action = {}) => {
@@ -81,6 +95,7 @@ Hooks.once("init", () => {
       if ( typeof def.label === "string" && game.i18n?.has?.(def.label) ) def.label = game.i18n.localize(def.label);
       EXTRA_ACTIONS.set(def.id, def);
       studio.changed("ui");
+      try { ui.controls?.render({ reset: true }); } catch { /* панель ещё не готова */ }
     },
     unregisterQuickAction: id => { EXTRA_ACTIONS.delete(id); studio.changed("ui"); },
     refresh: () => backend.emit(),
@@ -93,9 +108,9 @@ Hooks.once("ready", () => {
   const { backend, studio } = runtime;
   game.socket.on(SOCKET, onSocket);
   rememberClaimStatuses();
-  runtime.ui = new ArtariusUI(studio, backend);
+  const host = new FoundryHost({ onClose: name => runtime.ui?.windowClosed(name) });
+  runtime.ui = new ArtariusUI(studio, backend, { host });
   syncUI();
-  watchLayout();
   if ( !game.settings.get(MODULE_ID, "guideSeen") && isWorldScene() ) {
     GuideApp.open();
     game.settings.set(MODULE_ID, "guideSeen", true);
@@ -104,68 +119,11 @@ Hooks.once("ready", () => {
   Hooks.callAll("artarius.ready", game.modules.get(MODULE_ID).api);
 });
 
-/** Показать или спрятать панели: они живут только на сцене Артария. */
+/** Показать или спрятать окна: они живут только на сцене Артария. */
 function syncUI() {
   const ui2 = runtime.ui;
   if ( !ui2 ) return;
-  const on = !!canvas?.ready && isWorldScene();
-  ui2.hidden = !on;
-  if ( on ) placePanels(ui2.root);
-}
-
-/**
- * Отступы панелей от интерфейса Foundry. Меряем настоящие элементы, а не берём числа
- * из стилей ядра: темы вроде Carolingian UI двигают и меняют колонку слева и боковую панель.
- */
-function placePanels(root) {
-  const box = id => {
-    const r = document.getElementById(id)?.getBoundingClientRect();
-    return r && r.width && r.height ? r : null;
-  };
-  const set = (k, v) => root.style.setProperty(k, `${Math.round(v)}px`);
-  const controls = box("scene-controls") ?? box("controls");
-  const sidebar = box("sidebar");
-  const players = box("players");
-  const W = window.innerWidth, H = window.innerHeight;
-  // Колонка слева: обычная вертикальная или полоса сверху (тогда панели ниже неё).
-  let topEdge = 0;
-  if ( controls && controls.width <= 200 && controls.left < W / 2 ) {
-    set("--art-left", controls.right + 16);
-  } else if ( controls && controls.top < H / 3 ) {
-    set("--art-left", 16);
-    topEdge = controls.bottom;
-  }
-  // Полоска хода по центру сверху не должна лечь на список сцен.
-  const nav = box("scene-navigation") ?? box("navigation");
-  if ( nav && nav.top < 80 && nav.right > (W / 2) - 160 ) topEdge = Math.max(topEdge, nav.bottom);
-  set("--art-turn-top", topEdge + 10);
-  set("--art-top", Math.max(64, topEdge + 58));
-  // Боковая панель: справа (как в ядре) или слева.
-  if ( sidebar && sidebar.left > W / 2 ) set("--art-right", W - sidebar.left + 16);
-  else if ( sidebar ) set("--art-right", 16);
-  if ( players && players.top > H / 2 ) {
-    set("--art-wheel-bottom", H - players.top + 70);
-    set("--art-wheel-left", Math.max(24, players.left));
-  }
-}
-
-/** Колонку, боковую панель и список игроков перестраивают и ядро, и темы: следим за их размером. */
-function watchLayout() {
-  if ( typeof ResizeObserver === "undefined" ) return;
-  let frame = null;
-  const ro = new ResizeObserver(() => {
-    if ( frame ) return;
-    frame = requestAnimationFrame(() => { frame = null; syncUI(); });
-  });
-  const seen = new WeakSet();
-  const observe = () => {
-    for ( const id of ["scene-controls", "controls", "sidebar", "players"] ) {
-      const el = document.getElementById(id);
-      if ( el && !seen.has(el) ) { seen.add(el); ro.observe(el); }
-    }
-  };
-  observe();
-  for ( const hook of ["renderSceneControls", "renderSidebar", "renderPlayers", "renderPlayerList"] ) Hooks.on(hook, observe);
+  ui2.hidden = !(canvas?.ready && isWorldScene());
 }
 
 Hooks.on("canvasReady", async () => {
@@ -188,8 +146,6 @@ Hooks.on("canvasReady", async () => {
   backend.emit();
 });
 
-for ( const hook of ["collapseSidebar", "renderPlayers", "renderPlayerList", "renderSceneControls"] ) Hooks.on(hook, () => syncUI());
-window.addEventListener("resize", () => syncUI());
 
 /**
  * Области 0.2 → зоны на гексах. Свободный контур переходит в гексы под ним.
