@@ -2,12 +2,14 @@ import { MODULE_ID, FEATURE_TYPE, CLAIM_STATUS, WORLD_DEFAULTS } from "./constan
 import FeatureModel from "./data/feature-model.mjs";
 import * as store from "./data/store.mjs";
 import { getAtlas, ensureAtlas, upgradeAtlas, getClaims } from "./data/store.mjs";
-import HexLayer, { LAYER_NAME, runtime } from "./canvas/hex-layer.mjs";
+import HexLayer, { LAYER_NAME, runtime, inputDebug } from "./canvas/hex-layer.mjs";
 import FoundryBackend, { isWorldScene, worldOf } from "./foundry-backend.mjs";
 import Studio from "./studio.mjs";
 import ArtariusUI, { EXTRA_ACTIONS } from "./ui/panels.mjs";
 import FoundryHost from "./ui/windows.mjs";
 import { openGenerator, generateTestWorld } from "./apps/generator.mjs";
+import { resizeWorld, sceneDims } from "./apps/world-size.mjs";
+import { normalizeDims, sceneSizeFor } from "./hex/dims.mjs";
 import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
 import GuideApp from "./apps/guide-app.mjs";
 import AzgaarApp, { AzgaarGenerator, importAzgaar } from "./apps/azgaar-app.mjs";
@@ -48,6 +50,7 @@ Hooks.once("init", () => {
   S("notifiedVersion", { scope: "world", config: false, type: String, default: "" });
   S("turn", { scope: "world", config: false, type: Object, default: { ...TURN_DEFAULT }, onChange: () => runtime.backend?.emit() });
   S("hiddenLayers", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
+  S("layerPresets", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("windows", { scope: "client", config: false, type: Object, default: {} });
 
   const backend = new FoundryBackend();
@@ -74,8 +77,14 @@ Hooks.once("init", () => {
     openAzgaarGenerator: () => AzgaarGenerator.open(),
     /** Окно генератора тестового мира. generateTestWorld(options) — то же без окна. */
     openGenerator: () => openGenerator(),
+    /** Отладка мыши: api.debugInput(true) пишет каждое нажатие на холсте в консоль. */
+    debugInput: (on = true) => { inputDebug.on = !!on; inputDebug.warned = false; return inputDebug.on; },
     generateTestWorld: options => generateTestWorld(options),
     openWorldSettings: () => openWorldSettings(),
+    /** Перестроить поле: resizeWorld({ cols, rows, size }). Элементы переносятся на новое поле. */
+    resizeWorld: (dims, scene = canvas.scene) => resizeWorld(scene, dims),
+    /** Размер поля текущей сцены: { cols, rows, size }. */
+    sceneDims: (scene = canvas.scene) => sceneDims(scene),
     createWorldScene: options => createWorldScene(options),
     importAzgaar,
     getAtlas, ensureAtlas,
@@ -330,16 +339,6 @@ Hooks.on("renderSceneDirectory", (app, html) => {
   }
 });
 
-/** Размер гекса для сетки «острым верхом»: ширина и высота клетки. */
-function hexSize(size) {
-  try {
-    const HG = foundry.grid.HexagonalGrid;
-    const g = new HG({ size, columns: false, even: false });
-    if ( g.sizeX && g.sizeY ) return { w: g.sizeX, h: g.sizeY };
-  } catch { /* старый Foundry: считаем сами */ }
-  return { w: size, h: size * 2 / Math.sqrt(3) };
-}
-
 /** Новая сцена Артария: гекс-сетка нужного размера и включённый режим. */
 async function createWorldScene(options = null) {
   if ( !game.user.isGM ) return;
@@ -348,9 +347,9 @@ async function createWorldScene(options = null) {
     o = await foundry.applications.api.DialogV2.prompt({
       window: { title: L("ART.Scene.create") },
       content: `<div class="form-group"><label>${esc(L("ART.Scene.name"))}</label><input type="text" name="name" value="${esc(L("ART.Scene.defaultName"))}"></div>
-        <div class="form-group"><label>${esc(L("ART.Scene.cols"))}</label><input type="number" name="cols" value="40" min="5" max="200"></div>
-        <div class="form-group"><label>${esc(L("ART.Scene.rows"))}</label><input type="number" name="rows" value="28" min="5" max="200"></div>
-        <div class="form-group"><label>${esc(L("ART.Scene.size"))}</label><input type="number" name="size" value="100" min="50" max="400"></div>
+        <div class="form-group"><label>${esc(L("ART.Scene.cols"))}</label><input type="number" name="cols" value="40" min="5" max="300"></div>
+        <div class="form-group"><label>${esc(L("ART.Scene.rows"))}</label><input type="number" name="rows" value="28" min="5" max="300"></div>
+        <div class="form-group"><label>${esc(L("ART.Scene.size"))}</label><input type="number" name="size" value="100" min="30" max="400"></div>
         <p class="hint">${esc(L("ART.Scene.createHint"))}</p>`,
       ok: {
         label: L("ART.Scene.createOk"),
@@ -363,16 +362,12 @@ async function createWorldScene(options = null) {
     });
     if ( !o ) return;
   }
-  const cols = Math.max(5, Math.min(200, Math.round(o.cols || 40)));
-  const rows = Math.max(5, Math.min(200, Math.round(o.rows || 28)));
-  const size = Math.max(50, Math.min(400, Math.round(o.size || 100)));
-  const { w, h } = hexSize(size);
+  const dims = normalizeDims(o);
   const scene = await Scene.implementation.create({
     name: o.name || L("ART.Scene.defaultName"),
-    width: Math.round((cols * w) + (w / 2)),
-    height: Math.round(((rows - 1) * h * 0.75) + h),
+    ...sceneSizeFor(dims),
     padding: 0.05,
-    grid: { type: CONST.GRID_TYPES.HEXODDR, size, color: "#000000", alpha: 0.15 },
+    grid: { type: CONST.GRID_TYPES.HEXODDR, size: dims.size, color: "#000000", alpha: 0.15 },
     tokenVision: false,
     fog: { exploration: false },
     flags: { [MODULE_ID]: { world: { ...WORLD_DEFAULTS, enabled: true } } }
@@ -381,27 +376,50 @@ async function createWorldScene(options = null) {
   return scene;
 }
 
-/** Настройки мира текущей сцены: цвет пустых гексов и сетки. */
+/**
+ * Настройки мира текущей сцены: размер поля в гексах, размер гекса,
+ * цвета пустых гексов и сетки, неровные границы местности.
+ */
 async function openWorldSettings() {
   const scene = canvas.scene;
   if ( !scene || !game.user.isGM ) return;
   const w = worldOf(scene);
+  const d = sceneDims(scene);
+  const num = (name, value, min, max, step = 1) => `<input type="number" name="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
+  const row = (label, input, hint = "") => `<div class="form-group"><label>${esc(L(label))}</label><div class="form-fields">${input}</div>${hint ? `<p class="hint">${esc(L(hint))}</p>` : ""}</div>`;
   const result = await foundry.applications.api.DialogV2.prompt({
     window: { title: L("ART.World.settings") },
-    content: `<div class="form-group"><label>${esc(L("ART.Scene.baseColor"))}</label><input type="color" name="baseColor" value="${esc(w.baseColor)}"></div>
-      <div class="form-group"><label>${esc(L("ART.Scene.gridColor"))}</label><input type="color" name="gridColor" value="${esc(w.gridColor)}"></div>
-      <div class="form-group"><label>${esc(L("ART.Scene.gridAlpha"))}</label><input type="number" name="gridAlpha" value="${w.gridAlpha}" min="0" max="1" step="0.05"></div>
+    position: { width: 460 },
+    content: `<fieldset><legend>${esc(L("ART.World.size"))}</legend>
+        ${row("ART.Scene.cols", num("cols", d.cols, 5, 300))}
+        ${row("ART.Scene.rows", num("rows", d.rows, 5, 300))}
+        ${row("ART.Scene.size", num("size", d.size, 30, 400, 5), "ART.World.sizeHint")}
+      </fieldset>
+      ${row("ART.Scene.baseColor", `<input type="color" name="baseColor" value="${esc(w.baseColor)}">`)}
+      ${row("ART.Scene.gridColor", `<input type="color" name="gridColor" value="${esc(w.gridColor)}">`)}
+      ${row("ART.Scene.gridAlpha", num("gridAlpha", w.gridAlpha, 0, 1, 0.05))}
+      ${row("ART.World.rough", `<input type="checkbox" name="rough" ${w.rough ? "checked" : ""}>`, "ART.World.roughHint")}
       <p class="hint">${esc(L("ART.Scene.settingsHint"))}</p>`,
     ok: {
       label: L("ART.Save"),
       callback: (ev, button) => {
         const f = button.form.elements;
-        return { baseColor: f.baseColor.value, gridColor: f.gridColor.value, gridAlpha: Math.max(0, Math.min(1, Number(f.gridAlpha.value) || 0)) };
+        return {
+          dims: { cols: Number(f.cols.value), rows: Number(f.rows.value), size: Number(f.size.value) },
+          world: {
+            baseColor: f.baseColor.value, gridColor: f.gridColor.value,
+            gridAlpha: Math.max(0, Math.min(1, Number(f.gridAlpha.value) || 0)),
+            rough: f.rough.checked
+          }
+        };
       }
     },
     rejectClose: false
   });
-  if ( result ) await scene.update({ [`flags.${MODULE_ID}.world`]: { ...w, ...result } });
+  if ( !result ) return;
+  // Сначала поле: правка флагов тоже перерисовывает холст и сбила бы ожидание перерисовки после смены сетки.
+  if ( await resizeWorld(scene, result.dims) ) ui.notifications.info(game.i18n.format("ART.World.resized", normalizeDims(result.dims)));
+  await scene.update({ [`flags.${MODULE_ID}.world`]: { ...worldOf(scene), ...result.world } });
 }
 
 /** Найти элемент: открыть его гекс, раскрыть строку и навести камеру. */
