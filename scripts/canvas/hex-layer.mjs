@@ -20,29 +20,29 @@ const CONTROL_TOOLS = [
 /** Модуль кладёт сюда студию и backend при запуске. */
 export const runtime = { studio: null, backend: null, isWorld: () => false };
 
-/** Модификаторы клавиш из события PIXI или из клавиатуры Foundry. */
-function mods(event) {
-  const e = event?.nativeEvent ?? event ?? {};
-  const km = game.keyboard;
-  const M = foundry.helpers?.interaction?.KeyboardManager?.MODIFIER_KEYS ?? globalThis.KeyboardManager?.MODIFIER_KEYS ?? {};
-  const active = k => !!(km?.isModifierActive?.(M[k]));
-  return {
-    shift: !!(e.shiftKey ?? active("SHIFT")),
-    alt: !!(e.altKey ?? active("ALT")),
-    ctrl: !!(e.ctrlKey || e.metaKey || active("CONTROL"))
-  };
+/** Модификаторы клавиш из DOM-события. */
+function mods(e = {}) {
+  return { shift: !!e.shiftKey, alt: !!e.altKey, ctrl: !!(e.ctrlKey || e.metaKey) };
 }
 
-/** Точка события в координатах сцены. */
-function point(event) {
-  try {
-    const p = event.getLocalPosition(canvas.stage);
-    return { x: p.x, y: p.y };
-  } catch {
-    const m = canvas.mousePosition ?? { x: 0, y: 0 };
-    return { x: m.x, y: m.y };
-  }
+/** Элемент <canvas> Foundry. PIXI 7 зовёт его view, PIXI 8 — canvas. */
+export function boardElement() {
+  return canvas.app?.canvas ?? canvas.app?.view ?? document.getElementById("board");
 }
+
+/**
+ * Точка DOM-события в координатах сцены.
+ * Глобальные координаты PIXI — это CSS-пиксели относительно элемента холста.
+ */
+export function scenePoint(ev, el = boardElement()) {
+  const r = el.getBoundingClientRect();
+  const p = canvas.stage.worldTransform.applyInverse(new PIXI.Point(ev.clientX - r.left, ev.clientY - r.top));
+  return { x: p.x, y: p.y };
+}
+
+/** Отладка ввода: api.debugInput(true) пишет в консоль каждое нажатие. */
+export const inputDebug = { on: false, warned: false };
+const dlog = (...args) => { if ( inputDebug.on ) console.log(`${MODULE_ID} | ввод:`, ...args); };
 
 export default class HexLayer extends InteractionLayer {
   constructor() {
@@ -152,7 +152,7 @@ export default class HexLayer extends InteractionLayer {
         const s = runtime.studio;
         if ( this._needBase ) this.renderer.drawBase(runtime.backend.world());
         this._needBase = false;
-        this.renderer.drawData(s.states, s.types, s.layers);
+        this.renderer.drawData(s.states, s.types, s.layers, runtime.backend.world(), s.view());
         this.renderer.drawOverlay(s);
       } catch(err) {
         console.error(`${MODULE_ID} | draw`, err);
@@ -171,79 +171,98 @@ export default class HexLayer extends InteractionLayer {
   /* ------------------------------------------------------------ */
 
   /**
-   * Мышь ловим сами на canvas.stage, пока на сцене Артария выбран инструмент.
-   * Колбэки слоя (_onClickLeft и т. п.) Foundry зовёт не во всех версиях и сборках
-   * интерфейса, а события холста приходят всегда.
+   * Мышь ловим DOM-событиями элемента <canvas> в фазе перехвата на window.
+   * Колбэки слоя и события PIXI на canvas.stage в Foundry 14 (сборка 370) до нас не доходят,
+   * а DOM-событие элемента холста приходит при любой раскладке слоёв и тем интерфейса.
    */
   _listen() {
     this._unlisten();
-    const stage = canvas.stage;
+    const el = boardElement();
+    if ( !el ) return console.warn(`${MODULE_ID} | нет элемента холста, мышь не подключена`);
     let down = null;
     let last = null;
-    const on = (type, fn) => { stage.on(type, fn); this._listeners.push([type, fn]); };
+    const add = (target, type, fn) => {
+      target.addEventListener(type, fn, true);
+      this._listeners.push([target, type, fn]);
+    };
     this._listeners = [];
-    on("pointerdown", ev => {
+
+    // Перехват на window срабатывает раньше всех обработчиков страницы, в том числе PIXI.
+    add(window, "pointerdown", ev => {
+      if ( ev.target !== el ) return;
       const s = runtime.studio;
-      if ( !s?.tool || !this._ownsEvent(ev) ) return;
-      const p = point(ev);
-      if ( ev.button === 2 ) { down = { right: true, x: ev.global.x, y: ev.global.y }; return; }
+      const owned = this._owns();
+      dlog(ev.type, { button: ev.button, tool: s?.tool, owned, activeLayer: canvas.activeLayer?.options?.name, control: ui.controls?.control?.name });
+      if ( !s?.tool ) return;
+      if ( !owned ) {
+        if ( !inputDebug.warned && ev.button === 0 ) {
+          inputDebug.warned = true;
+          console.warn(`${MODULE_ID} | инструмент «${s.tool}» выбран, но активна не группа Артария (${ui.controls?.control?.name ?? "?"}). Щелчок отдан Foundry.`);
+        }
+        return;
+      }
+      const p = scenePoint(ev, el);
+      if ( ev.button === 2 ) { down = { right: true, x: ev.clientX, y: ev.clientY }; return; }
       if ( ev.button !== 0 ) return;
       // Двойной щелчок линией (тот же инструмент, то же место) заканчивает линию.
       const now = performance.now();
       const dbl = s.tool === "line" && last?.tool === "line" && (now - last.t) < 320
-        && Math.hypot(ev.global.x - last.x, ev.global.y - last.y) < 8;
-      last = dbl ? null : { t: now, tool: s.tool, x: ev.global.x, y: ev.global.y };
-      if ( dbl ) {
-        s.finishLine();
+        && Math.hypot(ev.clientX - last.x, ev.clientY - last.y) < 8;
+      last = dbl ? null : { t: now, tool: s.tool, x: ev.clientX, y: ev.clientY };
+      down = { right: false, x: ev.clientX, y: ev.clientY };
+      dlog("точка", p, "гекс", runtime.backend?.grid.cellAt(p));
+      try {
+        if ( dbl ) s.finishLine();
+        else s.pointerDown(p, mods(ev));
+      } catch(err) {
+        console.error(`${MODULE_ID} | щелчок`, err);
+      }
+    });
+
+    add(window, "pointermove", ev => {
+      const s = runtime.studio;
+      if ( !s?.tool || !this._owns() ) return;
+      if ( ev.target !== el && !down ) {
+        // Курсор ушёл с холста на окно: подсветку гекса снять.
+        if ( s.hover ) s.pointerMove({ x: -1e9, y: -1e9 });
         return;
       }
-      down = { right: false, x: ev.global.x, y: ev.global.y };
-      s.pointerDown(p, mods(ev));
+      try { s.pointerMove(scenePoint(ev, el)); }
+      catch(err) { console.error(`${MODULE_ID} | мышь`, err); }
     });
-    on("pointermove", ev => {
-      const s = runtime.studio;
-      if ( !s?.tool ) return;
-      s.pointerMove(point(ev));
-    });
-    const up = ev => {
+
+    add(window, "pointerup", ev => {
       const s = runtime.studio;
       const d = down;
       down = null;
       if ( !s?.tool || !d ) return;
       if ( d.right ) {
         // Правая кнопка без протяжки; протяжкой Foundry двигает карту.
-        if ( Math.hypot(ev.global.x - d.x, ev.global.y - d.y) < 6 ) s.rightClick();
+        if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick();
         return;
       }
       s.pointerUp();
-    };
-    on("pointerup", up);
-    on("pointerupoutside", up);
-    this._onKey = ev => {
+    });
+
+    add(window, "keydown", ev => {
       if ( ev.target?.matches?.("input, textarea, select, [contenteditable]") ) return;
       if ( !runtime.studio?.tool ) return;
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();
         runtime.studio.finishLine();
       }
-    };
-    window.addEventListener("keydown", this._onKey);
+    });
+    dlog("подключено к", el);
   }
 
   _unlisten() {
-    for ( const [type, fn] of this._listeners ?? [] ) canvas.stage?.off(type, fn);
+    for ( const [target, type, fn] of this._listeners ?? [] ) target.removeEventListener(type, fn, true);
     this._listeners = [];
-    if ( this._onKey ) window.removeEventListener("keydown", this._onKey);
-    this._onKey = null;
   }
 
-  /** Событие пришло в пустое место холста или в наш слой, а не в токен или окно поверх. */
-  _ownsEvent(ev) {
-    const t = ev.target;
-    if ( !t || t === canvas.stage || t === this ) return true;
-    for ( let o = t; o; o = o.parent ) if ( o === this ) return true;
-    // Объекты других слоёв (токены, заметки) живут своей жизнью, пока наш слой не активен.
-    return !!this.active;
+  /** Мышь наша, когда в колонке слева выбрана группа Артария (или наш слой активен). */
+  _owns() {
+    return !!(this.active || canvas.activeLayer === this || ui.controls?.control?.name === LAYER_NAME);
   }
 
   /* ------------------------------------------------------------ */

@@ -15,6 +15,8 @@ import {
   makeType, nextZoneColor, layerIdOf, zoneCells, currentTurnUserId, nextTurn, canSubmit, setTurnOrder
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
+import { simplify } from "./geometry/geometry.mjs";
+import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
 
 export const TOOLS = ["select", "zone", "mark", "line"];
 
@@ -33,9 +35,10 @@ export default class Studio {
     this.rightTab = "tile";
     this.rightOpen = false;
     /** Настройки инструментов. */
-    this.zone = { target: "new", typeId: "forest", name: "", color: "", paint: false, detachLayer: "terrain", filter: "" };
-    this.mark = { typeId: "city", name: "", paint: false };
-    this.line = { typeId: "river", name: "", points: [], snap: false };
+    this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, detachLayer: "terrain", filter: "" };
+    this.mark = { typeId: "city", name: "", text: "", paint: false };
+    /** mode: "free" — точки где угодно, "hex" — путь через центры гексов, "draw" — от руки протяжкой. */
+    this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [] };
     /** Форма нового или изменяемого типа: { kind, id?, name, color, icon, layerId } или null. */
     this.typeForm = null;
     /** Форма заявки игрока. */
@@ -79,6 +82,39 @@ export default class Studio {
   get layers() { return this.backend.layers(); }
   get grid() { return this.backend.grid; }
 
+  /* ---------------------------------------------------------------- */
+  /*  Что видно: слои и наборы слоёв                                   */
+  /* ---------------------------------------------------------------- */
+
+  hidden() { return this.backend.hiddenIds?.() ?? new Set(this.layers.filter(l => l.visible === false).map(l => l.id)); }
+  view() { return viewOf(this.hidden()); }
+  presets() {
+    const custom = (this.backend.customPresets?.() ?? []).map(p => ({ ...p, custom: true }));
+    return [...BUILTIN_PRESETS.map(p => ({ ...p, name: this.t(`ART.Preset.${p.id}`) })), ...custom];
+  }
+  activePreset() { return activePreset(this.hidden(), this.presets()); }
+
+  async applyPreset(id) {
+    const p = this.presets().find(x => x.id === id);
+    if ( p ) await this.backend.setHidden?.(p.hidden);
+    this.changed("ui");
+  }
+
+  async savePreset() {
+    const name = await this.backend.prompt?.(this.t("ART.Preset.saveTitle"), "");
+    if ( !name ) return;
+    const list = this.backend.customPresets?.() ?? [];
+    list.push({ id: `custom-${this.backend.newId()}`, name, hidden: [...this.hidden()] });
+    await this.backend.setCustomPresets?.(list);
+    this.changed("ui");
+  }
+
+  async deletePreset(id) {
+    const list = (this.backend.customPresets?.() ?? []).filter(p => p.id !== id);
+    await this.backend.setCustomPresets?.(list);
+    this.changed("ui");
+  }
+
   typesOf(kind) { return this.types.filter(t => t.kind === kind); }
 
   typeById(id) { return this.types.find(t => t.id === id) ?? null; }
@@ -103,7 +139,7 @@ export default class Studio {
     const prev = this.tool;
     this.tool = toggle && tool === prev ? null : tool;
     if ( this.tool === prev && fromCanvas ) return;
-    if ( this.tool !== "line" ) this.line.points = [];
+    if ( this.tool !== "line" ) { this.line.points = []; this.line.cells = []; }
     this.typeForm = null;
     if ( this.tool === "zone" ) this._ensureType("zone", "area");
     if ( this.tool === "mark" ) this._ensureType("mark", "object");
@@ -139,8 +175,25 @@ export default class Studio {
       return;
     }
     if ( this.tool === "line" ) {
-      const p = this.line.snap || ctrl ? this.grid.center(cell) : point;
-      this.line.points.push([Math.round(p.x), Math.round(p.y)]);
+      const l = this.line;
+      if ( l.mode === "draw" ) {
+        // От руки: линия пишется протяжкой и заканчивается, когда кнопку отпустили.
+        l.points = [[Math.round(point.x), Math.round(point.y)]];
+        this._sketch = true;
+      } else if ( l.mode === "hex" ) {
+        if ( !inside ) return;
+        const last = l.cells.at(-1);
+        const path = last ? cellsAlong(last, cell, this.grid.center, this.grid.cellAt).slice(1) : [cell];
+        for ( const c of path ) {
+          if ( !this.grid.inBounds(c) ) continue;
+          const p = this.grid.center(c);
+          l.cells.push(c);
+          l.points.push([Math.round(p.x), Math.round(p.y)]);
+        }
+      } else {
+        const p = l.snap || ctrl ? this.grid.center(cell) : point;
+        l.points.push([Math.round(p.x), Math.round(p.y)]);
+      }
       this.changed("ui");
       this.changed("overlay");
       return;
@@ -152,6 +205,16 @@ export default class Studio {
   }
 
   pointerMove(point) {
+    if ( this._sketch ) {
+      const pts = this.line.points;
+      const last = pts.at(-1);
+      // Точка не чаще чем через четверть гекса: линия гладкая и не раздутая.
+      if ( Math.hypot(point.x - last[0], point.y - last[1]) >= this.grid.radius * 0.25 ) {
+        pts.push([Math.round(point.x), Math.round(point.y)]);
+        this.changed("overlay");
+      }
+      return;
+    }
     const cell = this.grid.cellAt(point);
     const k = this.grid.inBounds(cell) ? cellKey(cell) : null;
     const hoverChanged = (this.hover ? cellKey(this.hover) : null) !== k;
@@ -166,6 +229,12 @@ export default class Studio {
   }
 
   async pointerUp() {
+    if ( this._sketch ) {
+      this._sketch = false;
+      if ( this.line.points.length >= 2 ) await this.finishLine();
+      else { this.line.points = []; this.changed("overlay"); }
+      return;
+    }
     const d = this._drag;
     this._drag = null;
     if ( !d ) return;
@@ -190,7 +259,7 @@ export default class Studio {
 
   /** Правая кнопка: убрать последнюю точку линии или снять выделение. */
   rightClick() {
-    if ( this.tool === "line" && this.line.points.length ) this.line.points.pop();
+    if ( this.tool === "line" && this.line.points.length ) this.undoPoint();
     else this.selection.clear();
     this.changed("ui");
     this.changed("overlay");
@@ -199,7 +268,7 @@ export default class Studio {
   /** Esc: сбросить начатое. Возвращает true, если было что сбрасывать. */
   dismiss() {
     if ( this.typeForm ) { this.typeForm = null; this.changed("ui"); return true; }
-    if ( this.line.points.length ) { this.line.points = []; this.changed("ui"); this.changed("overlay"); return true; }
+    if ( this.line.points.length ) { this.clearLine(); return true; }
     if ( this.selection.size ) { this.clearSelection(); return true; }
     return false;
   }
@@ -234,9 +303,12 @@ export default class Studio {
           color: terrain ? "" : (this.zone.color || nextZoneColor(states))
         }
       });
+      const text = this.zone.text?.trim();
+      if ( text ) for ( const op of ops ) if ( op.action === "create" && op.id === id ) op.state.text = text;
       // Дальше рисуем в ту же зону, а не плодим новые.
       this.zone.target = id;
       this.zone.name = "";
+      this.zone.text = "";
       this.zone.color = "";
     }
     await this._commit(ops);
@@ -275,6 +347,8 @@ export default class Studio {
       cells, typeId: this.mark.typeId, name: this.mark.name.trim(), types: this.types,
       center: this.grid.center, newId: () => this.backend.newId()
     });
+    const text = this.mark.text?.trim();
+    if ( text ) for ( const op of ops ) if ( op.action === "create" ) op.state.text = text;
     await this._commit(ops);
     for ( const c of cells ) this.selection.delete(cellKey(c));
     this.changed("ui");
@@ -285,28 +359,43 @@ export default class Studio {
   /*  Линия                                                             */
   /* ---------------------------------------------------------------- */
 
+  setLineMode(mode) {
+    if ( !["free", "hex", "draw"].includes(mode) ) return;
+    this.line.mode = mode;
+    this.clearLine();
+  }
+
   async finishLine() {
     if ( this.line.points.length < 2 ) return this.backend.notify("warn", this.t("ART.Line.needTwo"));
     if ( !this.typeById(this.line.typeId) ) return this.backend.notify("warn", this.t("ART.Line.noType"));
+    const points = this.line.mode === "draw" ? simplify(this.line.points, this.grid.radius * 0.06) : this.line.points;
     const op = lineOp({
-      points: this.line.points, typeId: this.line.typeId, name: this.line.name.trim(),
+      points, typeId: this.line.typeId, name: this.line.name.trim(),
       types: this.types, newId: () => this.backend.newId()
     });
+    if ( this.line.text?.trim() ) op.state.text = this.line.text.trim();
+    // Линии по гексам и от руки не виляют сами: их форму задал игрок.
+    if ( this.line.mode !== "free" ) op.state.system.style = { ...(op.state.system.style ?? {}), meander: 0 };
     this.line.points = [];
+    this.line.cells = [];
     this.line.name = "";
+    this.line.text = "";
     await this._commit([op]);
     this.changed("ui");
     this.changed("overlay");
   }
 
   undoPoint() {
+    // По гексам шаг назад убирает последний гекс пути.
     this.line.points.pop();
+    if ( this.line.mode === "hex" ) this.line.cells.pop();
     this.changed("ui");
     this.changed("overlay");
   }
 
   clearLine() {
     this.line.points = [];
+    this.line.cells = [];
     this.changed("ui");
     this.changed("overlay");
   }
@@ -321,11 +410,12 @@ export default class Studio {
     if ( existing ) {
       this.typeForm = {
         kind, id, name: existing.name, color: existing.style?.color ?? "#cccccc",
-        icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay"
+        icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay",
+        pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a"
       };
     } else {
       const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
-      this.typeForm = { kind, id: null, name: "", color: nextZoneColor(this.states), icon: "", layerId };
+      this.typeForm = { kind, id: null, name: "", color: nextZoneColor(this.states), icon: "", layerId, pattern: "none", patternColor: "#1a1a1a" };
     }
     this.changed("ui");
   }
@@ -350,6 +440,9 @@ export default class Studio {
       if ( f.kind === "area" ) type.layerId = f.layerId;
     } else {
       type = makeType({ id: this.backend.newId(), kind: f.kind, name, color: f.color, icon: f.icon, layerId: f.layerId, layers: this.layers });
+    }
+    if ( f.kind === "area" ) {
+      type.style = { ...(type.style ?? {}), pattern: f.pattern || "none", patternColor: f.patternColor || "#1a1a1a" };
     }
     await this.backend.saveType(type);
     const slot = { area: "zone", object: "mark", line: "line" }[f.kind];

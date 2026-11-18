@@ -137,8 +137,12 @@
       "error": {
         "notJson": "This is not a JSON file.",
         "noInfo": "The file has no map size. An Azgaar export is needed.",
-        "notFull": "This is not a full export. In Azgaar choose Export to JSON → Full."
-      }
+        "notFull": "This is not a full export. In Azgaar choose Export to JSON → Full.",
+        "isMap": "This is a .map save, not JSON. In Azgaar: Export → Export to JSON → Full."
+      },
+      "fit": "Fit the scene to the map proportions",
+      "cols": "Hexes across",
+      "fitHint": "The field height in hexes follows the Azgaar map so it does not stretch."
     }
   },
   "ART": {
@@ -166,7 +170,8 @@
       "color": "Color",
       "type": "Type",
       "owner": "Demiurge",
-      "text": "Description"
+      "text": "Description",
+      "textPh": "Optional"
     },
     "Guide": {
       "title": "How to play"
@@ -188,7 +193,12 @@
     },
     "World": {
       "settings": "World settings",
-      "azgaar": "Import from Azgaar"
+      "azgaar": "Import from Azgaar",
+      "size": "Map size",
+      "sizeHint": "Hex width in pixels. Bigger hexes make a bigger map at the same Foundry zoom. Zones and marks move to the new field, lines are scaled.",
+      "rough": "Rough coastlines",
+      "roughHint": "Terrain borders are drawn wavy instead of along hex edges. Data stays per hex; realms and regions are drawn straight.",
+      "resized": "Field rebuilt: {cols} × {rows} hexes, hex {size} px."
     },
     "Type": {
       "new": "New type",
@@ -227,13 +237,24 @@
       "noType": "Pick a mark type."
     },
     "Line": {
-      "hint": "Click the map to add points. Right-click removes the last point, Esc clears the line. Hold Ctrl to snap to the hex center.",
+      "hint": "Pick a mode below. Right-click removes the last point, Esc clears the line, Enter or double-click finishes it.",
       "type": "Line type",
       "points": "Points: {n}",
       "finish": "Done",
       "snap": "Snap points to hex centers",
       "needTwo": "A line needs at least two points.",
-      "noType": "Pick a line type."
+      "noType": "Pick a line type.",
+      "mode": "Drawing mode",
+      "modes": {
+        "free": "Free",
+        "hex": "By hexes",
+        "draw": "Freehand"
+      },
+      "hints": {
+        "free": "Points go where you click. Hold Ctrl to snap a point to the hex center.",
+        "hex": "Click hexes: the line runs through the centers of every hex in between.",
+        "draw": "Drag with the mouse button held. The line is saved when you release it."
+      }
     },
     "Card": {
       "tab": "Hex",
@@ -357,7 +378,37 @@
       "done": "World ready (seed {seed}): hexes {hexes}, terrain zones {terrain}, realms {realms}, resources {resources}.",
       "realmOf": "Realm of {name}",
       "realmN": "Realm {n}",
-      "capitalN": "Capital {n}"
+      "capitalN": "Capital {n}",
+      "sizeHint": "The scene is resized before generating."
+    },
+    "Pattern": {
+      "title": "Pattern",
+      "color": "Pattern color",
+      "none": "No pattern",
+      "hatch": "Diagonal hatching",
+      "crosshatch": "Crosshatch",
+      "cross": "Crosses",
+      "dots": "Dots",
+      "vertical": "Vertical lines"
+    },
+    "Preset": {
+      "title": "Layer preset",
+      "manual": "Custom view",
+      "save": "Save view as preset",
+      "delete": "Delete preset",
+      "saveTitle": "Preset name",
+      "all": "Everything",
+      "political": "Political map",
+      "physical": "Physical map",
+      "resources": "Resources",
+      "admin": "Regions",
+      "terrain": "Terrain only"
+    },
+    "View": {
+      "marks": "Marks",
+      "resources": "Resources",
+      "lines": "Lines",
+      "labels": "Labels"
     }
   }
 }

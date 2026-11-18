@@ -377,7 +377,23 @@ export function makeCanvas(scene, grid) {
     scene,
     grid,
     dimensions: { sceneRect: grid.rect },
-    stage: new PIXI.Container(),
+    stage: (() => {
+      // Камера сдвинута и уменьшена, чтобы перевод координат щелчка проверялся по-настоящему.
+      const st = new PIXI.Container();
+      st.scale.set(0.5);
+      st.position.set(30, 20);
+      st.transform.updateTransform(PIXI.Transform.IDENTITY);
+      return st;
+    })(),
+    app: { view: (() => {
+      const el = document.createElement("canvas");
+      el.id = "board";
+      el.width = 1400; el.height = 900;
+      el.style.cssText = "position:fixed;left:0;top:0;width:1400px;height:900px;z-index:0";
+      document.body.prepend(el);
+      return el;
+    })() },
+    activeLayer: null,
     mousePosition: { x: 0, y: 0 },
     animatePan: o => { globalThis.canvas.panned = o; },
     draw: async () => { globalThis.canvas.redrawn = (globalThis.canvas.redrawn ?? 0) + 1; },

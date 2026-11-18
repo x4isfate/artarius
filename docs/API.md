@@ -34,7 +34,9 @@ Hooks.once("artarius.init", api => {
 
 ## Сцена и инструменты
 
-- `isWorldScene(scene?)`: включён ли на сцене режим Артария. `worldOf(scene?)`: настройки мира сцены (`enabled`, `baseColor`, `gridColor`, `gridAlpha`).
+- `isWorldScene(scene?)`: включён ли на сцене режим Артария. `worldOf(scene?)`: настройки мира сцены (`enabled`, `baseColor`, `gridColor`, `gridAlpha`, `rough` — неровные берега).
+- `sceneDims(scene?)`: размер поля `{ cols, rows, size }`. `resizeWorld({ cols, rows, size }, scene?)`: перестроить поле; зоны и метки переезжают, линии растягиваются, гексы за краем пропадают.
+- `debugInput(on)`: писать в консоль каждое нажатие мыши на холсте (инструмент, активная группа, точка, гекс).
 - `createWorldScene({ name, cols, rows, size })`: новая сцена с гекс-сеткой. Без аргумента спрашивает мастера.
 - `setTool(tool)`: `"select" | "zone" | "mark" | "line"`, `null` убирает инструменты.
 - `inspect([i, j])`: открыть гекс в правой панели.
@@ -90,9 +92,15 @@ await page.update({ "system.ext.my-module": { morale: 7 } });
 
 `openGuide()`, `openWorldSettings()`, `openAzgaar()`, `openAzgaarGenerator()`, `openGenerator()`.
 
-`generateTestWorld({ seed, water, mountains, resources, realmCount, realms, clear })` создаёт тестовый мир без окна. `realms` — свои державы `[{ name, color, demiurge }]`, без них по державе на игрока. После генерации вызывается хук `artarius.generate` с `{ scene, atlas, built, removed }`. Элементы генератора помечены `system.ext.artariusGen = { seed, kind }`.
+`generateTestWorld({ seed, water, mountains, resources, realmCount, realms, clear, cols, rows, size, rough })` создаёт тестовый мир без окна. `cols`, `rows`, `size` перестраивают поле до генерации, `rough` включает неровные берега. `realms` — свои державы `[{ name, color, demiurge }]`, без них по державе на игрока. После генерации вызывается хук `artarius.generate` с `{ scene, atlas, built, removed }`. Элементы генератора помечены `system.ext.artariusGen = { seed, kind }`.
 
-`importAzgaar(data, scene, { parts, replace })` импортирует разобранный JSON из Azgaar без окна, например из макроса. `parts`: `{ terrain, states, provinces, burgs, rivers, routes }`.
+`importAzgaar(data, scene, { parts, replace, fit, cols })` импортирует разобранный JSON из Azgaar без окна, например из макроса. `parts`: `{ terrain, states, provinces, burgs, rivers, routes }`. `fit: true` подгоняет поле под пропорции карты: `cols` гексов по ширине, высота по карте.
+
+## Вид карты
+
+Что скрыто у пользователя, лежит в клиентской настройке `hiddenLayers`: id слоёв зон и виды элементов `@marks`, `@resources`, `@lines`, `@labels`. Ресурс — метка, у которой тип начинается с `res-`. `backend.hiddenIds()` и `backend.setHidden(ids)` читают и меняют этот список, `studio.applyPreset(id)` включает набор слоёв (`all`, `political`, `physical`, `resources`, `admin`, `terrain` или свой). Свои наборы лежат в `layerPresets`.
+
+У типа зоны в `style` есть штриховка: `pattern` (`none`, `hatch`, `crosshatch`, `cross`, `dots`, `vertical`), `patternColor`, `patternAlpha`.
 
 ## Что изменилось с API 1 (0.2)
 

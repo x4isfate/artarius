@@ -163,10 +163,35 @@ export default class FoundryBackend {
   }
 
   async toggleLayer(id) {
-    const hidden = new Set(game.settings.get(MODULE_ID, "hiddenLayers") ?? []);
+    const hidden = this.hiddenIds();
     if ( hidden.has(id) ) hidden.delete(id); else hidden.add(id);
-    await game.settings.set(MODULE_ID, "hiddenLayers", [...hidden]);
+    await this.setHidden([...hidden]);
+  }
+
+  /** Скрытые этим пользователем слои и виды элементов (@marks, @lines…). */
+  hiddenIds() { return new Set(game.settings.get(MODULE_ID, "hiddenLayers") ?? []); }
+
+  async setHidden(ids) {
+    await game.settings.set(MODULE_ID, "hiddenLayers", [...new Set(ids)]);
     this.emit();
+  }
+
+  /** Свои наборы слоёв этого пользователя: [{ id, name, hidden }]. */
+  customPresets() { return foundry.utils.deepClone(game.settings.get(MODULE_ID, "layerPresets") ?? []); }
+  async setCustomPresets(list) {
+    await game.settings.set(MODULE_ID, "layerPresets", list);
+    this.emit();
+  }
+
+  /** Спросить название у пользователя. */
+  async prompt(title, value = "") {
+    const { DialogV2 } = foundry.applications.api;
+    return DialogV2.prompt({
+      window: { title },
+      content: `<input type="text" name="value" value="${String(value).replace(/"/g, "&quot;")}" autofocus>`,
+      ok: { callback: (ev, button) => button.form.elements.value.value.trim() },
+      rejectClose: false
+    });
   }
 
   commitOps(ops) { return store.commitOps(ops, canvas.scene); }
