@@ -171,7 +171,8 @@
       "type": "Type",
       "owner": "Demiurge",
       "text": "Description",
-      "textPh": "Optional"
+      "textPh": "Optional",
+      "typeHere": "A new type applies to this hex only; the rest of the zone stays."
     },
     "Guide": {
       "title": "How to play"
@@ -189,7 +190,19 @@
       "show": "Show layer",
       "hide": "Hide layer",
       "exclusive": "one zone per hex",
-      "free": "zones overlap"
+      "free": "zones overlap",
+      "new": "New layer",
+      "edit": "Layer",
+      "namePh": "E.g. Magic",
+      "needName": "Give the layer a name.",
+      "exclusiveCheck": "A hex belongs to one zone of the layer",
+      "exclusiveHint": "On: a new zone takes the hex from other zones of this layer, like terrain. Off: zones of the layer overlap, like regions and notes.",
+      "types": "Zone types in this layer",
+      "up": "Up",
+      "down": "Down",
+      "delete": "Delete layer",
+      "deleteAsk": "Delete layer “{name}”? Its types ({n}) and zones move to “{to}”.",
+      "terrainHint": "Terrain cannot be deleted: hex colours and the generator rely on it."
     },
     "World": {
       "settings": "World settings",
@@ -226,7 +239,8 @@
       "allLayers": "From all layers",
       "noCells": "Select hexes on the map first.",
       "noType": "Pick a zone type.",
-      "nothingToDetach": "Selected hexes have no zones on this layer."
+      "nothingToDetach": "Selected hexes have no zones on this layer.",
+      "cells": "{n} hexes"
     },
     "Mark": {
       "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
@@ -282,25 +296,6 @@
       "removeCell": "Remove hex from zone",
       "delete": "Delete entirely",
       "deleteConfirm": "Delete “{name}” from the map?"
-    },
-    "Turn": {
-      "round": "Round {n}",
-      "of": "{name}'s turn",
-      "yours": "Your turn",
-      "pass": "Pass turn",
-      "free": "Turns are off",
-      "draft": "Draft: {n}",
-      "settings": "Turn order",
-      "enabled": "Play in turns",
-      "hint": "Everyone can draw. Only the current player can submit a claim. The GM passes the turn.",
-      "noOrder": "Order is empty: add players.",
-      "remove": "Remove from order",
-      "giveTurn": "Give the turn",
-      "notYourTurn": "It's not your turn. Your draft is kept; submit it on your turn.",
-      "waitFor": "It's {name}'s turn. You can submit on your turn.",
-      "announce": "Turn passes to {name}",
-      "announceRound": "Round {round}. {name}'s turn",
-      "title": "Turn"
     },
     "Queue": {
       "title": "Claims",
@@ -433,6 +428,19 @@
       "mark": "Place mark: {name}",
       "zone": "Add to zone: {name}",
       "marksHere": "Marks on this hex"
+    },
+    "Settings": {
+      "title": "Artarius settings",
+      "open": "Settings",
+      "pick": "Pick something in the list on the left.",
+      "worldHint": "Field size, rough coastlines, Azgaar import and the test map generator.",
+      "sec": {
+        "layers": "Layers",
+        "area": "Zones",
+        "object": "Marks",
+        "line": "Lines",
+        "world": "World"
+      }
     }
   }
 }

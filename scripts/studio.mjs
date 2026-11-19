@@ -5,14 +5,14 @@
  *
  * backend — см. docs/API.md, раздел «Backend». Главное:
  *   states(), atlasStates(), types(), layers(), grid, commitOps(ops), saveType(t), deleteType(id),
- *   newId(), isGM, userId, players(), actors(), turn(), setTurn(t), draftOps(), submitDraft(),
+ *   newId(), isGM, userId, players(), actors(), draftOps(), submitDraft(),
  *   claims(), applyClaims(), rejectClaims(), requestCheck(), returnToDraft(), dropClaim(),
  *   panTo(point), notify(level, text), t(key, data), onChange(fn).
  */
 import { TOOL_KIND } from "./constants.mjs";
 import {
   cellKey, parseKey, attachOps, detachOps, markOps, lineOp, tileContents, cellsAlong,
-  makeType, nextZoneColor, layerIdOf, zoneCells, currentTurnUserId, nextTurn, canSubmit, setTurnOrder
+  makeType, nextZoneColor, layerIdOf, zoneCells
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
@@ -52,6 +52,10 @@ export default class Studio {
     this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [] };
     /** Форма нового или изменяемого типа: { kind, id?, name, color, icon, layerId } или null. */
     this.typeForm = null;
+    /** Окно настроек модуля: раздел и выбранный в списке элемент. Раздел: layers | area | object | line | world. */
+    this.settings = { open: false, section: "layers", id: null, back: false };
+    /** Форма слоя в настройках: { id?, name, exclusive } или null. */
+    this.layerForm = null;
     /** Форма заявки игрока. */
     this.claimForm = { title: "", note: "" };
     /** Заявки, которые мастер смотрит на карте, и отмеченные галочкой. */
@@ -530,6 +534,10 @@ export default class Studio {
     this[slot].typeId = type.id;
     if ( slot === "zone" ) this.zone.target = "new";
     this.typeForm = null;
+    // Пришли из окна инструмента: настройки закрываются, новый тип уже выбран в инструменте.
+    if ( this.settings.back ) return this.closeSettings();
+    // В настройках сохранённый тип остаётся выбранным в списке.
+    if ( this.settings.open && this.settings.section === f.kind ) return this.settingsPick(type.id);
     this.changed("ui");
   }
 
@@ -540,7 +548,121 @@ export default class Studio {
     if ( used && !(await this.backend.confirm(this.t("ART.Type.deleteUsed", { name: type.name }))) ) return;
     await this.backend.deleteType(id);
     this.typeForm = null;
+    if ( this.settings.back ) return this.closeSettings();
+    if ( this.settings.open && this.settings.section === type.kind ) return this.settingsPick(this.typesOf(type.kind)[0]?.id ?? null);
     this.changed("ui");
+  }
+
+  /**
+   * Новый тип или правка типа из окна инструмента: правка идёт в окне настроек.
+   * Если настройки были закрыты, после «Сохранить», «Отмена» или удаления они закроются сами.
+   */
+  editTypeInSettings(kind, id = "new") {
+    this.settings.back = !this.settings.open || this.settings.back;
+    this.settings.open = true;
+    this.settings.section = kind;
+    this.settingsPick(id);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Настройки модуля                                                  */
+  /* ---------------------------------------------------------------- */
+
+  openSettings(section = this.settings.section) {
+    this.settings.open = true;
+    this.settings.back = false;
+    this.settingsSection(section);
+  }
+
+  closeSettings() {
+    this.settings.open = false;
+    this.settings.back = false;
+    this.typeForm = null;
+    this.layerForm = null;
+    this.changed("ui");
+  }
+
+  /** Раздел настроек; в списке сразу выбран первый элемент. */
+  settingsSection(section) {
+    const gm = this.backend.isGM;
+    this.settings.back = false;
+    if ( (section === "layers" || section === "world") && !gm ) section = "area";
+    this.settings.section = section;
+    this.typeForm = null;
+    this.layerForm = null;
+    const first = section === "layers" ? this.layers[0]?.id
+      : ["area", "object", "line"].includes(section) ? this.typesOf(section)[0]?.id : null;
+    this.settingsPick(first ?? null);
+  }
+
+  /** Выбрать элемент в списке настроек: справа открывается его правка. id "new" — новый. */
+  settingsPick(id) {
+    const sec = this.settings.section;
+    this.settings.id = id;
+    this.typeForm = null;
+    this.layerForm = null;
+    if ( sec === "layers" && id ) {
+      const l = id === "new" ? null : this.layers.find(x => x.id === id);
+      this.layerForm = l ? { id: l.id, name: l.name, exclusive: l.exclusive !== false }
+        : { id: null, name: "", exclusive: true };
+    } else if ( ["area", "object", "line"].includes(sec) && id ) {
+      if ( id === "new" ) this.openTypeForm(sec);
+      else this.openTypeForm(sec, id);
+      return;
+    }
+    this.changed("ui");
+  }
+
+  async saveLayerForm() {
+    const f = this.layerForm;
+    if ( !f || !this.backend.isGM ) return;
+    const name = f.name.trim();
+    if ( !name ) return this.backend.notify("warn", this.t("ART.Layer.needName"));
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    let id = f.id;
+    if ( id ) {
+      const l = layers.find(x => x.id === id);
+      if ( l ) Object.assign(l, { name, exclusive: !!f.exclusive });
+    } else {
+      id = this.backend.newId();
+      layers.push({ id, name, exclusive: !!f.exclusive, visible: true });
+    }
+    await this.backend.setLayers(layers);
+    this.settingsPick(id);
+  }
+
+  async moveLayer(id, dir) {
+    if ( !this.backend.isGM ) return;
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    const n = layers.findIndex(l => l.id === id);
+    const m = n + dir;
+    if ( n < 0 || m < 0 || m >= layers.length ) return;
+    [layers[n], layers[m]] = [layers[m], layers[n]];
+    await this.backend.setLayers(layers);
+    this.changed("ui");
+  }
+
+  /**
+   * Удалить слой. Его типы и зоны переезжают в соседний слой («Прочее», иначе первый оставшийся).
+   * Местность не удаляется: на ней держатся цвета гексов и генератор.
+   */
+  async deleteLayer(id) {
+    if ( !this.backend.isGM || id === "terrain" ) return;
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    const layer = layers.find(l => l.id === id);
+    if ( !layer || layers.length < 2 ) return;
+    const rest = layers.filter(l => l.id !== id);
+    const to = rest.find(l => l.id === "overlay")?.id ?? rest[0].id;
+    const types = this.types.filter(t => t.kind === "area" && (t.layerId ?? "overlay") === id);
+    const zones = [...this.states.values()].filter(z => z.system.kind === "area" && z.system.layerId === id);
+    const ask = this.t("ART.Layer.deleteAsk", { name: layer.name, n: types.length, to: rest.find(l => l.id === to).name });
+    if ( !(await this.backend.confirm(ask)) ) return;
+    for ( const t of types ) if ( this.canEditType(t) ) await this.backend.saveType({ ...t, layerId: to });
+    if ( zones.length ) {
+      await this._commit(zones.map(z => ({ action: "update", id: z.id, state: { ...z, system: { ...z.system, layerId: to } } })));
+    }
+    await this.backend.setLayers(rest);
+    this.settingsPick(to);
   }
 
   pickType(kind, id) {
@@ -749,6 +871,13 @@ export default class Studio {
 
   /** Поле элемента из карточки. field — "name", "text", "demiurge", "color", "typeId" или путь статуса. */
   setField(id, field, value) {
+    // Тип зоны в окне гекса меняется у этого гекса, а не у всей зоны: «Пустыни» → «Лес» уводит в лес одну клетку.
+    if ( field === "typeId" ) {
+      const zone = this.stateOf(id);
+      const here = this.inspected && cellKey(this.inspected);
+      if ( zone?.system.kind === "area" && here && zoneCells(zone).length > 1
+        && zoneCells(zone).some(c => cellKey(c) === here) ) return this.retypeCell(id, this.inspected, value);
+    }
     this.edit(id, s => {
       if ( field === "name" ) s.name = value;
       else if ( field === "text" ) s.text = value;
@@ -772,58 +901,30 @@ export default class Studio {
     }, { now: field === "demiurge" || field === "typeId" || field === "color" });
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  Ходы                                                              */
-  /* ---------------------------------------------------------------- */
-
-  turn() { return this.backend.turn(); }
-
-  currentPlayerId() { return currentTurnUserId(this.turn()); }
-
-  canSubmit() { return canSubmit(this.turn(), this.backend.userId, this.backend.isGM); }
-
-  async passTurn() {
-    if ( !this.backend.isGM ) return;
-    const turn = nextTurn(this.turn());
-    await this.backend.setTurn(turn);
-    const id = currentTurnUserId(turn);
-    this.backend.announceTurn?.(id, turn.round);
+  /**
+   * Перевести один гекс из зоны в зону другого типа. Берётся соседняя зона нужного типа
+   * (иначе самая большая такого типа), а если такой нет — создаётся новая с именем типа.
+   */
+  async retypeCell(zoneId, cell, typeId) {
+    const { states, types, layers } = this;
+    const zone = states.get(zoneId);
+    const type = this.typeById(typeId);
+    if ( !zone || !type || zone.system.typeId === typeId ) return;
+    const same = [...states.values()].filter(z => z.id !== zoneId && z.system.kind === "area" && z.system.typeId === typeId);
+    const near = new Set((this.grid.neighbors?.(cell) ?? []).map(cellKey));
+    const target = same.find(z => zoneCells(z).some(c => near.has(cellKey(c))))
+      ?? same.sort((a, b) => zoneCells(b).length - zoneCells(a).length)[0];
+    const ops = target
+      ? attachOps({ states, types, layers, cells: [cell], target: target.id })
+      : attachOps({ states, types, layers, cells: [cell], newZone: {
+        id: this.backend.newId(), typeId, name: type.name,
+        color: type.layerId === "terrain" ? "" : nextZoneColor(states), demiurge: zone.system.demiurge ?? ""
+      } });
+    // Если новый тип на другом слое, гекс из старой зоны attachOps не уберёт: убираем сами.
+    if ( !ops.some(op => op.id === zoneId) ) ops.push(...detachOps({ states, types, cells: [cell], zoneId }));
+    await this._commit(ops);
     this.changed("ui");
-  }
-
-  async toggleTurns() {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    let order = turn.order?.length ? turn.order : this.backend.players().map(p => p.id);
-    await this.backend.setTurn({ ...setTurnOrder(turn, order), enabled: !turn.enabled });
-    this.changed("ui");
-  }
-
-  /** Сдвинуть игрока в порядке ходов или убрать (dir = 0). */
-  async moveInOrder(userId, dir) {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    const order = [...(turn.order ?? [])];
-    const n = order.indexOf(userId);
-    if ( n < 0 ) order.push(userId);
-    else if ( dir === 0 ) order.splice(n, 1);
-    else {
-      const m = n + dir;
-      if ( m < 0 || m >= order.length ) return;
-      [order[n], order[m]] = [order[m], order[n]];
-    }
-    await this.backend.setTurn(setTurnOrder(turn, order));
-    this.changed("ui");
-  }
-
-  async setTurnTo(userId) {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    const index = (turn.order ?? []).indexOf(userId);
-    if ( index < 0 ) return;
-    await this.backend.setTurn({ ...turn, index });
-    this.backend.announceTurn?.(userId, turn.round);
-    this.changed("ui");
+    this.changed("overlay");
   }
 
   /* ---------------------------------------------------------------- */
@@ -844,7 +945,6 @@ export default class Studio {
 
   async submit() {
     await this.flush();
-    if ( !this.canSubmit() ) return this.backend.notify("warn", this.t("ART.Turn.notYourTurn"));
     const claim = await this.backend.submitDraft({ ...this.claimForm });
     if ( claim ) this.claimForm = { title: "", note: "" };
     this.changed("ui");

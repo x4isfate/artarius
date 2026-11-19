@@ -12,9 +12,9 @@ const { ApplicationV2 } = foundry.applications.api;
 
 /** Окна по частям: заголовок, значок, размер по умолчанию. */
 const DEFS = {
-  left: { icon: "fa-solid fa-dice-d6", width: 320, height: 560, at: () => ({ left: 120, top: 80 }) },
+  left: { icon: "fa-solid fa-dice-d6", width: 440, height: 560, at: () => ({ left: 120, top: 80 }) },
   right: { icon: "fa-solid fa-hexagon", width: 340, height: "auto", at: () => ({ left: Math.max(120, window.innerWidth - 760), top: 80 }) },
-  turn: { icon: "fa-solid fa-hourglass-half", width: 380, height: "auto", at: () => ({ left: Math.round((window.innerWidth / 2) - 190), top: 60 }) },
+  settings: { icon: "fa-solid fa-gear", width: 620, height: 600, at: () => ({ left: Math.max(120, (window.innerWidth - 620) / 2), top: 70 }) },
   wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) }
 };
 
@@ -82,12 +82,12 @@ export default class FoundryHost {
     const saved = this._saved()[name] ?? {};
     const position = { width: def.width, height: def.height, ...def.at(), ...saved };
     // Ход и подробности гекса — по содержимому. Старый сохранённый размер окна гекса (до 0.6 оно было на полэкрана) не берём.
-    if ( name === "turn" || name === "right" ) position.height = "auto";
+    if ( name === "right" ) position.height = "auto";
     if ( name === "right" ) position.width = Math.min(position.width ?? def.width, 420);
     this.windows[name] = new PartWindow(name, el, this, {
       id: `${MODULE_ID}-${name}`,
       classes: ["artarius-part", `artarius-part-${name}`],
-      window: { title: "Artarius", icon: def.icon, resizable: name !== "turn" && name !== "right" },
+      window: { title: "Artarius", icon: def.icon, resizable: name !== "right" },
       position
     });
   }
@@ -115,7 +115,7 @@ export default class FoundryHost {
           this.titles[name] = want;
           w.options.window.title = want;
           await w.render({ force: true, window: { title: want } });
-        } else if ( name === "turn" || name === "right" ) w.setPosition({ height: "auto" });
+        } else if ( name === "right" ) w.setPosition({ height: "auto" });
         if ( this._want[name] === want ) break;
       }
     } catch(err) {
@@ -139,7 +139,7 @@ export default class FoundryHost {
   /** Запомнить место окна. Пишем не чаще раза в полсекунды: при перетаскивании событий много. */
   _moved(name, position) {
     const keep = { left: position.left, top: position.top };
-    if ( name !== "turn" && name !== "right" ) Object.assign(keep, { width: position.width, height: position.height });
+    if ( name !== "right" ) Object.assign(keep, { width: position.width, height: position.height });
     this._pending = { ...(this._pending ?? {}), [name]: keep };
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {

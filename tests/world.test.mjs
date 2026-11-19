@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   attachOps, detachOps, cellsInShapes, markOps, lineOp, tileContents, boundaryEdges, mergeTypes, personalTypesUsed,
-  nextTurn, canSubmit, currentTurnUserId, setTurnOrder, TURN_DEFAULT, blankState
+  blankState
 } from "../scripts/data/world.mjs";
 import { STARTER_TYPES, STARTER_LAYERS } from "../scripts/constants.mjs";
 import HexMath from "../scripts/hex/hexmath.mjs";
@@ -83,21 +83,6 @@ test("личные типы игроков видны со своим владе
   assert.equal(merged.find(t => t.id === "u1-shrine").personal, "u1");
   const ops = [{ action: "create", id: "x", state: blankState({ id: "x", kind: "object", typeId: "u1-shrine" }) }];
   assert.deepEqual(personalTypesUsed(ops, merged).map(t => t.id), ["u1-shrine"]);
-});
-
-test("ход переходит по кругу, заявку подаёт только текущий игрок", () => {
-  let turn = { ...TURN_DEFAULT, enabled: true, order: ["a", "b"] };
-  assert.equal(currentTurnUserId(turn), "a");
-  assert.ok(canSubmit(turn, "a"));
-  assert.ok(!canSubmit(turn, "b"));
-  assert.ok(canSubmit(turn, "b", true), "мастер может всегда");
-  turn = nextTurn(turn);
-  assert.equal(currentTurnUserId(turn), "b");
-  turn = nextTurn(turn);
-  assert.deepEqual([turn.index, turn.round], [0, 2]);
-  turn = setTurnOrder({ ...turn, index: 1 }, ["c", "b"]);
-  assert.equal(currentTurnUserId(turn), "b", "ход остаётся у того же игрока");
-  assert.ok(canSubmit({ ...TURN_DEFAULT }, "z"), "без ходов заявку подаёт любой");
 });
 
 test("свободный контур из 0.2 превращается в гексы под ним", () => {
