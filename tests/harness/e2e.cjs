@@ -406,6 +406,26 @@ async function shot(page, name) {
   });
   check(masks.n > 0 && !masks.bad.length, `значки-маски загружаются (${masks.n}, битых: ${masks.bad.join(", ")})`);
 
+  // 0.6.3: палитра цвета не закрывается на каждом шаге, значок перекрашивается сразу, код цвета рядом.
+  await act("newType", '[data-kind="object"]');
+  const live = await ev(() => {
+    const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
+    el.value = "#ff0000";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    const big = document.querySelector("#artarius-ui .art-icon-big");
+    return { same: el.isConnected, c: big?.style.getPropertyValue("--c"), hex: el.nextElementSibling?.value };
+  });
+  check(live.same && live.c === "#ff0000" && live.hex === "#ff0000", "палитра остаётся открытой, значок и код меняются сразу");
+  await ev(() => {
+    const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  check((await ev(() => window.art.studio.typeForm.color)) === "#ff0000", "цвет записан, когда палитру закрыли");
+  await page.fill('#artarius-ui .art-color-hex[data-model="typeForm.color"]', "00ff00");
+  await page.press('#artarius-ui .art-color-hex[data-model="typeForm.color"]', "Tab");
+  check((await ev(() => window.art.studio.typeForm.color)) === "#00ff00", "код цвета вводится руками");
+  await act("cancelType");
+
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
   console.log("✓ ошибок в консоли нет");

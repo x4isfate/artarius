@@ -34,6 +34,16 @@ export function iconImg(path, color, { tint = true, cls = "art-icon-img" } = {})
   return `<img class="${cls}" src="${esc(path)}" alt="">`;
 }
 
+/**
+ * Поле цвета: палитра и код рядом, как у цветов в настройках Foundry. attrs — data-model или data-field/data-id.
+ * Палитра не закрывается на каждом шаге: пока её крутят, обновляются только образцы, а не всё окно.
+ */
+export function colorField(attrs, value, key) {
+  const v = /^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#cccccc";
+  return `<span class="art-color"><input type="color" value="${esc(v)}" ${attrs} data-key="${esc(key)}">`
+    + `<input type="text" class="art-color-hex" value="${esc(v)}" maxlength="7" spellcheck="false" ${attrs} data-hex="1" data-key="${esc(key)}-hex"></span>`;
+}
+
 /** Штриховки зон поверх цвета. */
 export const PATTERNS = ["none", "hatch", "crosshatch", "cross", "dots", "vertical"];
 
@@ -150,6 +160,15 @@ export default class ArtariusUI {
     });
     const onInput = ev => {
       const el = ev.target;
+      if ( el.type === "color" && ev.type === "input" ) return this._liveColor(el);
+      if ( el.dataset.hex ) {
+        // Код цвета: принимаем только целый #rrggbb, и только когда поле отпустили.
+        if ( ev.type !== "change" ) return;
+        let v = el.value.trim();
+        if ( /^[0-9a-f]{6}$/i.test(v) ) v = `#${v}`;
+        if ( !/^#[0-9a-f]{6}$/i.test(v) ) { el.value = el.previousElementSibling?.value ?? ""; return; }
+        el.value = v.toLowerCase();
+      }
       if ( el.dataset.change ) {
         if ( ev.type === "change" ) Promise.resolve(this.actions[el.dataset.change]?.call(this, el, ev)).catch(err => {
           console.error("artarius | change", el.dataset.change, err);
@@ -181,6 +200,17 @@ export default class ArtariusUI {
     });
     // Колесо над панелью крутит панель, а не масштаб карты.
     target.addEventListener("wheel", ev => ev.stopPropagation(), { passive: true });
+  }
+
+  /** Цвет, пока палитра открыта: код и образцы рядом меняются сразу, окно не перерисовывается. */
+  _liveColor(el) {
+    const v = el.value;
+    const hex = el.nextElementSibling;
+    if ( hex?.dataset.hex ) hex.value = v;
+    const box = el.closest(".art-item") ?? el.closest(".art-form");
+    if ( box && (el.dataset.model === "typeForm.color" || el.dataset.field === "color") ) {
+      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color") ) m.style.setProperty("--c", v);
+    }
   }
 
   _setModel(path, value) {
@@ -456,11 +486,11 @@ export default class ArtariusUI {
       <h4>${esc(this.t(f.id ? "ART.Type.editTitle" : "ART.Type.newTitle"))}</h4>
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
         <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t("ART.Type.namePh"))}"></label>
-      <label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span><input type="color" data-model="typeForm.color" value="${esc(f.color)}"></label>
+      <label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>${colorField('data-model="typeForm.color"', f.color, "tf-color")}</label>
       ${f.kind === "area" ? `<label class="art-field"><span>${esc(this.t("ART.Layer.one"))}</span><select data-model="typeForm.layerId">${layers}</select></label>
       <div class="art-field"><span>${esc(this.t("ART.Pattern.title"))}</span>
         <div class="art-patterns">${PATTERNS.map(p => `<button type="button" class="art-pattern-pick${p === (f.pattern || "none") ? " active" : ""}" data-action="pickPattern" data-pattern="${p}" title="${esc(this.t(`ART.Pattern.${p}`))}">${patternSwatch(p)}</button>`).join("")}</div></div>
-      ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span><input type="color" data-model="typeForm.patternColor" value="${esc(f.patternColor || "#1a1a1a")}"></label>` : ""}` : ""}
+      ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : ""}
       ${icons}
       <div class="art-row-btns">
         <button type="button" class="art-btn art-accent" data-action="saveType">${icon("check")} ${esc(this.t("ART.Save"))}</button>
@@ -516,7 +546,7 @@ export default class ArtariusUI {
           <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
             <textarea rows="2" data-model="zone.text" data-key="zone-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(z.text ?? "")}</textarea></label>
           ${terrain ? "" : `<label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>
-            <input type="color" data-model="zone.color" value="${esc(z.color || "#c96f4a")}"></label>`}
+            ${colorField('data-model="zone.color"', z.color || "#c96f4a", "zone-color")}</label>`}
         </div>` : ""}
         ${zones.length ? `<input type="search" class="art-search" data-model="zone.filter" data-key="zone-filter" value="${esc(z.filter)}" placeholder="${esc(this.t("ART.Zone.find"))}">
         <div class="art-zone-list" data-scroll="zones">${byLayer}</div>` : ""}
@@ -746,8 +776,9 @@ export default class ArtariusUI {
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span><input type="text" value="${esc(st.name)}" ${f("name")}></label>
       <div class="art-grid2">
         <label class="art-field"><span>${esc(this.t("ART.Field.type"))}</span><select ${f("typeId")}>${typeOpts}</select></label>
-        ${terrain ? "" : `<label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span><input type="color" value="${esc(color)}" ${f("color")}></label>`}
+        ${terrain ? "" : `<label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span>${colorField(`data-id="${esc(id)}" data-field="color"`, color, `${id}:color`)}</label>`}
       </div>
+      ${kind === "area" && zoneCells(st).length > 1 ? `<p class="art-hint">${esc(this.t("ART.Field.typeHere"))}</p>` : ""}
       <label class="art-field"><span>${esc(this.t("ART.Field.owner"))}</span><select ${f("demiurge")}>${ownerOpts}</select></label>
       <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span><textarea rows="3" ${f("text")}>${esc(htmlToText(st.text))}</textarea></label>
       ${this.renderStatuses(id, "statuses", st.system.statuses ?? [], true)}

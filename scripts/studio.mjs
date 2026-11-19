@@ -749,6 +749,13 @@ export default class Studio {
 
   /** Поле элемента из карточки. field — "name", "text", "demiurge", "color", "typeId" или путь статуса. */
   setField(id, field, value) {
+    // Тип зоны в окне гекса меняется у этого гекса, а не у всей зоны: «Пустыни» → «Лес» уводит в лес одну клетку.
+    if ( field === "typeId" ) {
+      const zone = this.stateOf(id);
+      const here = this.inspected && cellKey(this.inspected);
+      if ( zone?.system.kind === "area" && here && zoneCells(zone).length > 1
+        && zoneCells(zone).some(c => cellKey(c) === here) ) return this.retypeCell(id, this.inspected, value);
+    }
     this.edit(id, s => {
       if ( field === "name" ) s.name = value;
       else if ( field === "text" ) s.text = value;
@@ -770,6 +777,32 @@ export default class Studio {
         } else obj[key] = value;
       }
     }, { now: field === "demiurge" || field === "typeId" || field === "color" });
+  }
+
+  /**
+   * Перевести один гекс из зоны в зону другого типа. Берётся соседняя зона нужного типа
+   * (иначе самая большая такого типа), а если такой нет — создаётся новая с именем типа.
+   */
+  async retypeCell(zoneId, cell, typeId) {
+    const { states, types, layers } = this;
+    const zone = states.get(zoneId);
+    const type = this.typeById(typeId);
+    if ( !zone || !type || zone.system.typeId === typeId ) return;
+    const same = [...states.values()].filter(z => z.id !== zoneId && z.system.kind === "area" && z.system.typeId === typeId);
+    const near = new Set((this.grid.neighbors?.(cell) ?? []).map(cellKey));
+    const target = same.find(z => zoneCells(z).some(c => near.has(cellKey(c))))
+      ?? same.sort((a, b) => zoneCells(b).length - zoneCells(a).length)[0];
+    const ops = target
+      ? attachOps({ states, types, layers, cells: [cell], target: target.id })
+      : attachOps({ states, types, layers, cells: [cell], newZone: {
+        id: this.backend.newId(), typeId, name: type.name,
+        color: type.layerId === "terrain" ? "" : nextZoneColor(states), demiurge: zone.system.demiurge ?? ""
+      } });
+    // Если новый тип на другом слое, гекс из старой зоны attachOps не уберёт: убираем сами.
+    if ( !ops.some(op => op.id === zoneId) ) ops.push(...detachOps({ states, types, cells: [cell], zoneId }));
+    await this._commit(ops);
+    this.changed("ui");
+    this.changed("overlay");
   }
 
   /* ---------------------------------------------------------------- */
