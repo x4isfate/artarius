@@ -276,6 +276,25 @@ await check("крестик окна инструмента выключает �
   assert(!win("left"), "окно снова открылось");
 });
 
+await check("0.6.1: инструмент погас при активной группе — щелчок по соседнему гексу всё равно осматривает", async () => {
+  const s = api().studio;
+  layer.activate();
+  ui.controls.control = { name: LAYER };
+  ui.controls.tool = { name: "select" };
+  s.setTool("select", { toggle: false });
+  press(hexAt([5, 5]));
+  assert(s.inspected?.join() === "5,5", "первый гекс не осмотрен");
+  // Так выглядело зависание: инструмент студии null, а в колонке Foundry выбран «Осмотр».
+  s.layerDeactivated();
+  assert(!s.inspected && !s.hudOpen, "рамка осмотра осталась висеть без инструмента");
+  press(hexAt([6, 5]));
+  assert(s.tool === "select", `инструмент не вернулся: ${s.tool}`);
+  assert(s.inspected?.join() === "6,5", `соседний гекс не осмотрен: ${s.inspected}`);
+  press(hexAt([5, 6]));
+  assert(s.inspected?.join() === "5,6", "следующий гекс не осмотрен");
+  s.closeHud();
+});
+
 await check("showFeature открывает гекс", async () => {
   const zone = api().getAtlas(scene).pages.contents.find(p => p.system.kind === "area");
   api().showFeature(zone.id);
