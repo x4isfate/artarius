@@ -171,7 +171,8 @@
       "type": "Type",
       "owner": "Demiurge",
       "text": "Description",
-      "textPh": "Optional"
+      "textPh": "Optional",
+      "typeHere": "A new type applies to this hex only; the rest of the zone stays."
     },
     "Guide": {
       "title": "How to play"
