@@ -405,7 +405,9 @@ async function shot(page, name) {
   check((await ev(() => ["worldSettings", "azgaar", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки настроек, Azgaar и справки вызывают свои окна");
   await act("rightTab", '[data-tab="tile"]');
   await act("tool", '[data-tool="select"]');
-  check(!(await page.locator(".art-left").isVisible()), "повторный щелчок по инструменту убирает панель");
+  check(await page.locator(".art-left").isVisible(), "повторный щелчок по инструменту его не выключает");
+  await act("toggleMenu", ".art-icon-btn");
+  check(!(await page.locator(".art-left").isVisible()), "крестик в шапке убирает панель инструмента");
   await shot(page, "end");
 
   const pageErrors = await ev(() => window.artErrors);

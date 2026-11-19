@@ -127,3 +127,19 @@ test("icon library got people, trade and creature sections", () => {
   for ( const c of ["people", "trade", "creatures"] ) assert.ok(ICON_LIBRARY[c]?.length >= 15, c);
   assert.ok(allIcons().length >= 130);
 });
+
+test("0.6.1: pressing the active tool again keeps it; turning the tool off drops the stray outline", () => {
+  const { studio, grid } = setup();
+  studio.pointerDown(grid.center([3, 3]));
+  studio.setTool("select", { toggle: false });
+  assert.equal(studio.tool, "select");
+  assert.deepEqual(studio.inspected, [3, 3]);
+  studio.pointerDown(grid.center([4, 3]));
+  assert.deepEqual(studio.inspected, [4, 3], "соседний гекс");
+  studio.setTool(null, { toggle: false });
+  assert.ok(!studio.inspected && !studio.hudOpen);
+  studio.setTool("select", { toggle: false });
+  studio.pointerDown(grid.center([2, 2]));
+  studio.layerDeactivated();
+  assert.ok(!studio.inspected && !studio.hudOpen);
+});
