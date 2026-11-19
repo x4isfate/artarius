@@ -2,7 +2,7 @@ import { MODULE_ID, FEATURE_TYPE, CLAIM_STATUS, WORLD_DEFAULTS } from "./constan
 import FeatureModel from "./data/feature-model.mjs";
 import * as store from "./data/store.mjs";
 import { getAtlas, ensureAtlas, upgradeAtlas, getClaims } from "./data/store.mjs";
-import HexLayer, { LAYER_NAME, runtime, inputDebug } from "./canvas/hex-layer.mjs";
+import HexLayer, { LAYER_NAME, runtime, inputDebug, boardElement } from "./canvas/hex-layer.mjs";
 import FoundryBackend, { isWorldScene, worldOf } from "./foundry-backend.mjs";
 import Studio from "./studio.mjs";
 import ArtariusUI, { EXTRA_ACTIONS } from "./ui/panels.mjs";
@@ -118,7 +118,7 @@ Hooks.once("ready", () => {
   game.socket.on(SOCKET, onSocket);
   rememberClaimStatuses();
   const host = new FoundryHost({ onClose: name => runtime.ui?.windowClosed(name) });
-  runtime.ui = new ArtariusUI(studio, backend, { host });
+  runtime.ui = new ArtariusUI(studio, backend, { host, project: screenPoint });
   syncUI();
   if ( !game.settings.get(MODULE_ID, "guideSeen") && isWorldScene() ) {
     GuideApp.open();
@@ -127,6 +127,14 @@ Hooks.once("ready", () => {
   checkForUpdate();
   Hooks.callAll("artarius.ready", game.modules.get(MODULE_ID).api);
 });
+
+/** Точка сцены → пиксели окна браузера (для панели на гексе). */
+function screenPoint(pt) {
+  const el = boardElement();
+  const r = el.getBoundingClientRect();
+  const p = canvas.stage.worldTransform.apply(new PIXI.Point(pt.x, pt.y));
+  return { x: r.left + p.x, y: r.top + p.y };
+}
 
 /** Показать или спрятать окна: они живут только на сцене Артария. */
 function syncUI() {
@@ -144,6 +152,8 @@ Hooks.on("canvasReady", async () => {
   studio.inspected = null;
   studio.openId = null;
   studio.rightOpen = false;
+  studio.hudOpen = false;
+  studio.markDrag = null;
   studio.line.points = [];
   syncUI();
   if ( isWorldScene() && game.user.isGM ) {
@@ -434,7 +444,7 @@ function showFeature(id) {
     const p = (s.system.geometry?.points ?? [])[0];
     if ( p ) cell = backend.grid.cellAt({ x: p[0], y: p[1] });
   }
-  if ( cell ) studio.inspect(cell);
+  if ( cell ) studio.inspect(cell, { details: true });
   studio.openId = id;
   studio.panTo(id);
   studio.changed("ui");

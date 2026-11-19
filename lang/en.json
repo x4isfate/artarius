@@ -422,8 +422,17 @@
         "settlements": "Settlements",
         "sacred": "Sacred",
         "nature": "Nature",
-        "danger": "Events & danger"
+        "danger": "Events & danger",
+        "people": "People & armies",
+        "trade": "Trade & land",
+        "creatures": "Monsters & magic"
       }
+    },
+    "Hud": {
+      "details": "Details",
+      "mark": "Place mark: {name}",
+      "zone": "Add to zone: {name}",
+      "marksHere": "Marks on this hex"
     }
   }
 }

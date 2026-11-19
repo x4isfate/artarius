@@ -147,8 +147,54 @@ await check("Осмотр: щелчок по гексу открывает ка�
   press(hexAt([2, 3]));
   await tick();
   assert(s.inspected?.join() === "2,3", `осмотрен ${s.inspected}`);
+  const hudEl = document.getElementById("artarius-hud");
+  assert(hudEl && !hudEl.hidden, "панель на гексе не появилась");
+  assert(!win("right"), "большое окно открылось без кнопки «Подробно»");
+  // Панель стоит на гексе: центр панели совпадает с центром гекса на экране.
+  const c = canvas.stage.worldTransform.apply(new PIXI.Point(hexAt([2, 3]).x, hexAt([2, 3]).y));
+  const r = canvas.app.view.getBoundingClientRect();
+  assert(Math.abs(parseFloat(hudEl.style.left) - (r.left + c.x)) < 2 && Math.abs(parseFloat(hudEl.style.top) - (r.top + c.y)) < 2,
+    `панель не на гексе: ${hudEl.style.left},${hudEl.style.top} против ${r.left + c.x},${r.top + c.y}`);
+  // Карту сдвинули: панель едет следом.
+  canvas.stage.position.set(130, 70);
+  canvas.stage.transform.updateTransform(PIXI.Transform.IDENTITY);
+  await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+  const c2 = canvas.stage.worldTransform.apply(new PIXI.Point(hexAt([2, 3]).x, hexAt([2, 3]).y));
+  assert(Math.abs(parseFloat(hudEl.style.left) - (r.left + c2.x)) < 2, "панель не поехала за картой");
+  canvas.stage.position.set(30, 20);
+  canvas.stage.transform.updateTransform(PIXI.Transform.IDENTITY);
+  hudEl.querySelector('[data-action="hudDetails"]').click();
+  await tick();
   assert(win("right")?.textContent.includes("Лес"), "в карточке нет зоны");
   s.closeRight();
+  s.closeHud();
+});
+
+await check("метку тащат зажатой кнопкой на другой гекс", async () => {
+  const s = api().studio;
+  s.setTool("select", { toggle: false });
+  const mark = api().getAtlas(scene).pages.contents.find(p => p.system.kind === "object");
+  const from = { x: mark.system.geometry.x, y: mark.system.geometry.y };
+  const el = canvas.app.view;
+  const rect = el.getBoundingClientRect();
+  const scr = pt => { const g = canvas.stage.worldTransform.apply(new PIXI.Point(pt.x, pt.y)); return { clientX: rect.left + g.x, clientY: rect.top + g.y }; };
+  const base = { bubbles: true, cancelable: true, button: 0, pointerId: 1 };
+  let foundrySaw = false;
+  const spy = () => { foundrySaw = true; };
+  el.addEventListener("pointerdown", spy);
+  el.dispatchEvent(new PointerEvent("pointerdown", { ...base, ...scr(from) }));
+  el.removeEventListener("pointerdown", spy);
+  assert(!foundrySaw, "нажатие на метку дошло до Foundry");
+  const to = hexAt([7, 2]);
+  for ( let k = 1; k <= 6; k++ ) {
+    const pt = { x: from.x + ((to.x - from.x) * k / 6), y: from.y + ((to.y - from.y) * k / 6) };
+    el.dispatchEvent(new PointerEvent("pointermove", { ...base, ...scr(pt) }));
+  }
+  el.dispatchEvent(new PointerEvent("pointerup", { ...base, ...scr(to) }));
+  await F.settle();
+  const moved = api().getAtlas(scene).pages.get(mark.id).system.geometry;
+  assert(moved.cell?.join() === "7,2", `метка в ${moved.cell} (${moved.x},${moved.y})`);
+  assert(!s.markDrag, "перетаскивание не закончилось");
 });
 
 await check("щелчок при чужой группе слева уходит Foundry", async () => {
@@ -165,7 +211,7 @@ await check("щелчок при чужой группе слева уходит
   assert(api().debugInput(false) === false, "нет api.debugInput");
   press(hexAt([4, 4]));
   assert(s.inspected?.join() === "4,4", "после возврата группы щелчок не дошёл");
-  s.closeRight();
+  s.closeHud();
 });
 
 await check("линия по гексам и от руки на холсте", async () => {
@@ -378,12 +424,38 @@ if ( location.search.includes("shot") ) {
   await F.settle();
   app.stage.addChild(layer);
   layer.refresh(true);
-  // Окно метки с открытым выбором значка поверх карты.
-  api().studio.setTool("mark", { toggle: false });
-  api().studio.openTypeForm("object");
-  api().studio.typeForm.color = "#f0c96a";
-  api().studio.changed("ui");
-  await new Promise(r => setTimeout(r, 1500));
+  if ( location.search.includes("shot=civ") ) {
+    // Метки как в Civ 5 и панель на гексе: настоящие значки, камера совпадает с холстом.
+    foundry.canvas.loadTexture = src => PIXI.Assets.load(src);
+    canvas.stage.scale.set(k);
+    canvas.stage.position.set(0, 0);
+    canvas.stage.transform.updateTransform(PIXI.Transform.IDENTITY);
+    const s = api().studio;
+    const put = async (cell, typeIds) => {
+      for ( const typeId of typeIds ) {
+        s.mark.typeId = typeId;
+        s.inspected = cell;
+        await s.markHere();
+      }
+    };
+    const objTypes = s.typesOf("object").map(t => t.id);
+    await put([4, 4], objTypes.slice(0, 2));
+    await put([6, 3], objTypes.slice(0, 3));
+    await put([8, 5], objTypes.slice(0, 4));
+    await put([10, 4], objTypes.slice(0, 6));
+    await F.settle();
+    layer.refresh(true);
+    s.setTool("select", { toggle: false });
+    s.inspect([6, 3]);
+    await new Promise(r => setTimeout(r, 1500));
+  } else {
+    // Окно метки с открытым выбором значка поверх карты.
+    api().studio.setTool("mark", { toggle: false });
+    api().studio.openTypeForm("object");
+    api().studio.typeForm.color = "#f0c96a";
+    api().studio.changed("ui");
+    await new Promise(r => setTimeout(r, 1500));
+  }
 }
 
 window.__done = true;

@@ -38,6 +38,25 @@ export const ICON_LIBRARY = {
     ["shield", "Оборона"], ["campfire", "Стоянка"], ["flying-flag", "Флаг"], ["open-treasure-chest", "Сокровище"],
     ["crossroad", "Перекрёсток"], ["direction-signs", "Указатель"], ["scroll-unfurled", "Свиток, событие"],
     ["sword-in-stone", "Реликвия"], ["ship-wreck", "Кораблекрушение"]
+  ],
+  people: [
+    ["knight-banner", "Рыцарь, знамя"], ["mounted-knight", "Конный рыцарь"], ["cavalry", "Конница"], ["archer", "Лучник"],
+    ["spears", "Копейщики, войско"], ["crossed-axes", "Топоры, дружина"], ["barbarian", "Варвары"], ["guards", "Стража"],
+    ["catapult", "Катапульта"], ["trebuchet", "Требушет, осада"], ["crown", "Корона"], ["throne-king", "Король, трон"],
+    ["hooded-figure", "Шпион, разведчик"], ["pointy-hat", "Маг"], ["bandit", "Разбойники"], ["pirate-flag", "Пираты"]
+  ],
+  trade: [
+    ["caravan", "Караван"], ["camel", "Верблюды"], ["two-coins", "Монеты"], ["coins", "Казна"], ["scales", "Весы, суд"],
+    ["trade", "Торговля"], ["hammer-nails", "Ремесло"], ["spinning-wheel", "Ткачество"], ["scroll-quill", "Грамота, договор"],
+    ["bookshelf", "Библиотека"], ["galleon", "Галеон, флот"], ["beehive", "Пасека"], ["oasis", "Оазис"], ["palm-tree", "Пальмы"],
+    ["desert", "Пустыня"], ["sun", "Зной, солнце"], ["snowflake-1", "Холод, снег"]
+  ],
+  creatures: [
+    ["wolf-head", "Волки"], ["bear-head", "Медведь"], ["spider-face", "Пауки"], ["kraken-tentacle", "Кракен"],
+    ["troll", "Тролль"], ["orc-head", "Орки"], ["goblin-head", "Гоблины"], ["griffin-symbol", "Грифон"], ["hydra", "Гидра"],
+    ["unicorn", "Единорог"], ["ghost", "Призраки"], ["vampire-dracula", "Вампир"], ["skull-crossed-bones", "Опасно"],
+    ["plague-doctor-profile", "Чума"], ["cauldron", "Ведьма, котёл"], ["potion-ball", "Зелье"], ["magic-swirl", "Магия"],
+    ["rune-stone", "Рунный камень"], ["crystal-wand", "Жезл"], ["book-aura", "Гримуар"], ["fire-ring", "Огненный круг"]
   ]
 };
 
