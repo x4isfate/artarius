@@ -6,6 +6,7 @@
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
+import { layoutMarks, counterAt } from "../data/mark-layout.mjs";
 import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
 
 const color = c => {
@@ -108,10 +109,8 @@ export default class HexRenderer {
       this._drawZone(z, cells, resolveStyleOf(z, types), layerIdOf(z, types));
     }
     if ( show.lines ) for ( const l of all.filter(s => s.system.kind === "line") ) this._drawLine(l, resolveStyleOf(l, types));
-    for ( const m of all.filter(s => s.system.kind === "object") ) {
-      if ( !(isResourceType(m.system.typeId) ? show.resources : show.marks) ) continue;
-      this._drawMark(m, resolveStyleOf(m, types));
-    }
+    this._drawMarks(all.filter(s => s.system.kind === "object"
+      && (isResourceType(s.system.typeId) ? show.resources : show.marks)), types);
     this.labels.visible = show.labels;
   }
 
@@ -219,9 +218,54 @@ export default class HexRenderer {
     }
   }
 
-  _drawMark(state, style) {
-    const { x = 0, y = 0 } = state.system.geometry ?? {};
-    const size = this.grid.radius * 2 * (style.size ?? 0.6);
+  /**
+   * Метки по гексам. Несколько меток в гексе ложатся группой (как в Civ 5),
+   * сверху на гексе — счётчик. Подпись у группы одна: первой метки с именем.
+   */
+  _drawMarks(marks, types) {
+    const styles = new Map(marks.map(m => [m.id, resolveStyleOf(m, types)]));
+    const byId = new Map(marks.map(m => [m.id, m]));
+    const { slots, cells } = layoutMarks(marks, this.grid, m => styles.get(m.id).size);
+    const labelled = new Set();
+    for ( const slot of slots ) {
+      if ( slot.more ) { this._drawMore(slot); continue; }
+      const m = byId.get(slot.id);
+      const style = styles.get(slot.id);
+      const label = !labelled.has(slot.key) && !!m.name && style.labelSize > 0;
+      if ( label ) labelled.add(slot.key);
+      // Подпись группы — под гексом, чтобы не лезть на соседние значки.
+      const g = cells.get(slot.key);
+      const below = slot.count > 1 ? { x: g.x, y: g.y + (this.grid.radius * 0.98) } : null;
+      this._drawMark(m, style, slot, label ? below : false);
+    }
+    for ( const group of cells.values() ) if ( group.count > 1 ) this._drawCounter(group);
+  }
+
+  /** Счётчик меток на гексе. */
+  _drawCounter(group) {
+    const { x, y, r } = counterAt(group, this.grid.radius);
+    const g = new PIXI.Graphics();
+    g.beginFill(0x1b1712, 0.95).lineStyle(Math.max(1.5, r / 5), 0xffcf8a, 1).drawCircle(x, y, r).endFill();
+    this.marks.addChild(g);
+    const t = makeLabel(String(group.count), Math.round(r * 1.35), "#ffe9c4");
+    t.position.set(x, y);
+    this.marks.addChild(t);
+  }
+
+  /** Плашка «+N» на месте лишних меток. */
+  _drawMore(slot) {
+    const g = new PIXI.Graphics();
+    g.beginFill(0x111111, 0.7).lineStyle(Math.max(2, slot.d / 22), 0xd9c7b0, 0.9).drawCircle(slot.x, slot.y, slot.d / 2).endFill();
+    this.marks.addChild(g);
+    const t = makeLabel(`+${slot.more}`, Math.round(slot.d * 0.38), "#f3e6d6");
+    t.position.set(slot.x, slot.y);
+    this.marks.addChild(t);
+  }
+
+  /** label: false — без подписи; null — под значком; { x, y } — место подписи группы. */
+  _drawMark(state, style, slot, label = null) {
+    const { x, y } = slot;
+    const size = slot.d;
     const c = new PIXI.Container();
     c.position.set(x, y);
     const bg = new PIXI.Graphics();
@@ -244,9 +288,10 @@ export default class HexRenderer {
       else foundry.canvas.loadTexture(style.icon).then(fit).catch(() => {});
     }
     this.marks.addChild(c);
-    if ( state.name && style.labelSize > 0 ) {
+    if ( label !== false && state.name && style.labelSize > 0 ) {
       const t = makeLabel(state.name, style.labelSize, style.labelColor);
-      t.position.set(x, y + (size * 0.5) + (style.labelSize * 0.75));
+      if ( label ) t.position.set(label.x, label.y);
+      else t.position.set(x, y + (size * 0.5) + (style.labelSize * 0.75));
       this.labels.addChild(t);
     }
   }
@@ -303,6 +348,17 @@ export default class HexRenderer {
     if ( studio.hover && studio.tool && studio.tool !== "line" ) {
       g.beginFill(0xffffff, 0.12).lineStyle({ width: 2, color: 0xffffff, alpha: 0.6 })
         .drawPolygon(flatV(grid.vertices(studio.hover))).endFill().lineStyle(0);
+    }
+    // Метку тащат: куда ляжет и сама метка под курсором.
+    const drag = studio.markDrag;
+    if ( drag?.moved ) {
+      const to = grid.cellAt(drag.at);
+      const ok = grid.inBounds(to);
+      if ( ok ) g.beginFill(0xffcf8a, 0.18).lineStyle({ width: 4, color: 0xffcf8a, alpha: 0.95 })
+        .drawPolygon(flatV(grid.vertices(to))).endFill().lineStyle(0);
+      const r = grid.radius * 0.36;
+      g.beginFill(0x111111, 0.55).lineStyle({ width: 3, color: ok ? 0xffcf8a : 0xff6a5a, alpha: 0.95 })
+        .drawCircle(drag.at.x, drag.at.y, r).endFill().lineStyle(0);
     }
     const pts = studio.tool === "line" ? studio.line.points : [];
     if ( pts.length ) {

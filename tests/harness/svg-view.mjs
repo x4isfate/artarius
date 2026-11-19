@@ -24,6 +24,14 @@ export default class SvgView {
     this.bind();
   }
 
+  /** Точка сцены → пиксели окна (для панели на гексе). */
+  project(pt) {
+    const p = this.svg.createSVGPoint();
+    p.x = pt.x; p.y = pt.y;
+    const r = p.matrixTransform(this.svg.getScreenCTM());
+    return { x: r.x, y: r.y };
+  }
+
   pt(ev) {
     const p = this.svg.createSVGPoint();
     p.x = ev.clientX; p.y = ev.clientY;
@@ -101,14 +109,28 @@ export default class SvgView {
       }, this.g.lines);
     }
     const r = grid.radius;
-    for ( const m of [...states.values()].filter(s => s.system.kind === "object") ) {
+    // Метки раскладываются так же, как в игре: группа в гексе и счётчик.
+    const { slots, cells } = this.studio.markSlots();
+    for ( const slot of slots ) {
+      if ( slot.more ) {
+        const g = this.el("g", { "data-more": slot.key }, this.g.marks);
+        this.el("circle", { cx: slot.x, cy: slot.y, r: slot.d / 2, fill: "rgba(17,17,17,0.7)", stroke: "#d9c7b0", "stroke-width": 2 }, g);
+        this.el("text", { x: slot.x, y: slot.y + 4, "font-size": slot.d * 0.38, class: "lbl" }, g).textContent = `+${slot.more}`;
+        continue;
+      }
+      const m = states.get(slot.id);
       const st = resolveStyleOf(m, types);
-      const { x, y } = m.system.geometry;
-      const size = r * 2 * (st.size ?? 0.6);
-      const g = this.el("g", { "data-mark": m.id }, this.g.marks);
-      this.el("circle", { cx: x, cy: y, r: size * 0.55, fill: "rgba(17,17,17,0.6)", stroke: st.color, "stroke-width": 2 }, g);
-      this.el("text", { x, y: y + 4, "font-size": size * 0.5, class: "ico", fill: st.color }, g).textContent = (m.name || "?")[0];
-      if ( m.name ) this.el("text", { x, y: y + (size * 0.55) + 12, "font-size": 11, class: "lbl" }, g).textContent = m.name;
+      const { x, y, d } = slot;
+      const g = this.el("g", { "data-mark": m.id, "data-cell": slot.key }, this.g.marks);
+      this.el("circle", { cx: x, cy: y, r: d / 2, fill: "rgba(17,17,17,0.6)", stroke: st.color, "stroke-width": 2 }, g);
+      this.el("text", { x, y: y + 4, "font-size": d * 0.45, class: "ico", fill: st.color }, g).textContent = (m.name || "?")[0];
+      if ( m.name && slot.count === 1 ) this.el("text", { x, y: y + (d / 2) + 12, "font-size": 11, class: "lbl" }, g).textContent = m.name;
+    }
+    for ( const [key, c] of cells ) {
+      if ( c.count < 2 ) continue;
+      const g = this.el("g", { "data-count": key }, this.g.marks);
+      this.el("circle", { cx: c.x, cy: c.y - (r * 0.68), r: Math.max(7, r * 0.17), fill: "#1b1712", stroke: "#ffcf8a", "stroke-width": 2 }, g);
+      this.el("text", { x: c.x, y: c.y - (r * 0.68) + 4, "font-size": 11, class: "lbl" }, g).textContent = String(c.count);
     }
     this.drawOverlay();
   }
@@ -143,6 +165,11 @@ export default class SvgView {
     }
     if ( s.inspected ) this.el("polygon", { points: poly(grid.vertices(s.inspected)), fill: "none", stroke: "#fff", "stroke-width": 3 }, o);
     if ( s.hover && s.tool ) this.el("polygon", { points: poly(grid.vertices(s.hover)), fill: "rgba(255,255,255,0.12)", stroke: "rgba(255,255,255,0.6)", "stroke-width": 1 }, o);
+    if ( s.markDrag?.moved ) {
+      const to = grid.cellAt(s.markDrag.at);
+      if ( grid.inBounds(to) ) this.el("polygon", { points: poly(grid.vertices(to)), fill: "rgba(255,207,138,0.18)", stroke: "#ffcf8a", "stroke-width": 3, class: "drop" }, o);
+      this.el("circle", { cx: s.markDrag.at.x, cy: s.markDrag.at.y, r: grid.radius * 0.36, fill: "rgba(17,17,17,0.55)", stroke: "#ffcf8a", "stroke-width": 3 }, o);
+    }
     if ( s.tool === "line" && s.line.points.length ) {
       const pts = s.line.points;
       this.el("polyline", { points: pts.map(p => p.join(",")).join(" "), fill: "none", stroke: "#ffe7a8", "stroke-width": 3, "stroke-dasharray": "8 5" }, o);

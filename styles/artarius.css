@@ -377,3 +377,73 @@
 .artarius-part .art-turnbar { position: static; transform: none; padding: 8px; align-items: stretch; }
 .artarius-part .art-turn { border-radius: var(--art-radius); box-shadow: none; flex-wrap: wrap; }
 .artarius-part .art-turn-menu { width: auto; box-shadow: none; }
+
+/* Панель на гексе (0.6): кнопки по бокам выбранной клетки, как Token HUD ----- */
+
+#artarius-hud {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 30;
+  pointer-events: none;
+  --hw: 40px;
+  --hh: 40px;
+}
+#artarius-hud[hidden] { display: none; }
+#artarius-hud .art-hud-col {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+#artarius-hud .art-hud-left { right: calc(var(--hw) + 10px); }
+#artarius-hud .art-hud-right { left: calc(var(--hw) + 10px); }
+#artarius-hud .art-hud-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 7px;
+  background: rgba(24, 21, 18, 0.88);
+  color: #e9ddcf;
+  font-size: 18px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+#artarius-hud .art-hud-btn:hover { color: #fff; border-color: #ff9a3c; box-shadow: 0 0 10px #ff6a00; }
+#artarius-hud .art-hud-more { font-size: 13px; font-weight: 700; }
+#artarius-hud .art-hud-ico { width: 28px; height: 28px; }
+#artarius-hud img.art-hud-ico { object-fit: contain; }
+#artarius-hud .art-hud-swatch {
+  width: 22px; height: 22px; border-radius: 4px;
+  background: var(--c); border: 2px solid rgba(255, 255, 255, 0.55);
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+}
+#artarius-hud .art-hud-line { width: 26px; height: 5px; border-radius: 3px; background: var(--c); transform: rotate(-35deg); }
+#artarius-hud .art-hud-plate {
+  position: absolute;
+  bottom: calc(max(var(--hh), var(--ch, 0px) / 2) + 8px);
+  left: 0;
+  transform: translateX(-50%);
+  max-width: 340px;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 7px;
+  background: rgba(24, 21, 18, 0.9);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+#artarius-hud .art-hud-count { margin-left: 8px; color: #ffcf8a; font-weight: 700; }
+
+/* Окно подробностей гекса: по содержимому, а не на полэкрана. */
+.artarius-part-right .window-content { max-height: 75vh; }

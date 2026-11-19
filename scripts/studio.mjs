@@ -18,6 +18,9 @@ import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
+import { layoutMarks, markAt } from "./data/mark-layout.mjs";
+import { resolveStyleOf } from "./canvas/style.mjs";
+import { isResourceType } from "./data/view.mjs";
 
 /** Раздел библиотеки, где лежит значок; для чужих картинок — первый раздел. */
 const iconCategory = path => Object.keys(ICON_LIBRARY).find(c => ICON_LIBRARY[c].some(([n]) => path === iconPath(n))) ?? "settlements";
@@ -38,6 +41,10 @@ export default class Studio {
     /** Вкладка правой панели: "tile" или "queue". */
     this.rightTab = "tile";
     this.rightOpen = false;
+    /** Панель кнопок вокруг осматриваемого гекса. */
+    this.hudOpen = false;
+    /** Метку тащат мышью: { id, from, at, moved }. */
+    this.markDrag = null;
     /** Настройки инструментов. */
     this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, detachLayer: "terrain", filter: "" };
     this.mark = { typeId: "city", name: "", text: "", paint: false };
@@ -144,6 +151,9 @@ export default class Studio {
     this.tool = toggle && tool === prev ? null : tool;
     if ( this.tool === prev && fromCanvas ) return;
     if ( this.tool !== "line" ) { this.line.points = []; this.line.cells = []; }
+    // Панель на гексе — часть осмотра: другой инструмент её убирает.
+    if ( this.tool !== "select" ) this.hudOpen = false;
+    this.markDrag = null;
     this.typeForm = null;
     if ( this.tool === "zone" ) this._ensureType("zone", "area");
     if ( this.tool === "mark" ) this._ensureType("mark", "object");
@@ -175,7 +185,13 @@ export default class Studio {
     const inside = this.grid.inBounds(cell);
     if ( dragStart && (alt || this.tool === "select" || this.tool === "line") ) return;
     if ( alt || this.tool === "select" ) {
-      if ( inside ) this.inspect(cell);
+      // Метку под курсором можно утащить на другой гекс; щелчок без протяжки — осмотр гекса.
+      const hit = !alt && this.tool === "select" ? markAt(this.markSlots().slots, point) : null;
+      if ( hit ) {
+        this.markDrag = { id: hit.id, from: hit.cell, at: point, start: point, moved: false };
+        return "grab";
+      }
+      if ( inside ) this.inspect(cell, { toggle: true });
       return;
     }
     if ( this.tool === "line" ) {
@@ -209,6 +225,13 @@ export default class Studio {
   }
 
   pointerMove(point) {
+    if ( this.markDrag ) {
+      const d = this.markDrag;
+      d.at = point;
+      if ( !d.moved && Math.hypot(point.x - d.start.x, point.y - d.start.y) > this.grid.radius * 0.2 ) d.moved = true;
+      if ( d.moved ) this.changed("overlay");
+      return;
+    }
     if ( this._sketch ) {
       const pts = this.line.points;
       const last = pts.at(-1);
@@ -233,6 +256,18 @@ export default class Studio {
   }
 
   async pointerUp() {
+    if ( this.markDrag ) {
+      const d = this.markDrag;
+      this.markDrag = null;
+      if ( !d.moved ) {
+        this.inspect(d.from, { toggle: true });
+        return;
+      }
+      const to = this.grid.cellAt(d.at);
+      if ( this.grid.inBounds(to) && cellKey(to) !== cellKey(d.from) ) await this.moveMark(d.id, to);
+      this.changed("overlay");
+      return;
+    }
     if ( this._sketch ) {
       this._sketch = false;
       if ( this.line.points.length >= 2 ) await this.finishLine();
@@ -271,7 +306,9 @@ export default class Studio {
 
   /** Esc: сбросить начатое. Возвращает true, если было что сбрасывать. */
   dismiss() {
+    if ( this.markDrag ) { this.markDrag = null; this.changed("overlay"); return true; }
     if ( this.typeForm ) { this.typeForm = null; this.changed("ui"); return true; }
+    if ( this.hudOpen ) { this.closeHud(); return true; }
     if ( this.line.points.length ) { this.clearLine(); return true; }
     if ( this.selection.size ) { this.clearSelection(); return true; }
     return false;
@@ -355,6 +392,27 @@ export default class Studio {
     if ( text ) for ( const op of ops ) if ( op.action === "create" ) op.state.text = text;
     await this._commit(ops);
     for ( const c of cells ) this.selection.delete(cellKey(c));
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Видимые метки и их места на карте (группы в гексах, как в Civ 5). */
+  markSlots() {
+    const view = this.view();
+    const types = this.types;
+    const marks = [...this.states.values()].filter(s => s.system.kind === "object"
+      && (isResourceType(s.system.typeId) ? view.resources : view.marks));
+    return layoutMarks(marks, this.grid, m => resolveStyleOf(m, types).size);
+  }
+
+  /** Перенести метку в центр другого гекса. У игрока перенос уходит в черновик, как любая правка. */
+  async moveMark(id, cell) {
+    const st = this.stateOf(id);
+    if ( !st || st.system.kind !== "object" || !this.grid.inBounds(cell) ) return;
+    const { x, y } = this.grid.center(cell);
+    await this.edit(id, s => {
+      s.system.geometry = { ...(s.system.geometry ?? {}), x: Math.round(x), y: Math.round(y), cell: [...cell] };
+    }, { now: true });
     this.changed("ui");
     this.changed("overlay");
   }
@@ -492,10 +550,20 @@ export default class Studio {
   /*  Карточка гекса                                                    */
   /* ---------------------------------------------------------------- */
 
-  inspect(cell) {
+  /**
+   * Выбрать гекс: вокруг него встаёт панель кнопок. Окно с подробностями открывается
+   * кнопкой на панели (или уже открыто — тогда показывает новый гекс).
+   * toggle — щелчок по тому же гексу ещё раз убирает панель.
+   */
+  inspect(cell, { toggle = false, details = false } = {}) {
+    const same = this.inspected && cellKey(this.inspected) === cellKey(cell);
+    if ( toggle && same && this.hudOpen && !details ) return this.closeHud();
     this.inspected = cell;
-    this.rightOpen = true;
-    this.rightTab = "tile";
+    this.hudOpen = true;
+    if ( details ) {
+      this.rightOpen = true;
+      this.rightTab = "tile";
+    }
     const c = this.contents();
     if ( this.openId && ![...c.zones, ...c.marks, ...c.lines].some(s => s.id === this.openId) ) this.openId = null;
     this.changed("ui");
@@ -504,10 +572,54 @@ export default class Studio {
 
   closeRight() {
     this.rightOpen = false;
-    this.inspected = null;
+    if ( !this.hudOpen ) this.inspected = null;
     this.openId = null;
     this.changed("ui");
     this.changed("overlay");
+  }
+
+  /** Убрать панель на гексе. Открытое окно подробностей остаётся. */
+  closeHud() {
+    this.hudOpen = false;
+    if ( !this.rightOpen || this.rightTab !== "tile" ) this.inspected = null;
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Подробности гекса в окне; id — сразу раскрыть этот элемент. */
+  openDetails(id = null) {
+    if ( !this.inspected ) return;
+    this.rightOpen = true;
+    this.rightTab = "tile";
+    if ( id ) this.openId = id;
+    this.changed("ui");
+  }
+
+  /** Поставить метку выбранного типа на осматриваемый гекс. */
+  async markHere() {
+    if ( !this.inspected ) return;
+    this._ensureType("mark", "object");
+    await this.placeMarks([this.inspected]);
+  }
+
+  /** Добавить осматриваемый гекс в зону, выбранную в инструменте «Зона». */
+  async zoneHere() {
+    if ( !this.inspected ) return;
+    this._ensureType("zone", "area");
+    await this.attach([this.inspected]);
+  }
+
+  /** Короткая сводка гекса для панели: координаты, местность, владение, хозяин. */
+  summary() {
+    if ( !this.inspected ) return null;
+    const { zones, marks, lines } = this.contents();
+    const types = this.types;
+    const byLayer = id => zones.find(z => layerIdOf(z, types) === id);
+    const terrain = byLayer("terrain");
+    const realm = byLayer("politics");
+    const region = byLayer("regions");
+    const owner = [realm, ...zones, ...marks].find(s => s?.system?.demiurge)?.system.demiurge ?? "";
+    return { cell: this.inspected, terrain, realm, region, owner, zones, marks, lines };
   }
 
   contents() {
