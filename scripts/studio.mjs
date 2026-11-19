@@ -52,6 +52,10 @@ export default class Studio {
     this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [] };
     /** Форма нового или изменяемого типа: { kind, id?, name, color, icon, layerId } или null. */
     this.typeForm = null;
+    /** Окно настроек модуля: раздел и выбранный в списке элемент. Раздел: layers | area | object | line | world. */
+    this.settings = { open: false, section: "layers", id: null, back: false };
+    /** Форма слоя в настройках: { id?, name, exclusive } или null. */
+    this.layerForm = null;
     /** Форма заявки игрока. */
     this.claimForm = { title: "", note: "" };
     /** Заявки, которые мастер смотрит на карте, и отмеченные галочкой. */
@@ -530,6 +534,10 @@ export default class Studio {
     this[slot].typeId = type.id;
     if ( slot === "zone" ) this.zone.target = "new";
     this.typeForm = null;
+    // Пришли из окна инструмента: настройки закрываются, новый тип уже выбран в инструменте.
+    if ( this.settings.back ) return this.closeSettings();
+    // В настройках сохранённый тип остаётся выбранным в списке.
+    if ( this.settings.open && this.settings.section === f.kind ) return this.settingsPick(type.id);
     this.changed("ui");
   }
 
@@ -540,7 +548,121 @@ export default class Studio {
     if ( used && !(await this.backend.confirm(this.t("ART.Type.deleteUsed", { name: type.name }))) ) return;
     await this.backend.deleteType(id);
     this.typeForm = null;
+    if ( this.settings.back ) return this.closeSettings();
+    if ( this.settings.open && this.settings.section === type.kind ) return this.settingsPick(this.typesOf(type.kind)[0]?.id ?? null);
     this.changed("ui");
+  }
+
+  /**
+   * Новый тип или правка типа из окна инструмента: правка идёт в окне настроек.
+   * Если настройки были закрыты, после «Сохранить», «Отмена» или удаления они закроются сами.
+   */
+  editTypeInSettings(kind, id = "new") {
+    this.settings.back = !this.settings.open || this.settings.back;
+    this.settings.open = true;
+    this.settings.section = kind;
+    this.settingsPick(id);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Настройки модуля                                                  */
+  /* ---------------------------------------------------------------- */
+
+  openSettings(section = this.settings.section) {
+    this.settings.open = true;
+    this.settings.back = false;
+    this.settingsSection(section);
+  }
+
+  closeSettings() {
+    this.settings.open = false;
+    this.settings.back = false;
+    this.typeForm = null;
+    this.layerForm = null;
+    this.changed("ui");
+  }
+
+  /** Раздел настроек; в списке сразу выбран первый элемент. */
+  settingsSection(section) {
+    const gm = this.backend.isGM;
+    this.settings.back = false;
+    if ( (section === "layers" || section === "world") && !gm ) section = "area";
+    this.settings.section = section;
+    this.typeForm = null;
+    this.layerForm = null;
+    const first = section === "layers" ? this.layers[0]?.id
+      : ["area", "object", "line"].includes(section) ? this.typesOf(section)[0]?.id : null;
+    this.settingsPick(first ?? null);
+  }
+
+  /** Выбрать элемент в списке настроек: справа открывается его правка. id "new" — новый. */
+  settingsPick(id) {
+    const sec = this.settings.section;
+    this.settings.id = id;
+    this.typeForm = null;
+    this.layerForm = null;
+    if ( sec === "layers" && id ) {
+      const l = id === "new" ? null : this.layers.find(x => x.id === id);
+      this.layerForm = l ? { id: l.id, name: l.name, exclusive: l.exclusive !== false }
+        : { id: null, name: "", exclusive: true };
+    } else if ( ["area", "object", "line"].includes(sec) && id ) {
+      if ( id === "new" ) this.openTypeForm(sec);
+      else this.openTypeForm(sec, id);
+      return;
+    }
+    this.changed("ui");
+  }
+
+  async saveLayerForm() {
+    const f = this.layerForm;
+    if ( !f || !this.backend.isGM ) return;
+    const name = f.name.trim();
+    if ( !name ) return this.backend.notify("warn", this.t("ART.Layer.needName"));
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    let id = f.id;
+    if ( id ) {
+      const l = layers.find(x => x.id === id);
+      if ( l ) Object.assign(l, { name, exclusive: !!f.exclusive });
+    } else {
+      id = this.backend.newId();
+      layers.push({ id, name, exclusive: !!f.exclusive, visible: true });
+    }
+    await this.backend.setLayers(layers);
+    this.settingsPick(id);
+  }
+
+  async moveLayer(id, dir) {
+    if ( !this.backend.isGM ) return;
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    const n = layers.findIndex(l => l.id === id);
+    const m = n + dir;
+    if ( n < 0 || m < 0 || m >= layers.length ) return;
+    [layers[n], layers[m]] = [layers[m], layers[n]];
+    await this.backend.setLayers(layers);
+    this.changed("ui");
+  }
+
+  /**
+   * Удалить слой. Его типы и зоны переезжают в соседний слой («Прочее», иначе первый оставшийся).
+   * Местность не удаляется: на ней держатся цвета гексов и генератор.
+   */
+  async deleteLayer(id) {
+    if ( !this.backend.isGM || id === "terrain" ) return;
+    const layers = this.layers.map(({ visible, ...l }) => l);
+    const layer = layers.find(l => l.id === id);
+    if ( !layer || layers.length < 2 ) return;
+    const rest = layers.filter(l => l.id !== id);
+    const to = rest.find(l => l.id === "overlay")?.id ?? rest[0].id;
+    const types = this.types.filter(t => t.kind === "area" && (t.layerId ?? "overlay") === id);
+    const zones = [...this.states.values()].filter(z => z.system.kind === "area" && z.system.layerId === id);
+    const ask = this.t("ART.Layer.deleteAsk", { name: layer.name, n: types.length, to: rest.find(l => l.id === to).name });
+    if ( !(await this.backend.confirm(ask)) ) return;
+    for ( const t of types ) if ( this.canEditType(t) ) await this.backend.saveType({ ...t, layerId: to });
+    if ( zones.length ) {
+      await this._commit(zones.map(z => ({ action: "update", id: z.id, state: { ...z, system: { ...z.system, layerId: to } } })));
+    }
+    await this.backend.setLayers(rest);
+    this.settingsPick(to);
   }
 
   pickType(kind, id) {

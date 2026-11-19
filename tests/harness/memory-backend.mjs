@@ -142,8 +142,13 @@ export default class MemoryBackend {
     this.emit();
   }
 
-  /* Ходы ------------------------------------------------------------- */
-
+  /** Слои атласа целиком (мастер). Видимость у слоя хранит каждый сам, в атлас она не идёт. */
+  async setLayers(layers) {
+    if ( !this.isGM ) return;
+    const vis = new Map(this.atlasLayers.map(l => [l.id, l.visible]));
+    this.atlasLayers = layers.map(({ visible, ...l }, i) => ({ ...l, sort: i, visible: vis.get(l.id) ?? true }));
+    this.emit();
+  }
 
   /* Черновик и заявки ------------------------------------------------ */
 
@@ -250,6 +255,7 @@ export default class MemoryBackend {
   openGuide() { this.log.push(["guide", ""]); }
   openWorldSettings() { this.log.push(["worldSettings", ""]); }
   openAzgaar() { this.log.push(["azgaar", ""]); }
+  openGenerator() { this.log.push(["generator", ""]); }
   pickFile(cur, cb) { cb("icons/svg/tower.svg"); }
 }
 

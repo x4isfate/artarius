@@ -61,6 +61,7 @@ Hooks.once("init", () => {
   runtime.buttons = {
     queue: () => studio.openQueue(),
     layers: () => runtime.ui?.toggleLayers(),
+    settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()
   };
