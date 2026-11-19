@@ -14,6 +14,7 @@ import { formatStatus, changedFields } from "../review/ops.mjs";
 import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PARTS } from "../data/view.mjs";
 import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
+import { MARK_SHAPES, shapeSwatch, shapeOf } from "../data/mark-shape.mjs";
 
 /**
  * Значок для показа в панели. Белые значки библиотеки рисуются маской цветом типа,
@@ -106,6 +107,7 @@ export default class ArtariusUI {
     this.hud.hidden = true;
     document.body.appendChild(this.hud);
     this._bind(this.hud);
+    this._bindMarkDrag(this.hud);
     this._unsub = studio.subscribe(what => { if ( what !== "overlay" ) this.render(); });
     this.render();
   }
@@ -146,6 +148,44 @@ export default class ArtariusUI {
   /* ---------------------------------------------------------------- */
   /*  События                                                           */
   /* ---------------------------------------------------------------- */
+
+  /** Перетаскивание меток на панели гекса: метка встаёт перед той, на которую её бросили. */
+  _bindMarkDrag(target) {
+    const over = ev => ev.target.closest?.("[data-drag-mark]");
+    target.addEventListener("dragstart", ev => {
+      const el = over(ev);
+      if ( !el ) return;
+      this._dragMark = el.dataset.dragMark;
+      ev.dataTransfer?.setData("text/plain", this._dragMark);
+      if ( ev.dataTransfer ) ev.dataTransfer.effectAllowed = "move";
+      el.classList.add("dragging");
+    });
+    target.addEventListener("dragover", ev => {
+      const el = over(ev);
+      if ( !el || !this._dragMark ) return;
+      ev.preventDefault();
+      for ( const x of target.querySelectorAll(".drop-before") ) if ( x !== el ) x.classList.remove("drop-before");
+      el.classList.add("drop-before");
+    });
+    target.addEventListener("dragleave", ev => over(ev)?.classList.remove("drop-before"));
+    target.addEventListener("drop", ev => {
+      const el = over(ev);
+      const id = this._dragMark;
+      this._dragMark = null;
+      if ( !el || !id ) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const to = el.dataset.dragMark;
+      // Бросили на соседа снизу — встаём после него, иначе перед.
+      const ids = [...target.querySelectorAll("[data-drag-mark]")].map(x => x.dataset.dragMark);
+      const before = ids.indexOf(id) < ids.indexOf(to) ? (ids[ids.indexOf(to) + 1] ?? null) : to;
+      this.studio.reorderMark(id, before).catch(err => console.error("artarius | reorder", err));
+    });
+    target.addEventListener("dragend", () => {
+      this._dragMark = null;
+      for ( const x of target.querySelectorAll(".dragging, .drop-before") ) x.classList.remove("dragging", "drop-before");
+    });
+  }
 
   _bind(target) {
     target.addEventListener("click", ev => {
@@ -264,6 +304,8 @@ export default class ArtariusUI {
       layerDown: el => s.moveLayer(el.dataset.id, 1),
       generator: () => this.backend.openGenerator?.(),
       deleteType: el => s.deleteType(el.dataset.id),
+      pickShape: el => { if ( s.typeForm ) { s.typeForm.shape = el.dataset.shape; s.changed("ui"); } },
+      setShape: el => s.setField(el.dataset.id, "shape", el.dataset.shape),
       pickPattern: el => { if ( s.typeForm ) { s.typeForm.pattern = el.dataset.pattern; s.changed("ui"); } },
       pickIcon: el => s.pickIcon(el.dataset.icon),
       iconCat: el => { if ( s.typeForm ) { s.typeForm.iconCat = el.dataset.cat; s.changed("ui"); } },
@@ -290,6 +332,8 @@ export default class ArtariusUI {
       pan: el => s.panTo(el.dataset.id),
       deleteFeature: el => s.deleteFeature(el.dataset.id),
       removeCell: el => s.removeCellFromZone(el.dataset.id),
+      markUp: el => s.shiftMark(el.dataset.id, -1),
+      markDown: el => s.shiftMark(el.dataset.id, 1),
       addStatus: el => s.addStatus(el.dataset.id, el.dataset.path),
       removeStatus: el => s.removeStatus(el.dataset.id, el.dataset.path, Number(el.dataset.n)),
       stepLevel: el => s.stepLevel(el.dataset.id, el.dataset.path, Number(el.dataset.n), Number(el.dataset.delta)),
@@ -490,6 +534,17 @@ export default class ArtariusUI {
       <p class="art-hint">${esc(this.t("ART.Icons.credit"))}</p></div>`;
   }
 
+  /** Выбор формы подложки метки: без id — форма типа (pickShape), с id — одной метки (setShape). */
+  renderShapePicker(current, id = "") {
+    const cur = shapeOf({ shape: current });
+    return `<div class="art-field"><span>${esc(this.t("ART.Shape.title"))}</span><div class="art-patterns art-shapes">${MARK_SHAPES.map(sh =>
+      (id
+        ? `<button type="button" class="art-pattern-pick${sh === cur ? " active" : ""}" data-action="setShape" data-shape="${sh}" data-id="${esc(id)}"
+          title="${esc(this.t(`ART.Shape.${sh}`))}">${shapeSwatch(sh)}</button>`
+        : `<button type="button" class="art-pattern-pick${sh === cur ? " active" : ""}" data-action="pickShape" data-shape="${sh}"
+          title="${esc(this.t(`ART.Shape.${sh}`))}">${shapeSwatch(sh)}</button>`)).join("")}</div></div>`;
+  }
+
   renderTypeForm() {
     const f = this.studio.typeForm;
     const layers = this.studio.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("");
@@ -503,6 +558,7 @@ export default class ArtariusUI {
       <div class="art-field"><span>${esc(this.t("ART.Pattern.title"))}</span>
         <div class="art-patterns">${PATTERNS.map(p => `<button type="button" class="art-pattern-pick${p === (f.pattern || "none") ? " active" : ""}" data-action="pickPattern" data-pattern="${p}" title="${esc(this.t(`ART.Pattern.${p}`))}">${patternSwatch(p)}</button>`).join("")}</div></div>
       ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : ""}
+      ${f.kind === "object" ? this.renderShapePicker(f.shape) : ""}
       ${icons}
       <div class="art-row-btns">
         <button type="button" class="art-btn art-accent" data-action="saveType">${icon("check")} ${esc(this.t("ART.Save"))}</button>
@@ -698,7 +754,8 @@ export default class ArtariusUI {
     const [i, j] = sum.cell;
     const owner = sum.owner ? this.backend.actors().find(a => a.id === sum.owner) : null;
     const facts = [sum.terrain?.name, sum.realm?.name, sum.region?.name, owner?.name].filter(Boolean);
-    const plate = `<div class="art-hud-plate">
+    const plate = sum.cells > 1 ? `<div class="art-hud-plate">
+      <b>${esc(this.t("ART.Card.hexes", { n: sum.cells }))}</b> · ${esc(this.t("ART.Hud.multiHint"))}` : `<div class="art-hud-plate">
       <b>${esc(this.t("ART.Card.hex", { i, j }))}</b>${facts.length ? ` · ${facts.map(esc).join(" · ")}` : ""}
       ${sum.marks.length ? `<span class="art-hud-count" title="${esc(this.t("ART.Hud.marksHere"))}">${icon("location-dot")} ${sum.marks.length}</span>` : ""}
     </div>`;
@@ -721,8 +778,12 @@ export default class ArtariusUI {
     const right = shown.map(st => {
       const type = s.typeById(st.system.typeId);
       const title = `${st.name || this.t("ART.Card.unnamed")}${type?.name && type.name !== st.name ? ` (${type.name})` : ""}`;
-      return `<button type="button" class="art-hud-btn art-hud-item" data-action="hudDetails" data-id="${esc(st.id)}"
-        title="${esc(title)}" aria-label="${esc(title)}">${this._hudItemIcon(st)}</button>`;
+      // Метки на одном гексе можно перетащить вверх-вниз: так меняется их порядок на карте.
+      const drag = st.system.kind === "object" && sum.marks.length > 1 && sum.cells === 1
+        ? ` draggable="true" data-drag-mark="${esc(st.id)}"` : "";
+      const hint = drag ? ` · ${this.t("ART.Hud.dragOrder")}` : "";
+      return `<button type="button" class="art-hud-btn art-hud-item" data-action="hudDetails" data-id="${esc(st.id)}"${drag}
+        title="${esc(title + hint)}" aria-label="${esc(title)}">${this._hudItemIcon(st)}</button>`;
     }).join("") + (items.length > shown.length
       ? `<button type="button" class="art-hud-btn art-hud-more" data-action="hudDetails" title="${esc(this.t("ART.Hud.details"))}">+${items.length - shown.length}</button>`
       : "");
@@ -852,18 +913,25 @@ export default class ArtariusUI {
   renderTile() {
     const s = this.studio;
     if ( !s.inspected ) return `<p class="art-empty">${esc(this.t("ART.Card.pick"))}</p>`;
-    const { zones, marks, lines } = s.contents();
+    const { zones, marks, lines, counts } = s.contents();
     const [i, j] = s.inspected;
+    const n = s.multi ? s.selection.size : 1;
+    const note = id => n > 1 ? this.t("ART.Card.inOf", { k: counts.get(id) ?? 0, n }) : "";
     const section = (key, list) => list.length ? `<section class="art-block"><h4>${esc(this.t(`ART.Card.${key}`))} <span class="art-muted">${list.length}</span></h4>
-      ${list.map(st => this.renderItem(s.stateOf(st.id) ?? st)).join("")}</section>` : "";
+      ${list.map(st => this.renderItem(s.stateOf(st.id) ?? st, note(st.id))).join("")}</section>` : "";
     const empty = !zones.length && !marks.length && !lines.length;
-    return `<header class="art-tile-head"><h3>${esc(this.t("ART.Card.hex", { i, j }))}</h3></header>
+    const head = n > 1
+      ? `<header class="art-tile-head"><h3>${esc(this.t("ART.Card.hexes", { n }))}</h3>
+        <button type="button" class="art-link" data-action="clearSelection">${esc(this.t("ART.Sel.clear"))}</button></header>
+        <p class="art-hint">${esc(this.t("ART.Card.multiHint"))}</p>`
+      : `<header class="art-tile-head"><h3>${esc(this.t("ART.Card.hex", { i, j }))}</h3></header>`;
+    return `${head}
       ${empty ? `<p class="art-empty">${esc(this.t("ART.Card.empty"))}</p>` : ""}
       ${section("zones", zones)}${section("marks", marks)}${section("lines", lines)}`;
   }
 
   /** Строка элемента в карточке; раскрытая — с полями. */
-  renderItem(st) {
+  renderItem(st, note = "") {
     const s = this.studio;
     const types = s.types;
     const type = types.find(t => t.id === st.system.typeId);
@@ -879,7 +947,7 @@ export default class ArtariusUI {
         ? iconImg(st.system.style?.icon ?? type.style.icon, color, { tint: (st.system.style?.tint ?? type?.style?.tint) !== false, cls: "art-item-icon" })
         : `<i class="art-swatch" style="--c:${esc(color)}"></i>`}
       <span class="art-item-title"><b>${esc(st.name || this.t("ART.Card.unnamed"))}</b>
-      <span class="art-muted">${esc(type?.name ?? "")}${owner ? ` · ${esc(owner.name)}` : ""}${draft ? ` · <em>${esc(this.t("ART.Card.inDraft"))}</em>` : ""}</span></span>
+      <span class="art-muted">${esc(type?.name ?? "")}${note ? ` · ${esc(note)}` : ""}${owner ? ` · ${esc(owner.name)}` : ""}${draft ? ` · <em>${esc(this.t("ART.Card.inDraft"))}</em>` : ""}</span></span>
       ${icon(open ? "chevron-up" : "chevron-down")}</button>`;
     const tags = !open && (statuses || aspects) ? `<div class="art-tags">${statuses}${aspects}</div>` : "";
     return `<article class="art-item${open ? " open" : ""}">${head}${tags}${open ? this.renderEditor(st, type) : ""}</article>`;
@@ -902,7 +970,11 @@ export default class ArtariusUI {
         <label class="art-field"><span>${esc(this.t("ART.Field.type"))}</span><select ${f("typeId")}>${typeOpts}</select></label>
         ${terrain ? "" : `<label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span>${colorField(`data-id="${esc(id)}" data-field="color"`, color, `${id}:color`)}</label>`}
       </div>
-      ${kind === "area" && zoneCells(st).length > 1 ? `<p class="art-hint">${esc(this.t("ART.Field.typeHere"))}</p>` : ""}
+      ${kind === "object" ? this.renderShapePicker(st.system.style?.shape ?? type?.style?.shape, id) : ""}
+      ${kind === "object" && s.contents().marks.length > 1 && !s.multi ? `<div class="art-row-btns"><span class="art-muted">${esc(this.t("ART.Card.order"))}</span>
+        <button type="button" class="art-btn art-icon-only" data-action="markUp" data-id="${esc(id)}" title="${esc(this.t("ART.Card.earlier"))}">${icon("arrow-up")}</button>
+        <button type="button" class="art-btn art-icon-only" data-action="markDown" data-id="${esc(id)}" title="${esc(this.t("ART.Card.later"))}">${icon("arrow-down")}</button></div>` : ""}
+      ${kind === "area" && zoneCells(st).length > 1 ? `<p class="art-hint">${esc(this.t(s.multi ? "ART.Field.typeHereMany" : "ART.Field.typeHere"))}</p>` : ""}
       <label class="art-field"><span>${esc(this.t("ART.Field.owner"))}</span><select ${f("demiurge")}>${ownerOpts}</select></label>
       <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span><textarea rows="3" ${f("text")}>${esc(htmlToText(st.text))}</textarea></label>
       ${this.renderStatuses(id, "statuses", st.system.statuses ?? [], true)}
@@ -912,7 +984,7 @@ export default class ArtariusUI {
       </section>
       <div class="art-row-btns">
         <button type="button" class="art-btn" data-action="pan" data-id="${esc(id)}">${icon("crosshairs")} ${esc(this.t("ART.Card.pan"))}</button>
-        ${kind === "area" ? `<button type="button" class="art-btn" data-action="removeCell" data-id="${esc(id)}">${icon("eraser")} ${esc(this.t("ART.Card.removeCell"))}</button>` : ""}
+        ${kind === "area" ? `<button type="button" class="art-btn" data-action="removeCell" data-id="${esc(id)}">${icon("eraser")} ${esc(this.t(s.multi ? "ART.Card.removeCells" : "ART.Card.removeCell"))}</button>` : ""}
         <button type="button" class="art-btn art-danger" data-action="deleteFeature" data-id="${esc(id)}" title="${esc(this.t("ART.Card.delete"))}">${icon("trash")}</button>
       </div>
     </div>`;

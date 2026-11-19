@@ -12,13 +12,13 @@
 import { TOOL_KIND } from "./constants.mjs";
 import {
   cellKey, parseKey, attachOps, detachOps, markOps, lineOp, tileContents, cellsAlong,
-  makeType, nextZoneColor, layerIdOf, zoneCells
+  makeType, nextZoneColor, layerIdOf, zoneCells, markCell
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
-import { layoutMarks, markAt } from "./data/mark-layout.mjs";
+import { layoutMarks, markAt, groupOrder } from "./data/mark-layout.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
 
@@ -192,7 +192,21 @@ export default class Studio {
   pointerDown(point, { shift = false, alt = false, ctrl = false, dragStart = false } = {}) {
     const cell = this.grid.cellAt(point);
     const inside = this.grid.inBounds(cell);
+    // Осмотр с Shift: протяжка добавляет гексы в осмотр.
+    if ( dragStart && shift && this.tool === "select" && inside ) {
+      this._drag = { last: cell, erase: false, added: new Map(), inspect: true };
+      this._touch(cell);
+      return;
+    }
     if ( dragStart && (alt || this.tool === "select" || this.tool === "line") ) return;
+    if ( shift && this.tool === "select" && !alt ) {
+      if ( inside ) {
+        this.inspectToggle(cell);
+        // Если кнопку не отпустили и повели, гексы по пути добавляются в осмотр.
+        this._drag = { last: cell, erase: false, added: new Map(), inspect: true };
+      }
+      return;
+    }
     if ( alt || this.tool === "select" ) {
       // Метку под курсором можно утащить на другой гекс; щелчок без протяжки — осмотр гекса.
       const hit = !alt && this.tool === "select" ? markAt(this.markSlots().slots, point) : null;
@@ -200,7 +214,11 @@ export default class Studio {
         this.markDrag = { id: hit.id, from: hit.cell, at: point, start: point, moved: false };
         return "grab";
       }
-      if ( inside ) this.inspect(cell, { toggle: true });
+      if ( inside ) {
+        // Простой щелчок после осмотра нескольких гексов начинает осмотр заново, с одного гекса.
+        if ( !alt && this.selection.size > 1 ) this.selection.clear();
+        this.inspect(cell, { toggle: true });
+      }
       return;
     }
     if ( this.tool === "line" ) {
@@ -298,8 +316,10 @@ export default class Studio {
     const k = cellKey(cell);
     if ( this._drag.erase ) this.selection.delete(k);
     else {
+      if ( this._drag.inspect && !this.selection.size && this.inspected ) this.selection.set(cellKey(this.inspected), this.inspected);
       this.selection.set(k, cell);
       this._drag.added.set(k, cell);
+      if ( this._drag.inspect ) { this.inspected = cell; this.hudOpen = true; }
     }
     this.changed("overlay");
     this.changed("ui");
@@ -426,6 +446,47 @@ export default class Studio {
     this.changed("overlay");
   }
 
+  /**
+   * Порядок меток на гексе. id встаёт перед before (или в конец, если before пуст).
+   * Всем меткам гекса пишется sort по новому порядку: на карте и на панели они идут так же.
+   */
+  async reorderMark(id, before = null) {
+    const st = this.stateOf(id);
+    if ( !st || st.system.kind !== "object" || id === before ) return;
+    const key = cellKey(markCell(st, this.grid.cellAt));
+    const list = [...this.states.values()].map(s => this.stateOf(s.id))
+      .filter(s => s.system.kind === "object" && cellKey(markCell(s, this.grid.cellAt)) === key)
+      .sort(groupOrder);
+    const ids = list.map(s => s.id).filter(x => x !== id);
+    const at = before ? ids.indexOf(before) : -1;
+    ids.splice(at < 0 ? ids.length : at, 0, id);
+    const ops = [];
+    ids.forEach((mid, n) => {
+      const s = list.find(x => x.id === mid);
+      if ( (s.system.sort ?? 0) === n + 1 ) return;
+      const next = foundry_clone(s);
+      next.system.sort = n + 1;
+      ops.push({ action: "update", id: mid, state: next });
+    });
+    if ( ops.length ) await this._commit(ops);
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Сдвинуть метку на шаг в порядке гекса: dir −1 — раньше, +1 — позже. */
+  async shiftMark(id, dir) {
+    const st = this.stateOf(id);
+    if ( !st ) return;
+    const key = cellKey(markCell(st, this.grid.cellAt));
+    const ids = [...this.states.values()].map(s => this.stateOf(s.id))
+      .filter(s => s.system.kind === "object" && cellKey(markCell(s, this.grid.cellAt)) === key)
+      .sort(groupOrder).map(s => s.id);
+    const n = ids.indexOf(id);
+    const m = n + dir;
+    if ( n < 0 || m < 0 || m >= ids.length ) return;
+    return this.reorderMark(id, dir < 0 ? ids[m] : (ids[m + 1] ?? null));
+  }
+
   /* ---------------------------------------------------------------- */
   /*  Линия                                                             */
   /* ---------------------------------------------------------------- */
@@ -483,13 +544,14 @@ export default class Studio {
         kind, id, name: existing.name, color: existing.style?.color ?? "#cccccc",
         icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay",
         pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a",
-        tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon)
+        tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon),
+        shape: existing.style?.shape ?? "circle"
       };
     } else {
       const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
       this.typeForm = {
         kind, id: null, name: "", color: nextZoneColor(this.states), icon: kind === "object" ? iconPath("castle") : "", layerId,
-        pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements"
+        pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements", shape: "circle"
       };
     }
     this.changed("ui");
@@ -528,7 +590,7 @@ export default class Studio {
       type.style = { ...(type.style ?? {}), pattern: f.pattern || "none", patternColor: f.patternColor || "#1a1a1a" };
     }
     // Свою цветную картинку можно не красить цветом типа.
-    if ( f.kind === "object" ) type.style = { ...(type.style ?? {}), tint: f.tint !== false };
+    if ( f.kind === "object" ) type.style = { ...(type.style ?? {}), tint: f.tint !== false, shape: f.shape || "circle" };
     await this.backend.saveType(type);
     const slot = { area: "zone", object: "mark", line: "line" }[f.kind];
     this[slot].typeId = type.id;
@@ -697,6 +759,38 @@ export default class Studio {
     this.changed("overlay");
   }
 
+  /**
+   * Shift-щелчок «Осмотром»: гекс добавляется в осмотр или убирается из него.
+   * Первый Shift-щелчок забирает в набор и гекс, который уже осматривали.
+   */
+  inspectToggle(cell) {
+    const k = cellKey(cell);
+    if ( !this.selection.size && this.inspected && cellKey(this.inspected) !== k ) this.selection.set(cellKey(this.inspected), this.inspected);
+    if ( this.selection.has(k) ) {
+      this.selection.delete(k);
+      if ( this.inspected && cellKey(this.inspected) === k ) this.inspected = this.selection.values().next().value ?? null;
+      if ( this.selection.size === 1 ) this.selection.clear();
+      if ( !this.inspected ) this.hudOpen = false;
+    } else {
+      this.selection.set(k, cell);
+      this.inspected = cell;
+      this.hudOpen = true;
+    }
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Осматривают несколько гексов сразу: Shift-щелчки или протяжка «Осмотром». */
+  get multi() {
+    return this.tool === "select" && this.selection.size > 1;
+  }
+
+  /** Гексы осмотра: набор при осмотре нескольких, иначе один гекс. */
+  inspectCells() {
+    if ( this.multi ) return [...this.selection.values()];
+    return this.inspected ? [this.inspected] : [];
+  }
+
   closeRight() {
     this.rightOpen = false;
     if ( !this.hudOpen ) this.inspected = null;
@@ -726,14 +820,14 @@ export default class Studio {
   async markHere() {
     if ( !this.inspected ) return;
     this._ensureType("mark", "object");
-    await this.placeMarks([this.inspected]);
+    await this.placeMarks(this.inspectCells());
   }
 
   /** Добавить осматриваемый гекс в зону, выбранную в инструменте «Зона». */
   async zoneHere() {
     if ( !this.inspected ) return;
     this._ensureType("zone", "area");
-    await this.attach([this.inspected]);
+    await this.attach(this.inspectCells());
   }
 
   /** Короткая сводка гекса для панели: координаты, местность, владение, хозяин. */
@@ -746,15 +840,33 @@ export default class Studio {
     const realm = byLayer("politics");
     const region = byLayer("regions");
     const owner = [realm, ...zones, ...marks].find(s => s?.system?.demiurge)?.system.demiurge ?? "";
-    return { cell: this.inspected, terrain, realm, region, owner, zones, marks, lines };
+    return { cell: this.inspected, terrain, realm, region, owner, zones, marks, lines, cells: this.multi ? this.selection.size : 1 };
   }
 
+  /**
+   * Что лежит на осматриваемых гексах. При осмотре нескольких — всё вместе, без повторов;
+   * counts говорит, на скольких из них лежит элемент.
+   */
   contents() {
-    if ( !this.inspected ) return { zones: [], marks: [], lines: [] };
-    return tileContents({
-      states: this.states, types: this.types, layers: this.layers, cell: this.inspected,
-      center: this.grid.center(this.inspected), radius: this.grid.radius, cellAt: this.grid.cellAt
-    });
+    const cells = this.inspectCells();
+    const counts = new Map();
+    const out = { zones: [], marks: [], lines: [], counts };
+    for ( const cell of cells ) {
+      const c = tileContents({
+        states: this.states, types: this.types, layers: this.layers, cell,
+        center: this.grid.center(cell), radius: this.grid.radius, cellAt: this.grid.cellAt
+      });
+      for ( const key of ["zones", "marks", "lines"] ) for ( const st of c[key] ) {
+        if ( !counts.has(st.id) ) out[key].push(st);
+        counts.set(st.id, (counts.get(st.id) ?? 0) + 1);
+      }
+    }
+    out.marks.sort(groupOrder);
+    if ( cells.length > 1 ) {
+      const order = new Map(this.layers.map((l, n) => [l.id, n]));
+      out.zones.sort((a, b) => (order.get(layerIdOf(a, this.types)) ?? 99) - (order.get(layerIdOf(b, this.types)) ?? 99));
+    }
+    return out;
   }
 
   toggleOpen(id) {
@@ -804,7 +916,7 @@ export default class Studio {
   /** Убрать осматриваемый гекс из зоны. */
   async removeCellFromZone(zoneId) {
     if ( !this.inspected ) return;
-    await this._commit(detachOps({ states: this.states, types: this.types, cells: [this.inspected], zoneId }));
+    await this._commit(detachOps({ states: this.states, types: this.types, cells: this.inspectCells(), zoneId }));
     this.changed("ui");
   }
 
@@ -874,9 +986,11 @@ export default class Studio {
     // Тип зоны в окне гекса меняется у этого гекса, а не у всей зоны: «Пустыни» → «Лес» уводит в лес одну клетку.
     if ( field === "typeId" ) {
       const zone = this.stateOf(id);
-      const here = this.inspected && cellKey(this.inspected);
-      if ( zone?.system.kind === "area" && here && zoneCells(zone).length > 1
-        && zoneCells(zone).some(c => cellKey(c) === here) ) return this.retypeCell(id, this.inspected, value);
+      if ( zone?.system.kind === "area" ) {
+        const own = new Set(zoneCells(zone).map(cellKey));
+        const here = this.inspectCells().filter(c => own.has(cellKey(c)));
+        if ( here.length && here.length < own.size ) return this.retypeCells(id, here, value);
+      }
     }
     this.edit(id, s => {
       if ( field === "name" ) s.name = value;
@@ -886,6 +1000,7 @@ export default class Studio {
         s.system.typeId = value;
         if ( s.system.kind === "area" ) s.system.layerId = this.typeById(value)?.layerId ?? s.system.layerId;
       } else if ( field === "color" ) s.system.style = { ...(s.system.style ?? {}), color: value };
+      else if ( field === "shape" ) s.system.style = { ...(s.system.style ?? {}), shape: value };
       else {
         // statuses.N.name | aspects.N.value | aspects.N.statuses.M.max …
         const parts = field.split(".");
@@ -898,7 +1013,7 @@ export default class Studio {
           obj[key] = Number.isFinite(num) ? num : null;
         } else obj[key] = value;
       }
-    }, { now: field === "demiurge" || field === "typeId" || field === "color" });
+    }, { now: field === "demiurge" || field === "typeId" || field === "color" || field === "shape" });
   }
 
   /**
@@ -906,22 +1021,27 @@ export default class Studio {
    * (иначе самая большая такого типа), а если такой нет — создаётся новая с именем типа.
    */
   async retypeCell(zoneId, cell, typeId) {
+    return this.retypeCells(zoneId, [cell], typeId);
+  }
+
+  /** То же для нескольких гексов зоны: они уходят вместе, к соседней зоне нужного типа или в новую. */
+  async retypeCells(zoneId, cells, typeId) {
     const { states, types, layers } = this;
     const zone = states.get(zoneId);
     const type = this.typeById(typeId);
     if ( !zone || !type || zone.system.typeId === typeId ) return;
     const same = [...states.values()].filter(z => z.id !== zoneId && z.system.kind === "area" && z.system.typeId === typeId);
-    const near = new Set((this.grid.neighbors?.(cell) ?? []).map(cellKey));
+    const near = new Set(cells.flatMap(c => this.grid.neighbors?.(c) ?? []).map(cellKey));
     const target = same.find(z => zoneCells(z).some(c => near.has(cellKey(c))))
       ?? same.sort((a, b) => zoneCells(b).length - zoneCells(a).length)[0];
     const ops = target
-      ? attachOps({ states, types, layers, cells: [cell], target: target.id })
-      : attachOps({ states, types, layers, cells: [cell], newZone: {
+      ? attachOps({ states, types, layers, cells, target: target.id })
+      : attachOps({ states, types, layers, cells, newZone: {
         id: this.backend.newId(), typeId, name: type.name,
         color: type.layerId === "terrain" ? "" : nextZoneColor(states), demiurge: zone.system.demiurge ?? ""
       } });
     // Если новый тип на другом слое, гекс из старой зоны attachOps не уберёт: убираем сами.
-    if ( !ops.some(op => op.id === zoneId) ) ops.push(...detachOps({ states, types, cells: [cell], zoneId }));
+    if ( !ops.some(op => op.id === zoneId) ) ops.push(...detachOps({ states, types, cells, zoneId }));
     await this._commit(ops);
     this.changed("ui");
     this.changed("overlay");
