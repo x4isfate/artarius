@@ -2,6 +2,7 @@
  * Карта стенда на SVG. Повторяет то, что в игре рисует PIXI-слой:
  * базовые гексы, зоны по слоям, границы, линии, метки, выделение и призраки.
  */
+import { shapePoints, shapeOf } from "../../scripts/data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells, cellKey } from "../../scripts/data/world.mjs";
 import { resolveStyleOf } from "../../scripts/canvas/style.mjs";
 import { catmullRom, meander } from "../../scripts/geometry/geometry.mjs";
@@ -122,7 +123,9 @@ export default class SvgView {
       const st = resolveStyleOf(m, types);
       const { x, y, d } = slot;
       const g = this.el("g", { "data-mark": m.id, "data-cell": slot.key }, this.g.marks);
-      this.el("circle", { cx: x, cy: y, r: d / 2, fill: "rgba(17,17,17,0.6)", stroke: st.color, "stroke-width": 2 }, g);
+      const pts = shapePoints(shapeOf(st), d / 2);
+      if ( pts ) this.el("polygon", { points: pts.map(([px, py]) => `${x + px},${y + py}`).join(" "), fill: "rgba(17,17,17,0.6)", stroke: st.color, "stroke-width": 2, "data-shape": shapeOf(st) }, g);
+      else if ( shapeOf(st) !== "none" ) this.el("circle", { cx: x, cy: y, r: d / 2, fill: "rgba(17,17,17,0.6)", stroke: st.color, "stroke-width": 2, "data-shape": "circle" }, g);
       this.el("text", { x, y: y + 4, "font-size": d * 0.45, class: "ico", fill: st.color }, g).textContent = (m.name || "?")[0];
       if ( m.name && slot.count === 1 ) this.el("text", { x, y: y + (d / 2) + 12, "font-size": 11, class: "lbl" }, g).textContent = m.name;
     }

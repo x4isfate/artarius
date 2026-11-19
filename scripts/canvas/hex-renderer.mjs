@@ -3,6 +3,7 @@
  * Три слоя перерисовки: основа (пустые гексы), данные (зоны, линии, метки)
  * и накладка (выделение, курсор, призраки, начатая линия).
  */
+import { shapePoints, shapeOf } from "../data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
@@ -269,7 +270,14 @@ export default class HexRenderer {
     const c = new PIXI.Container();
     c.position.set(x, y);
     const bg = new PIXI.Graphics();
-    bg.beginFill(0x111111, 0.62).lineStyle(Math.max(2, size / 22), color(style.color), 0.95).drawCircle(0, 0, size * 0.5).endFill();
+    const shape = shapeOf(style);
+    if ( shape !== "none" ) {
+      bg.beginFill(0x111111, 0.62).lineStyle(Math.max(2, size / 22), color(style.color), 0.95);
+      const pts = shapePoints(shape, size * 0.5);
+      if ( pts ) bg.drawPolygon(pts.flat());
+      else bg.drawCircle(0, 0, size * 0.5);
+      bg.endFill();
+    }
     c.addChild(bg);
     if ( style.icon ) {
       const sprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
