@@ -120,6 +120,7 @@ export default class HexLayer extends InteractionLayer {
     this.renderer = new HexRenderer(runtime.backend.grid);
     this.addChild(this.renderer.container);
     this._unsub = runtime.studio.subscribe(what => {
+      if ( what === "hover" ) return;
       if ( what === "overlay" ) this.refreshOverlay();
       else this.refresh();
     });

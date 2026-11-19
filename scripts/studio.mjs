@@ -19,6 +19,7 @@ import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
 import { layoutMarks, markAt, groupOrder } from "./data/mark-layout.mjs";
+import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
 
@@ -49,7 +50,7 @@ export default class Studio {
     this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, detachLayer: "terrain", filter: "" };
     this.mark = { typeId: "city", name: "", text: "", paint: false };
     /** mode: "free" — точки где угодно, "hex" — путь через центры гексов, "draw" — от руки протяжкой. */
-    this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [] };
+    this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [], join: true };
     /** Форма нового или изменяемого типа: { kind, id?, name, color, icon, layerId } или null. */
     this.typeForm = null;
     /** Окно настроек модуля: раздел и выбранный в списке элемент. Раздел: layers | area | object | line | world. */
@@ -63,6 +64,8 @@ export default class Studio {
     this.checkedIds = new Set();
     /** Курсор над гексом (для подсветки). */
     this.hover = null;
+    /** Линия под курсором: { id, name, at } или null. */
+    this.hoverLine = null;
     this.listeners = new Set();
     this._drag = null;
     this._busy = false;
@@ -75,7 +78,7 @@ export default class Studio {
   /*  Подписка                                                          */
   /* ---------------------------------------------------------------- */
 
-  /** fn(what): what — "data" | "ui" | "overlay". */
+  /** fn(what): what — "data" | "ui" | "overlay" | "hover" (только подсказка линии). */
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -227,6 +230,15 @@ export default class Studio {
         // От руки: линия пишется протяжкой и заканчивается, когда кнопку отпустили.
         l.points = [[Math.round(point.x), Math.round(point.y)]];
         this._sketch = true;
+      } else if ( l.mode === "edge" ) {
+        // По краям гексов: щелчок встаёт в ближайшую вершину, путь до неё идёт по рёбрам клеток.
+        const v = nearestVertex(this.grid, point);
+        if ( !v ) return;
+        const last = l.points.at(-1);
+        // Точки линии округлены до пикселя: путь начинаем от настоящей вершины рядом с последней точкой.
+        const path = last ? edgePath(this.grid, nearestVertex(this.grid, { x: last[0], y: last[1] }), v).slice(1) : [v];
+        for ( const p of path ) l.points.push([Math.round(p.x), Math.round(p.y)]);
+        l.cells.push(path.length);
       } else if ( l.mode === "hex" ) {
         if ( !inside ) return;
         const last = l.cells.at(-1);
@@ -269,6 +281,7 @@ export default class Studio {
       }
       return;
     }
+    this._hoverLine(point);
     const cell = this.grid.cellAt(point);
     const k = this.grid.inBounds(cell) ? cellKey(cell) : null;
     const hoverChanged = (this.hover ? cellKey(this.hover) : null) !== k;
@@ -310,6 +323,18 @@ export default class Studio {
       else if ( this.tool === "mark" && this.mark.paint ) await this.placeMarks([...d.added.values()]);
     }
     this.changed("ui");
+  }
+
+  /** Линия под курсором: её название (или название участка) всплывает подсказкой. */
+  _hoverLine(point) {
+    const view = this.view();
+    const hit = !this._drag && view.lines !== false
+      ? lineAt(this.states, [point.x, point.y], Math.max(6, this.grid.radius * 0.18))
+      : null;
+    const next = hit?.name ? { id: hit.state.id, name: hit.name, at: point } : null;
+    const prev = this.hoverLine;
+    this.hoverLine = next;
+    if ( (prev?.id ?? null) !== (next?.id ?? null) || prev?.name !== next?.name || next ) this.changed("hover");
   }
 
   _touch(cell) {
@@ -492,7 +517,7 @@ export default class Studio {
   /* ---------------------------------------------------------------- */
 
   setLineMode(mode) {
-    if ( !["free", "hex", "draw"].includes(mode) ) return;
+    if ( !["free", "hex", "edge", "draw"].includes(mode) ) return;
     this.line.mode = mode;
     this.clearLine();
   }
@@ -501,25 +526,40 @@ export default class Studio {
     if ( this.line.points.length < 2 ) return this.backend.notify("warn", this.t("ART.Line.needTwo"));
     if ( !this.typeById(this.line.typeId) ) return this.backend.notify("warn", this.t("ART.Line.noType"));
     const points = this.line.mode === "draw" ? simplify(this.line.points, this.grid.radius * 0.06) : this.line.points;
-    const op = lineOp({
-      points, typeId: this.line.typeId, name: this.line.name.trim(),
-      types: this.types, newId: () => this.backend.newId()
-    });
-    if ( this.line.text?.trim() ) op.state.text = this.line.text.trim();
-    // Линии по гексам и от руки не виляют сами: их форму задал игрок.
-    if ( this.line.mode !== "free" ) op.state.system.style = { ...(op.state.system.style ?? {}), meander: 0 };
+    const name = this.line.name.trim();
+    // Конец новой линии у конца линии того же типа: они сливаются в одну.
+    const join = this.line.join !== false
+      ? joinLine({ states: this.states, points, typeId: this.line.typeId, name, tol: this.grid.radius * 0.5 })
+      : null;
+    let ops;
+    if ( join ) {
+      const keep = foundry_clone(this.stateOf(join.keep.id) ?? join.keep);
+      keep.system.geometry = { ...(keep.system.geometry ?? {}), points: join.points.map(([x, y]) => [Math.round(x), Math.round(y)]), segments: join.segments };
+      ops = [{ action: "update", id: keep.id, state: keep }];
+      if ( join.remove ) ops.push({ action: "delete", id: join.remove.id, name: join.remove.name });
+    } else {
+      const op = lineOp({ points, typeId: this.line.typeId, name, types: this.types, newId: () => this.backend.newId() });
+      if ( this.line.text?.trim() ) op.state.text = this.line.text.trim();
+      // Линии по гексам и от руки не виляют сами: их форму задал игрок.
+      if ( this.line.mode !== "free" ) op.state.system.style = { ...(op.state.system.style ?? {}), meander: 0 };
+      ops = [op];
+    }
     this.line.points = [];
     this.line.cells = [];
     this.line.name = "";
     this.line.text = "";
-    await this._commit([op]);
+    await this._commit(ops);
+    if ( join ) this.backend.notify("info", this.t("ART.Line.joined", { name: join.keep.name || this.t("ART.Card.unnamed") }));
     this.changed("ui");
     this.changed("overlay");
   }
 
   undoPoint() {
-    // По гексам шаг назад убирает последний гекс пути.
-    this.line.points.pop();
+    // По гексам шаг назад убирает последний гекс пути, по краям — весь путь последнего щелчка.
+    if ( this.line.mode === "edge" ) {
+      const n = this.line.cells.pop() ?? 1;
+      this.line.points.splice(-n, n);
+    } else this.line.points.pop();
     if ( this.line.mode === "hex" ) this.line.cells.pop();
     this.changed("ui");
     this.changed("overlay");
@@ -545,13 +585,16 @@ export default class Studio {
         icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay",
         pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a",
         tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon),
-        shape: existing.style?.shape ?? "circle"
+        shape: existing.kind === "line" ? "circle" : (existing.style?.shape ?? "circle"),
+        lineShape: existing.style?.shape ?? "curved", bend: existing.style?.bend ?? 0.5, linePattern: existing.style?.pattern ?? "solid",
+        widthStart: existing.style?.widthStart ?? 3, widthEnd: existing.style?.widthEnd ?? 3
       };
     } else {
       const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
       this.typeForm = {
         kind, id: null, name: "", color: nextZoneColor(this.states), icon: kind === "object" ? iconPath("castle") : "", layerId,
-        pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements", shape: "circle"
+        pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements", shape: "circle",
+        lineShape: "curved", bend: 0.5, linePattern: "solid", widthStart: 3, widthEnd: 3
       };
     }
     this.changed("ui");
@@ -591,6 +634,15 @@ export default class Studio {
     }
     // Свою цветную картинку можно не красить цветом типа.
     if ( f.kind === "object" ) type.style = { ...(type.style ?? {}), tint: f.tint !== false, shape: f.shape || "circle" };
+    if ( f.kind === "line" ) {
+      const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(40, n) : d; };
+      type.style = {
+        ...(type.style ?? {}), shape: f.lineShape || "curved", bend: Math.max(0, Math.min(1, Number(f.bend) || 0)),
+        pattern: f.linePattern || "solid", widthStart: num(f.widthStart, 3), widthEnd: num(f.widthEnd, 3)
+      };
+      // Узор задаёт штрих сам; старые dash/gap от него не мешают.
+      delete type.style.dash; delete type.style.gap;
+    }
     await this.backend.saveType(type);
     const slot = { area: "zone", object: "mark", line: "line" }[f.kind];
     this[slot].typeId = type.id;
@@ -913,6 +965,34 @@ export default class Studio {
     this.changed("ui");
   }
 
+  /** Кусок линии на осматриваемых гексах: [from, to] номера точек или null. */
+  lineRangeHere(id) {
+    const st = this.stateOf(id);
+    const pts = st?.system.geometry?.points ?? [];
+    if ( pts.length < 2 ) return null;
+    return rangeForCells(pts, this.inspectCells(), c => this.grid.center(c));
+  }
+
+  /** Название участка линии на осматриваемых гексах. */
+  segmentNameHere(id) {
+    const st = this.stateOf(id);
+    const r = this.lineRangeHere(id);
+    if ( !r ) return "";
+    const segs = st.system.geometry?.segments ?? [];
+    const name = segmentNameAt(segs, r[0]);
+    return name && segs.some(s => s.name === name && s.from <= r[0] && s.to >= r[1]) ? name : "";
+  }
+
+  /** Назвать участок линии, который проходит по осматриваемым гексам. Пустое имя снимает название. */
+  nameSegmentHere(id, name) {
+    const r = this.lineRangeHere(id);
+    if ( !r ) return;
+    this.edit(id, s => {
+      const n = s.system.geometry.points.length;
+      s.system.geometry = { ...s.system.geometry, segments: nameRange(s.system.geometry.segments, r[0], r[1], name, n) };
+    });
+  }
+
   /** Убрать осматриваемый гекс из зоны. */
   async removeCellFromZone(zoneId) {
     if ( !this.inspected ) return;
@@ -983,6 +1063,7 @@ export default class Studio {
 
   /** Поле элемента из карточки. field — "name", "text", "demiurge", "color", "typeId" или путь статуса. */
   setField(id, field, value) {
+    if ( field === "segment" ) return this.nameSegmentHere(id, value);
     // Тип зоны в окне гекса меняется у этого гекса, а не у всей зоны: «Пустыни» → «Лес» уводит в лес одну клетку.
     if ( field === "typeId" ) {
       const zone = this.stateOf(id);
