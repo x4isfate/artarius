@@ -98,7 +98,7 @@ export default class HexLayer extends InteractionLayer {
       activeTool: "select",
       tools,
       onChange: (event, active) => {
-        if ( !active ) runtime.studio?.layerDeactivated();
+        if ( active === false ) runtime.studio?.layerDeactivated();
       },
       onToolChange: (event, tool) => {
         if ( tool?.name && runtime.studio && runtime.studio.tool !== tool.name ) {
@@ -193,7 +193,11 @@ export default class HexLayer extends InteractionLayer {
       const s = runtime.studio;
       const owned = this._owns();
       dlog(ev.type, { button: ev.button, tool: s?.tool, owned, activeLayer: canvas.activeLayer?.options?.name, control: ui.controls?.control?.name });
-      if ( !s?.tool ) return;
+      if ( !s ) return;
+      // Группа Артария активна, а инструмент студии погас (окно закрыли, Foundry сбросил слой):
+      // щелчок по карте снова включает инструмент, выбранный в колонке Foundry, вместо «мёртвого» холста.
+      if ( !s.tool && owned && ev.button === 0 ) this._restoreTool();
+      if ( !s.tool ) return;
       if ( !owned ) {
         if ( !inputDebug.warned && ev.button === 0 ) {
           inputDebug.warned = true;
@@ -277,11 +281,13 @@ export default class HexLayer extends InteractionLayer {
   _activate() {
     super._activate?.();
     // Слой включили из колонки инструментов: показать инструмент.
-    const s = runtime.studio;
-    if ( s && !s.tool ) {
-      const name = ui.controls?.tool?.name;
-      s.setTool(CONTROL_TOOLS.some(([n]) => n === name) ? name : "select", { toggle: false, fromCanvas: true });
-    }
+    if ( runtime.studio && !runtime.studio.tool ) this._restoreTool();
+  }
+
+  /** Включить инструмент студии по кнопке, выбранной в колонке Foundry («Осмотр», если не наша). */
+  _restoreTool() {
+    const name = ui.controls?.tool?.name;
+    runtime.studio?.setTool(CONTROL_TOOLS.some(([n]) => n === name) ? name : "select", { toggle: false, fromCanvas: true });
   }
 
   /** @override */

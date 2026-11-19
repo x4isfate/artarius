@@ -153,6 +153,8 @@ export default class Studio {
     if ( this.tool !== "line" ) { this.line.points = []; this.line.cells = []; }
     // Панель на гексе — часть осмотра: другой инструмент её убирает.
     if ( this.tool !== "select" ) this.hudOpen = false;
+    // Без инструмента рамка осмотра не висит на карте сама по себе (окно подробностей её держит).
+    if ( !this.tool && !this.rightOpen ) this.inspected = null;
     this.markDrag = null;
     this.typeForm = null;
     if ( this.tool === "zone" ) this._ensureType("zone", "area");
@@ -168,6 +170,9 @@ export default class Studio {
     if ( !this.tool ) return;
     this.tool = null;
     this.line.points = [];
+    this.hudOpen = false;
+    this.markDrag = null;
+    if ( !this.rightOpen ) this.inspected = null;
     this.changed("ui");
     this.changed("overlay");
   }
