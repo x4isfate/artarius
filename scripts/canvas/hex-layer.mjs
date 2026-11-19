@@ -213,7 +213,11 @@ export default class HexLayer extends InteractionLayer {
       dlog("точка", p, "гекс", runtime.backend?.grid.cellAt(p));
       try {
         if ( dbl ) s.finishLine();
-        else s.pointerDown(p, mods(ev));
+        else if ( s.pointerDown(p, mods(ev)) === "grab" ) {
+          // Метку взяли мышью: Foundry не должен начинать свою протяжку (рамку выделения).
+          ev.stopPropagation();
+          ev.preventDefault();
+        }
       } catch(err) {
         console.error(`${MODULE_ID} | щелчок`, err);
       }

@@ -29,7 +29,7 @@ const lang = { ART: ru.ART, VMAP: ru.VMAP };
 const backend = new MemoryBackend({ lang });
 const studio = new Studio(backend);
 const view = new SvgView(studio, backend, document.getElementById("map"));
-const ui = new ArtariusUI(studio, backend);
+const ui = new ArtariusUI(studio, backend, { project: pt => view.project(pt) });
 // Подписи значков вместо шрифта.
 new MutationObserver(() => {
   for ( const i of document.querySelectorAll("#artarius-ui i.fa-solid:not([data-i])") ) {
