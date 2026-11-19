@@ -312,24 +312,6 @@ async function shot(page, name) {
   await hud("hudClose");
   check(!(await page.locator("#artarius-hud .art-hud-left").isVisible()), "крестик убирает панель");
 
-  /* 10. Ходы ------------------------------------------------------- */
-  await act("turnMenu");
-  await page.locator('#artarius-ui input[data-action="toggleTurns"]').click();
-  let turn = await ev(() => window.art.backend.turnState);
-  check(turn.enabled && turn.order.length === 3, "ходы включены, в порядке трое игроков");
-  await act("orderDown", '[data-id="fire"]');
-  await act("orderUp", '[data-id="fire"]');
-  await act("orderRemove", '[data-id="sun"]');
-  await act("orderAdd", '[data-id="sun"]');
-  turn = await ev(() => window.art.backend.turnState);
-  check(turn.order.join() === "fire,ice,sun", "порядок ходов меняется кнопками");
-  await act("passTurn");
-  turn = await ev(() => window.art.backend.turnState);
-  check(turn.index === 1, "«Передать ход» отдаёт ход следующему");
-  await act("setTurn", '[data-id="fire"]');
-  await act("turnMenu");
-  await shot(page, "turn");
-
   /* 11. Игрок рисует и отправляет заявку --------------------------- */
   await user("fire");
   await act("tool", '[data-tool="zone"]');
@@ -355,7 +337,7 @@ async function shot(page, name) {
   await act("attach");
   await page.fill('#artarius-ui [data-key="claim-title"]', "Огонь занимает пустоши");
   await act("submit");
-  check((await ev(() => window.art.backend.flags.fire.claims.length)) === 1, "игрок в свой ход отправил заявку");
+  check((await ev(() => window.art.backend.flags.fire.claims.length)) === 1, "игрок отправил заявку");
   await shot(page, "player");
 
   await user("ice");
@@ -363,7 +345,7 @@ async function shot(page, name) {
   await click([12, 12]);
   await act("placeMarks");
   await act("openQueue");
-  check(await page.locator('#artarius-ui [data-action="submit"]').isDisabled(), "не в свой ход кнопка отправки выключена");
+  check(!(await page.locator('#artarius-ui [data-action="submit"]').isDisabled()), "кнопка отправки доступна без очереди ходов");
 
   /* 12. Мастер решает --------------------------------------------- */
   await user("gm");
@@ -379,9 +361,7 @@ async function shot(page, name) {
   await user("ice");
   await act("openQueue");
   await page.fill('#artarius-ui [data-key="claim-title"]', "Лёд");
-  await ev(() => { const b = window.art.backend; b.turnState.index = 1; b.emit(); });
   await act("submit");
-  await ev(() => { const b = window.art.backend; b.turnState.index = 0; b.emit(); });
   await user("gm");
   await act("openQueue");
   const iceClaim = await ev(() => window.art.backend.claims()[0].claim.id);

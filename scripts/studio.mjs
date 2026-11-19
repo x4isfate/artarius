@@ -5,14 +5,14 @@
  *
  * backend — см. docs/API.md, раздел «Backend». Главное:
  *   states(), atlasStates(), types(), layers(), grid, commitOps(ops), saveType(t), deleteType(id),
- *   newId(), isGM, userId, players(), actors(), turn(), setTurn(t), draftOps(), submitDraft(),
+ *   newId(), isGM, userId, players(), actors(), draftOps(), submitDraft(),
  *   claims(), applyClaims(), rejectClaims(), requestCheck(), returnToDraft(), dropClaim(),
  *   panTo(point), notify(level, text), t(key, data), onChange(fn).
  */
 import { TOOL_KIND } from "./constants.mjs";
 import {
   cellKey, parseKey, attachOps, detachOps, markOps, lineOp, tileContents, cellsAlong,
-  makeType, nextZoneColor, layerIdOf, zoneCells, currentTurnUserId, nextTurn, canSubmit, setTurnOrder
+  makeType, nextZoneColor, layerIdOf, zoneCells
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
@@ -773,60 +773,6 @@ export default class Studio {
   }
 
   /* ---------------------------------------------------------------- */
-  /*  Ходы                                                              */
-  /* ---------------------------------------------------------------- */
-
-  turn() { return this.backend.turn(); }
-
-  currentPlayerId() { return currentTurnUserId(this.turn()); }
-
-  canSubmit() { return canSubmit(this.turn(), this.backend.userId, this.backend.isGM); }
-
-  async passTurn() {
-    if ( !this.backend.isGM ) return;
-    const turn = nextTurn(this.turn());
-    await this.backend.setTurn(turn);
-    const id = currentTurnUserId(turn);
-    this.backend.announceTurn?.(id, turn.round);
-    this.changed("ui");
-  }
-
-  async toggleTurns() {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    let order = turn.order?.length ? turn.order : this.backend.players().map(p => p.id);
-    await this.backend.setTurn({ ...setTurnOrder(turn, order), enabled: !turn.enabled });
-    this.changed("ui");
-  }
-
-  /** Сдвинуть игрока в порядке ходов или убрать (dir = 0). */
-  async moveInOrder(userId, dir) {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    const order = [...(turn.order ?? [])];
-    const n = order.indexOf(userId);
-    if ( n < 0 ) order.push(userId);
-    else if ( dir === 0 ) order.splice(n, 1);
-    else {
-      const m = n + dir;
-      if ( m < 0 || m >= order.length ) return;
-      [order[n], order[m]] = [order[m], order[n]];
-    }
-    await this.backend.setTurn(setTurnOrder(turn, order));
-    this.changed("ui");
-  }
-
-  async setTurnTo(userId) {
-    if ( !this.backend.isGM ) return;
-    const turn = this.turn();
-    const index = (turn.order ?? []).indexOf(userId);
-    if ( index < 0 ) return;
-    await this.backend.setTurn({ ...turn, index });
-    this.backend.announceTurn?.(userId, turn.round);
-    this.changed("ui");
-  }
-
-  /* ---------------------------------------------------------------- */
   /*  Заявки                                                            */
   /* ---------------------------------------------------------------- */
 
@@ -844,7 +790,6 @@ export default class Studio {
 
   async submit() {
     await this.flush();
-    if ( !this.canSubmit() ) return this.backend.notify("warn", this.t("ART.Turn.notYourTurn"));
     const claim = await this.backend.submitDraft({ ...this.claimForm });
     if ( claim ) this.claimForm = { title: "", note: "" };
     this.changed("ui");

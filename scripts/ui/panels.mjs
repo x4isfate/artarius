@@ -1,5 +1,5 @@
 /**
- * Интерфейс гекс-мира на чистом DOM: части turn (ход), left (инструмент),
+ * Интерфейс гекс-мира на чистом DOM: части left (инструмент),
  * right (гекс и заявки), wheel (круглое меню, только в стенде без Foundry).
  *
  * Без хозяина части лежат поверх холста в своём корне #artarius-ui.
@@ -73,15 +73,12 @@ export default class ArtariusUI {
     this.root.id = "artarius-ui";
     this.root.className = "artarius";
     this.root.innerHTML = `
-      <div class="art-turnbar" data-part="turn"></div>
       <section class="art-panel art-left" data-part="left" hidden></section>
       <section class="art-panel art-right" data-part="right" hidden></section>
       <nav class="art-wheel" data-part="wheel"></nav>`;
     this.parts = Object.fromEntries([...this.root.querySelectorAll("[data-part]")].map(el => [el.dataset.part, el]));
-    this.turnMenu = false;
-    /** Окно хода открыто вручную (кнопкой) или закрыто игроком до следующего хода. */
-    this.turnOpen = false;
-    this.turnClosedAt = null;
+    /** Окно слоёв для «Осмотра» в Foundry открывается только кнопкой, само не всплывает. */
+    this.layersOpen = false;
     for ( const el of Object.values(this.parts) ) this._bind(el);
     if ( host ) {
       for ( const [name, el] of Object.entries(this.parts) ) {
@@ -123,32 +120,9 @@ export default class ArtariusUI {
   /** Окно закрыли крестиком: привести состояние студии в соответствие. */
   windowClosed(name) {
     const s = this.studio;
+    if ( name === "left" && s.tool === "select" && this.host ) { this.layersOpen = false; return; }
     if ( name === "left" && s.tool ) s.setTool(null, { toggle: false });
     else if ( name === "right" && s.rightOpen ) s.closeRight();
-    else if ( name === "turn" ) {
-      this.turnOpen = false;
-      this.turnClosedAt = this._turnKey();
-    }
-  }
-
-  /** Открыть или закрыть окно хода (кнопка в колонке инструментов). */
-  toggleTurn() {
-    const visible = this._turnVisible();
-    this.turnOpen = !visible;
-    this.turnClosedAt = visible ? this._turnKey() : null;
-    this.render();
-  }
-
-  _turnKey() {
-    const t = this.studio.turn();
-    return `${t.enabled}:${t.round}:${t.index}`;
-  }
-
-  /** Окно хода видно, когда ходы идут (пока игрок не закрыл его на этом ходу) или открыто вручную. */
-  _turnVisible() {
-    if ( !this.host ) return true;
-    if ( this.turnOpen ) return true;
-    return !!this.studio.turn().enabled && this.turnClosedAt !== this._turnKey();
   }
 
   _show(name, on, title) {
@@ -222,6 +196,7 @@ export default class ArtariusUI {
       // Кнопка уже выбранного инструмента его не выключает: выключает крестик в шапке.
       tool: el => s.setTool(el.dataset.tool, { toggle: false }),
       toggleMenu: () => s.setTool(s.tool ? null : "select"),
+      toggleLayers: () => this.toggleLayers(),
       extra: el => EXTRA_ACTIONS.get(el.dataset.id)?.onClick?.(),
       help: () => this.backend.openGuide?.(),
       // Зона
@@ -274,15 +249,6 @@ export default class ArtariusUI {
       toAspect: el => s.statusToAspect(el.dataset.id, Number(el.dataset.n)),
       addAspect: el => s.addAspect(el.dataset.id),
       removeAspect: el => s.removeAspect(el.dataset.id, Number(el.dataset.n)),
-      // Ходы
-      passTurn: () => s.passTurn(),
-      toggleTurns: () => s.toggleTurns(),
-      turnMenu: () => { this.turnMenu = !this.turnMenu; this.render(); },
-      orderUp: el => s.moveInOrder(el.dataset.id, -1),
-      orderDown: el => s.moveInOrder(el.dataset.id, 1),
-      orderRemove: el => s.moveInOrder(el.dataset.id, 0),
-      orderAdd: el => s.moveInOrder(el.dataset.id, 1),
-      setTurn: el => s.setTurnTo(el.dataset.id),
       // Заявки
       openQueue: () => s.openQueue(),
       submit: () => s.submit(),
@@ -308,17 +274,40 @@ export default class ArtariusUI {
     const s = this.studio;
     try {
       if ( this.parts.wheel ) patch(this.parts.wheel, this.renderWheel());
-      const turnOn = this._turnVisible();
-      if ( turnOn ) patch(this.parts.turn, this.renderTurn());
-      this._show("turn", turnOn, this.t("ART.Turn.title"));
-      if ( s.tool ) patch(this.parts.left, this.renderLeft());
-      this._show("left", !!s.tool, s.tool ? this.t(`ART.Tool.${s.tool}`) : "");
+      const leftOn = this._leftVisible();
+      if ( leftOn ) patch(this.parts.left, this.renderLeft());
+      this._show("left", leftOn, this._leftTitle());
       if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
       this._show("right", s.rightOpen, this.t(s.rightTab === "queue" ? "ART.Queue.title" : "ART.Card.tab"));
       this.renderHud();
     } catch(err) {
       console.error("artarius | render", err);
     }
+  }
+
+  /** Окно инструмента: у зоны, метки и линии всегда; у «Осмотра» в Foundry — только по кнопке «Слои». */
+  _leftVisible() {
+    const tool = this.studio.tool;
+    if ( !tool ) return false;
+    return !this.host || tool !== "select" || this.layersOpen;
+  }
+
+  _leftTitle() {
+    const tool = this.studio.tool;
+    if ( !tool ) return "";
+    return this.t(tool === "select" && this.host ? "ART.Layer.title" : `ART.Tool.${tool}`);
+  }
+
+  /** Кнопка «Слои»: открыть или закрыть окно слоёв и наборов. Включает «Осмотр», если выбран другой инструмент. */
+  toggleLayers() {
+    const s = this.studio;
+    if ( s.tool !== "select" ) {
+      this.layersOpen = true;
+      s.setTool("select", { toggle: false });
+      return;
+    }
+    this.layersOpen = !this.layersOpen;
+    this.render();
   }
 
   /* Круглое меню ---------------------------------------------------- */
@@ -361,68 +350,22 @@ export default class ArtariusUI {
     return this.backend.draftOps().length || "";
   }
 
-  /* Полоска хода ---------------------------------------------------- */
-
-  renderTurn() {
-    const s = this.studio;
-    const turn = s.turn();
-    const gm = this.backend.isGM;
-    const players = this.backend.players();
-    const nameOf = id => players.find(p => p.id === id)?.name ?? "—";
-    const colorOf = id => players.find(p => p.id === id)?.color ?? "#888";
-    const cur = s.currentPlayerId();
-    const draftN = gm ? 0 : this.backend.draftOps().length;
-    let html = `<div class="art-turn">`;
-    if ( turn.enabled ) {
-      html += `<span class="art-turn-round">${esc(this.t("ART.Turn.round", { n: turn.round ?? 1 }))}</span>`;
-      html += `<span class="art-turn-cur" style="--c:${esc(colorOf(cur))}"><i class="art-dot"></i>${esc(cur === this.backend.userId ? this.t("ART.Turn.yours") : this.t("ART.Turn.of", { name: nameOf(cur) }))}</span>`;
-      if ( gm ) html += `<button type="button" class="art-btn art-accent" data-action="passTurn">${esc(this.t("ART.Turn.pass"))} ${icon("arrow-right")}</button>`;
-    } else {
-      html += `<span class="art-turn-off">${esc(this.t("ART.Turn.free"))}</span>`;
-    }
-    if ( !gm ) {
-      html += `<button type="button" class="art-btn" data-action="openQueue" title="${esc(this.t("ART.Queue.draftHint"))}">${icon("pen-ruler")} ${esc(this.t("ART.Turn.draft", { n: draftN }))}</button>`;
-      if ( draftN ) html += `<button type="button" class="art-btn art-accent" data-action="openQueue"${s.canSubmit() ? "" : " disabled"}>${esc(this.t("ART.Queue.submit"))}</button>`;
-    }
-    if ( gm ) html += `<button type="button" class="art-icon-btn${this.turnMenu ? " active" : ""}" data-action="turnMenu" title="${esc(this.t("ART.Turn.settings"))}">${icon("gear")}</button>`;
-    html += `</div>`;
-    if ( gm && this.turnMenu ) html += this.renderTurnMenu(turn, players);
-    return html;
-  }
-
-  renderTurnMenu(turn, players) {
-    const order = turn.order ?? [];
-    const cur = this.studio.currentPlayerId();
-    const rows = order.map((id, n) => {
-      const p = players.find(x => x.id === id);
-      return `<li class="${id === cur ? "current" : ""}"><i class="art-dot" style="--c:${esc(p?.color ?? "#888")}"></i>
-        <button type="button" class="art-link" data-action="setTurn" data-id="${esc(id)}" title="${esc(this.t("ART.Turn.giveTurn"))}">${esc(p?.name ?? "?")}</button>
-        <button type="button" class="art-icon-btn" data-action="orderUp" data-id="${esc(id)}" ${n === 0 ? "disabled" : ""}>${icon("arrow-up")}</button>
-        <button type="button" class="art-icon-btn" data-action="orderDown" data-id="${esc(id)}" ${n === order.length - 1 ? "disabled" : ""}>${icon("arrow-down")}</button>
-        <button type="button" class="art-icon-btn" data-action="orderRemove" data-id="${esc(id)}" title="${esc(this.t("ART.Turn.remove"))}">${icon("xmark")}</button></li>`;
-    }).join("");
-    const rest = players.filter(p => !order.includes(p.id)).map(p =>
-      `<button type="button" class="art-chip" data-action="orderAdd" data-id="${esc(p.id)}">${icon("plus")} ${esc(p.name)}</button>`).join("");
-    return `<div class="art-turn-menu">
-      <label class="art-check"><input type="checkbox" ${turn.enabled ? "checked" : ""} data-action="toggleTurns"> ${esc(this.t("ART.Turn.enabled"))}</label>
-      <p class="art-hint">${esc(this.t("ART.Turn.hint"))}</p>
-      <ol class="art-order">${rows || `<li class="art-empty">${esc(this.t("ART.Turn.noOrder"))}</li>`}</ol>
-      ${rest ? `<div class="art-chips">${rest}</div>` : ""}
-    </div>`;
-  }
-
   /* Левая панель: инструмент ---------------------------------------- */
 
   renderLeft() {
     const s = this.studio;
-    const title = this.t(`ART.Tool.${s.tool}`);
+    const title = this._leftTitle();
+    const closeTitle = esc(this.t("ART.Menu.close"));
+    const close = s.tool === "select" && this.host
+      ? `<button type="button" class="art-icon-btn" data-action="toggleLayers" title="${closeTitle}">${icon("xmark")}</button>`
+      : `<button type="button" class="art-icon-btn" data-action="toggleMenu" title="${closeTitle}">${icon("xmark")}</button>`;
     let body = "";
     if ( s.tool === "zone" ) body = this.renderZoneTool();
     else if ( s.tool === "mark" ) body = this.renderMarkTool();
     else if ( s.tool === "line" ) body = this.renderLineTool();
     else body = this.renderSelectTool();
     return `<header class="art-head">${icon(TOOL_ICONS[s.tool])}<h3>${esc(title)}</h3>
-      <button type="button" class="art-icon-btn" data-action="toggleMenu" title="${esc(this.t("ART.Menu.close"))}">${icon("xmark")}</button></header>
+      ${close}</header>
       <div class="art-body" data-scroll="left">${body}</div>`;
   }
 
@@ -889,9 +832,6 @@ export default class ArtariusUI {
     const s = this.studio;
     const base = this.backend.atlasStates();
     const ops = this.backend.draftOps();
-    const turnOk = s.canSubmit();
-    const cur = s.currentPlayerId();
-    const players = this.backend.players();
     const draft = ops.length ? `<ul class="art-ops">${ops.map(op => `<li class="art-op art-op-${op.action}">
         <span>${esc(this.describeOp(op, base))}</span>
         <button type="button" class="art-icon-btn" data-action="undoOp" data-id="${esc(op.id)}" title="${esc(this.t("ART.Queue.undo"))}">${icon("rotate-left")}</button></li>`).join("")}</ul>
@@ -899,8 +839,7 @@ export default class ArtariusUI {
         <input type="text" data-model="claimForm.title" data-key="claim-title" value="${esc(s.claimForm.title)}" placeholder="${esc(this.t("ART.Queue.claimTitlePh"))}"></label>
       <label class="art-field"><span>${esc(this.t("ART.Queue.claimNote"))}</span>
         <textarea rows="2" data-model="claimForm.note" data-key="claim-note">${esc(s.claimForm.note)}</textarea></label>
-      ${turnOk ? "" : `<p class="art-warn">${esc(this.t("ART.Turn.waitFor", { name: players.find(p => p.id === cur)?.name ?? "—" }))}</p>`}
-      <button type="button" class="art-btn art-accent art-wide" data-action="submit" ${turnOk ? "" : "disabled"}>${icon("paper-plane")} ${esc(this.t("ART.Queue.submit"))}</button>`
+      <button type="button" class="art-btn art-accent art-wide" data-action="submit">${icon("paper-plane")} ${esc(this.t("ART.Queue.submit"))}</button>`
       : `<p class="art-empty">${esc(this.t("ART.Queue.emptyDraft"))}</p>`;
     const mine = this.backend.myClaims();
     const claims = mine.length ? mine.map(c => `<article class="art-claim art-st-${esc(c.status)}">

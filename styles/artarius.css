@@ -243,25 +243,6 @@
 .artarius .art-claim header b { flex: 1; min-width: 80px; }
 .artarius .art-note { font-size: 12px; color: var(--art-ink); }
 
-/* Полоска хода ----------------------------------------------------- */
-
-#artarius-ui > .art-turnbar { position: absolute; top: var(--art-turn-top, 10px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.artarius .art-turn {
-  display: flex; align-items: center; gap: 10px; padding: 5px 6px 5px 14px;
-  background: color-mix(in srgb, var(--art-bg) 94%, transparent); border: 1px solid var(--art-line-2); border-radius: 99px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-}
-.artarius .art-turn .art-btn { border-radius: 99px; min-height: 28px; }
-.artarius .art-turn-round { color: var(--art-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-.artarius .art-turn-cur { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
-.artarius .art-turn-cur .art-dot { background: var(--c); }
-.artarius .art-turn-off { color: var(--art-muted); }
-.artarius .art-turn-menu { width: 300px; padding: 10px 12px; background: var(--art-bg); border: 1px solid var(--art-line-2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
-.artarius .art-order { list-style: none; margin: 0 0 8px; padding: 0; }
-.artarius .art-order li { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 6px; }
-.artarius .art-order li.current { background: var(--art-bg-3); }
-.artarius .art-order li .art-link { flex: 1; text-align: left; color: var(--art-ink); }
-
 /* Круглое меню ----------------------------------------------------- */
 
 #artarius-ui > .art-wheel { position: absolute; left: var(--art-wheel-left, 24px); bottom: var(--art-wheel-bottom, 170px); width: 64px; height: 64px; }

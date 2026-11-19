@@ -5,7 +5,7 @@
  */
 import { STARTER_TYPES, STARTER_LAYERS, CLAIM_STATUS } from "../../scripts/constants.mjs";
 import { addToDraft, draftOps, applyOps, buildApplyPlan, conflictOf, randomId } from "../../scripts/review/ops.mjs";
-import { mergeTypes, personalTypesUsed, TURN_DEFAULT } from "../../scripts/data/world.mjs";
+import { mergeTypes, personalTypesUsed } from "../../scripts/data/world.mjs";
 import HexMath from "../../scripts/hex/hexmath.mjs";
 
 const clone = x => JSON.parse(JSON.stringify(x));
@@ -33,7 +33,6 @@ export default class MemoryBackend {
     this.atlasLayers = clone(STARTER_LAYERS);
     this.flags = {};              // userId → { draft: {}, claims: [], types: [] }
     for ( const u of this.users ) this.flags[u.id] = { draft: {}, claims: [], types: [] };
-    this.turnState = { ...TURN_DEFAULT };
     this.me = "gm";
     this.listeners = new Set();
     this.log = [];
@@ -145,9 +144,6 @@ export default class MemoryBackend {
 
   /* Ходы ------------------------------------------------------------- */
 
-  turn() { return clone(this.turnState); }
-  async setTurn(t) { this.turnState = clone(t); this.emit(); }
-  announceTurn(id, round) { this.log.push(["turn", `${id}:${round}`]); }
 
   /* Черновик и заявки ------------------------------------------------ */
 

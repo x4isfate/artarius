@@ -47,7 +47,7 @@ await check("init: слой, модель, настройки, API", async () =>
   assert(CONFIG.Canvas.layers[LAYER]?.layerClass, "слой не зарегистрирован");
   assert(CONFIG.JournalEntryPage.dataModels["artarius.feature"], "модель страницы не зарегистрирована");
   assert(api()?.version === 2, "нет API 2");
-  for ( const k of ["turn", "hiddenLayers", "autoApplyOnSuccess", "trustedUsers", "guideSeen", "checkUpdates", "notifiedVersion"] ) game.settings.get("artarius", k);
+  for ( const k of ["hiddenLayers", "autoApplyOnSuccess", "trustedUsers", "guideSeen", "checkUpdates", "notifiedVersion"] ) game.settings.get("artarius", k);
 });
 
 await check("ready: панели собраны, круглого меню нет", async () => {
@@ -55,7 +55,7 @@ await check("ready: панели собраны, круглого меню не�
   await F.settle();
   const parts = Object.keys(api().layer ? {} : {});
   const ui2 = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
-  assert(ui2?.parts?.left && ui2.parts.right && ui2.parts.turn, "нет частей интерфейса");
+  assert(ui2?.parts?.left && ui2.parts.right && !ui2.parts.turn, "части интерфейса не те");
   assert(!ui2.parts.wheel, "круглое меню осталось");
   assert(!document.getElementById("artarius-ui"), "слой поверх холста остался");
   void parts;
@@ -84,7 +84,19 @@ await check("группа инструментов слева", async () => {
   const c = CONFIG.Canvas.layers[LAYER].layerClass.prepareSceneControls();
   assert(c.name === LAYER && c.layer === LAYER && c.visible === true, "группа не видна на сцене Артария");
   const names = Object.keys(c.tools);
-  for ( const n of ["select", "zone", "mark", "line", "queue", "turn", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
+  for ( const n of ["select", "zone", "mark", "line", "queue", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
+  assert(!names.includes("turn"), "кнопка хода осталась");
+  // 0.6.3: «Осмотр» не открывает окно сам; окно слоёв — по кнопке, его крестик инструмент не гасит.
+  c.onToolChange(new Event("x"), c.tools.select, true);
+  await tick();
+  assert(api().studio.tool === "select" && !win("left"), "окно «Осмотра» всплыло само");
+  c.tools.layers.onChange(new Event("x"), true);
+  await tick();
+  assert(win("left")?.textContent.includes("Слои"), "кнопка «Слои» не открыла окно");
+  const uiL = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
+  await uiL.host.windows.left.close();
+  await tick();
+  assert(api().studio.tool === "select" && !win("left"), "крестик окна слоёв выключил инструмент или окно осталось");
   assert(c.tools.queue.button && c.tools.generator.visible, "кнопки не кнопки или генератор скрыт от мастера");
   c.onToolChange(new Event("x"), c.tools.mark, true);
   assert(api().studio.tool === "mark", "инструмент из панели не выбран");
@@ -339,20 +351,6 @@ await check("мастер принимает заявку", async () => {
   await F.settle();
   assert(api().getAtlas(scene).pages.size === 4, "заявка не применена");
   assert(p1.getFlag("artarius", "claims")[0].status === "applied", "статус не applied");
-});
-
-await check("ходы: порядок, передача, сообщение в чат", async () => {
-  const s = api().studio;
-  await s.toggleTurns();
-  await F.settle();
-  const t = game.settings.get("artarius", "turn");
-  assert(t.enabled, "ходы не включены");
-  if ( !t.order.length ) await api().backend.setTurn({ ...t, order: ["p1", "p2"] });
-  await s.passTurn();
-  await F.settle();
-  assert(F.created.messages.length >= 1, "нет сообщения о ходе");
-  await tick();
-  assert(win("turn"), "окно хода не открылось при включённых ходах");
 });
 
 await check("настройки сцены: галочка режима", async () => {
