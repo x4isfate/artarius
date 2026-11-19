@@ -774,7 +774,9 @@ export default class ArtariusUI {
     if ( !s.inspected ) return;
     let box;
     try {
-      const pts = s.grid.vertices(s.inspected).map(v => this.project(v));
+      // Несколько гексов: панель обнимает их все, а не последний, чтобы кнопки не закрывали выбор.
+      const cells = s.multi ? s.inspectCells() : [s.inspected];
+      const pts = cells.flatMap(c => s.grid.vertices(c)).map(v => this.project(v));
       const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
       const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
       box = [Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2), Math.round((x1 - x0) / 2), Math.round((y1 - y0) / 2)];
@@ -811,8 +813,10 @@ export default class ArtariusUI {
     const [i, j] = sum.cell;
     const owner = sum.owner ? this.backend.actors().find(a => a.id === sum.owner) : null;
     const facts = [sum.terrain?.name, sum.realm?.name, sum.region?.name, owner?.name].filter(Boolean);
-    const plate = sum.cells > 1 ? `<div class="art-hud-plate">
-      <b>${esc(this.t("ART.Card.hexes", { n: sum.cells }))}</b> · ${esc(this.t("ART.Hud.multiHint"))}` : `<div class="art-hud-plate">
+    const plate = sum.cells > 1 ? `<div class="art-hud-plate" title="${esc(this.t("ART.Hud.multiHint"))}">
+      <b>${esc(this.t("ART.Card.hexes", { n: sum.cells }))}</b>
+      ${sum.marks.length ? `<span class="art-hud-count" title="${esc(this.t("ART.Hud.marksHere"))}">${icon("location-dot")} ${sum.marks.length}</span>` : ""}
+    </div>` : `<div class="art-hud-plate">
       <b>${esc(this.t("ART.Card.hex", { i, j }))}</b>${facts.length ? ` · ${facts.map(esc).join(" · ")}` : ""}
       ${sum.marks.length ? `<span class="art-hud-count" title="${esc(this.t("ART.Hud.marksHere"))}">${icon("location-dot")} ${sum.marks.length}</span>` : ""}
     </div>`;
