@@ -307,35 +307,3 @@ export function personalTypesUsed(ops, types) {
   return types.filter(t => t.personal && used.has(t.id)).map(({ personal, ...t }) => t);
 }
 
-/* ---------------------------------------------------------------- */
-/*  Ходы                                                             */
-/* ---------------------------------------------------------------- */
-
-/** turn = { enabled, order: [userId], index, round }. */
-export const TURN_DEFAULT = { enabled: false, order: [], index: 0, round: 1 };
-
-export function currentTurnUserId(turn) {
-  if ( !turn?.enabled || !turn.order?.length ) return null;
-  return turn.order[Math.min(turn.index ?? 0, turn.order.length - 1)] ?? null;
-}
-
-/** Передать ход следующему по порядку. После последнего начинается новый круг. */
-export function nextTurn(turn) {
-  const order = turn.order ?? [];
-  if ( !order.length ) return { ...turn, index: 0 };
-  const index = ((turn.index ?? 0) + 1) % order.length;
-  return { ...turn, index, round: (turn.round ?? 1) + (index === 0 ? 1 : 0) };
-}
-
-/** Может ли пользователь отправить заявку сейчас. */
-export function canSubmit(turn, userId, isGM = false) {
-  if ( isGM || !turn?.enabled ) return true;
-  return currentTurnUserId(turn) === userId;
-}
-
-/** Порядок ходов после правки списка: убрать ушедших, индекс держится за того же игрока. */
-export function setTurnOrder(turn, order) {
-  const cur = currentTurnUserId(turn);
-  const index = Math.max(0, order.indexOf(cur));
-  return { ...turn, order: [...order], index: order.length ? index : 0 };
-}

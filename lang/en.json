@@ -283,25 +283,6 @@
       "delete": "Delete entirely",
       "deleteConfirm": "Delete “{name}” from the map?"
     },
-    "Turn": {
-      "round": "Round {n}",
-      "of": "{name}'s turn",
-      "yours": "Your turn",
-      "pass": "Pass turn",
-      "free": "Turns are off",
-      "draft": "Draft: {n}",
-      "settings": "Turn order",
-      "enabled": "Play in turns",
-      "hint": "Everyone can draw. Only the current player can submit a claim. The GM passes the turn.",
-      "noOrder": "Order is empty: add players.",
-      "remove": "Remove from order",
-      "giveTurn": "Give the turn",
-      "notYourTurn": "It's not your turn. Your draft is kept; submit it on your turn.",
-      "waitFor": "It's {name}'s turn. You can submit on your turn.",
-      "announce": "Turn passes to {name}",
-      "announceRound": "Round {round}. {name}'s turn",
-      "title": "Turn"
-    },
     "Queue": {
       "title": "Claims",
       "draft": "Draft",
