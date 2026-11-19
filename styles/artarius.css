@@ -355,7 +355,37 @@
 /* ------------------------------------------------------------------ */
 
 .artarius-part .window-content { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.artarius-part .window-content > .artarius { flex: 1; min-height: 0; background: var(--art-bg); color: var(--art-ink); }
+.artarius-part .window-content > .artarius { flex: 1; min-height: 0; background: transparent; color: var(--art-ink); font-family: inherit; }
+/*
+ * В окнах Foundry цвета берутся из темы (ядро v13+, Carolingian UI и другие темы переопределяют эти переменные),
+ * а не из своей коричневой палитры. Свой цвет остаётся только запасным, если переменной темы нет.
+ */
+.artarius-part .artarius {
+  --art-ink: var(--color-text-primary, #f3e6d6);
+  --art-muted: var(--color-text-secondary, var(--color-text-subtle, #a89c8e));
+  --art-bg: transparent;
+  --art-bg-2: var(--input-background-color, color-mix(in srgb, var(--art-ink) 6%, transparent));
+  --art-bg-3: var(--button-background-color, color-mix(in srgb, var(--art-ink) 10%, transparent));
+  --art-line: var(--color-border-light-2, color-mix(in srgb, var(--art-ink) 14%, transparent));
+  --art-line-2: var(--input-border-color, var(--button-border-color, color-mix(in srgb, var(--art-ink) 26%, transparent)));
+  --art-warn: var(--color-warm-2, var(--color-border-highlight, #e8c27a));
+}
+.artarius-part .artarius input[type="text"], .artarius-part .artarius input[type="search"], .artarius-part .artarius input[type="number"],
+.artarius-part .artarius select, .artarius-part .artarius textarea {
+  background: var(--input-background-color, var(--art-bg-2));
+  color: var(--input-text-color, var(--art-ink));
+  border-color: var(--input-border-color, var(--art-line-2));
+}
+.artarius-part .artarius .art-btn:not(.art-accent):not(.art-danger):not(.active) {
+  background: var(--button-background-color, var(--art-bg-3));
+  color: var(--button-text-color, var(--art-ink));
+  border-color: var(--button-border-color, var(--art-line-2));
+}
+.artarius-part .artarius .art-btn:not(.art-accent):not(.art-danger):not(.active):not(:disabled):hover {
+  background: var(--button-hover-background-color, var(--art-bg-3));
+  color: var(--button-hover-text-color, var(--art-ink));
+  border-color: var(--button-hover-border-color, var(--art-ink));
+}
 .artarius-part .art-panel { position: static; display: flex; flex-direction: column; flex: 1; min-height: 0; width: auto; max-height: none; border: 0; border-radius: 0; box-shadow: none; overflow: hidden; }
 .artarius-part .art-panel .art-body { flex: 1; min-height: 0; overflow-y: auto; }
 /* Заголовок и крестик даёт окно Foundry: свои прячем. */
