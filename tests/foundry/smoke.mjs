@@ -473,6 +473,17 @@ if ( location.search.includes("shot") ) {
     layer.refresh(true);
     s.setTool("select", { toggle: false });
     s.inspect([6, 3]);
+    if ( location.search.includes("shot=civ-multi") ) {
+      // Несколько гексов в осмотре: заливка, общая граница, короткая плашка.
+      for ( const c of [[7, 3], [6, 4], [7, 4]] ) s.inspectToggle(c);
+    }
+    if ( location.search.includes("shot=civ-drag") ) {
+      // Метку тащат: под курсором она сама, со значком, а не пустой кружок.
+      const slot = s.markSlots().slots.find(x => x.cell[0] === 8 && x.cell[1] === 5);
+      const to = s.grid.center([9, 6]);
+      s.markDrag = { id: slot.id, from: slot.cell, at: { x: to.x + 10, y: to.y - 6 }, start: slot, moved: true };
+      s.changed("overlay");
+    }
     await new Promise(r => setTimeout(r, 1500));
   } else {
     // Окно метки с открытым выбором значка поверх карты.

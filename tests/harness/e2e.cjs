@@ -512,6 +512,32 @@ async function shot(page, name) {
   check((await ev(() => window.art.backend.atlasTypes.find(t => t.id === "road").style.shape)) === "rounded", "вид типа линии сохранён");
   check((await page.locator('#map [data-line][data-shape="rounded"]').count()) >= 1, "линия на карте перерисована по новому виду");
 
+  // 0.9.1: правая кнопка удаляет метку, Ctrl+Z возвращает; значки в выборе видны под кнопками Foundry.
+  await act("closeRight").catch(() => {});
+  await ev(() => { const s = window.art.studio; s.setTool("mark", { toggle: false }); s.mark.typeId = s.typesOf("object")[0].id; return s.placeMarks([[9, 9]]); });
+  await ev(() => window.art.studio.setTool("select", { toggle: false }));
+  const marksN = () => ev(() => [...window.art.backend.atlas.values()].filter(s => s.system.kind === "object").length);
+  const marksBefore = await marksN();
+  const mk = await ev(() => { const s = window.art.studio; const sl = s.markSlots().slots.find(x => x.cell[0] === 9 && x.cell[1] === 9); return { x: sl.x, y: sl.y }; });
+  const scr = await ev(p => { const svg = document.querySelector("#map svg") ?? document.querySelector("svg"); const q = svg.createSVGPoint(); q.x = p.x; q.y = p.y; const r = q.matrixTransform(svg.getScreenCTM()); return { x: r.x, y: r.y }; }, mk);
+  await page.mouse.click(scr.x, scr.y, { button: "right" });
+  await page.waitForTimeout(100);
+  check((await marksN()) === marksBefore - 1, "правая кнопка по метке удаляет её");
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  check((await marksN()) === marksBefore, "Ctrl+Z возвращает удалённую метку");
+  await ev(() => {
+    const st = document.createElement("style");
+    st.textContent = "#artarius-ui button{display:flex;align-items:center;justify-content:center;flex:1 1 auto}";
+    document.head.appendChild(st);
+    const s = window.art.studio; s.openSettings("object"); s.openTypeForm("object");
+  });
+  await page.waitForTimeout(200);
+  const iw = await ev(() => document.querySelector(".art-icon-pick .art-icon-img")?.getBoundingClientRect().width ?? 0);
+  check(iw >= 30, `значок в выборе виден под кнопками в стиле Foundry (${iw}px)`);
+  const ac = await ev(() => { const b = document.querySelector(".art-icon-cats .art-btn.active"); const c = getComputedStyle(b); return [c.color, c.borderColor]; });
+  check(ac[0] !== ac[1], "текст выбранной кнопки не красится в цвет рамки");
+
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
   console.log("✓ ошибок в консоли нет");
