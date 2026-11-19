@@ -15,7 +15,7 @@ import GuideApp from "./apps/guide-app.mjs";
 import AzgaarApp, { AzgaarGenerator, importAzgaar } from "./apps/azgaar-app.mjs";
 import { checkForUpdate } from "./update-check.mjs";
 import { SOCKET, onSocket, onCheckMessage, onCheckUpdated, autoApplyTrusted, rollForClaim } from "./review/claims.mjs";
-import { TURN_DEFAULT, markCell, cellsInShapes, cellKey } from "./data/world.mjs";
+import { markCell, cellsInShapes, cellKey } from "./data/world.mjs";
 import { esc } from "./ui/dom.mjs";
 
 const L = k => game.i18n.localize(k);
@@ -48,7 +48,6 @@ Hooks.once("init", () => {
     scope: "world", config: true, type: Boolean, default: true
   });
   S("notifiedVersion", { scope: "world", config: false, type: String, default: "" });
-  S("turn", { scope: "world", config: false, type: Object, default: { ...TURN_DEFAULT }, onChange: () => runtime.backend?.emit() });
   S("hiddenLayers", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("layerPresets", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("windows", { scope: "client", config: false, type: Object, default: {} });
@@ -61,7 +60,8 @@ Hooks.once("init", () => {
   // Кнопки в колонке инструментов (группа Артария слева).
   runtime.buttons = {
     queue: () => studio.openQueue(),
-    turn: () => runtime.ui?.toggleTurn(),
+    layers: () => runtime.ui?.toggleLayers(),
+    settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()
   };

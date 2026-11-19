@@ -312,24 +312,6 @@ async function shot(page, name) {
   await hud("hudClose");
   check(!(await page.locator("#artarius-hud .art-hud-left").isVisible()), "крестик убирает панель");
 
-  /* 10. Ходы ------------------------------------------------------- */
-  await act("turnMenu");
-  await page.locator('#artarius-ui input[data-action="toggleTurns"]').click();
-  let turn = await ev(() => window.art.backend.turnState);
-  check(turn.enabled && turn.order.length === 3, "ходы включены, в порядке трое игроков");
-  await act("orderDown", '[data-id="fire"]');
-  await act("orderUp", '[data-id="fire"]');
-  await act("orderRemove", '[data-id="sun"]');
-  await act("orderAdd", '[data-id="sun"]');
-  turn = await ev(() => window.art.backend.turnState);
-  check(turn.order.join() === "fire,ice,sun", "порядок ходов меняется кнопками");
-  await act("passTurn");
-  turn = await ev(() => window.art.backend.turnState);
-  check(turn.index === 1, "«Передать ход» отдаёт ход следующему");
-  await act("setTurn", '[data-id="fire"]');
-  await act("turnMenu");
-  await shot(page, "turn");
-
   /* 11. Игрок рисует и отправляет заявку --------------------------- */
   await user("fire");
   await act("tool", '[data-tool="zone"]');
@@ -355,7 +337,7 @@ async function shot(page, name) {
   await act("attach");
   await page.fill('#artarius-ui [data-key="claim-title"]', "Огонь занимает пустоши");
   await act("submit");
-  check((await ev(() => window.art.backend.flags.fire.claims.length)) === 1, "игрок в свой ход отправил заявку");
+  check((await ev(() => window.art.backend.flags.fire.claims.length)) === 1, "игрок отправил заявку");
   await shot(page, "player");
 
   await user("ice");
@@ -363,7 +345,7 @@ async function shot(page, name) {
   await click([12, 12]);
   await act("placeMarks");
   await act("openQueue");
-  check(await page.locator('#artarius-ui [data-action="submit"]').isDisabled(), "не в свой ход кнопка отправки выключена");
+  check(!(await page.locator('#artarius-ui [data-action="submit"]').isDisabled()), "кнопка отправки доступна без очереди ходов");
 
   /* 12. Мастер решает --------------------------------------------- */
   await user("gm");
@@ -379,9 +361,7 @@ async function shot(page, name) {
   await user("ice");
   await act("openQueue");
   await page.fill('#artarius-ui [data-key="claim-title"]', "Лёд");
-  await ev(() => { const b = window.art.backend; b.turnState.index = 1; b.emit(); });
   await act("submit");
-  await ev(() => { const b = window.art.backend; b.turnState.index = 0; b.emit(); });
   await user("gm");
   await act("openQueue");
   const iceClaim = await ev(() => window.art.backend.claims()[0].claim.id);
@@ -402,10 +382,44 @@ async function shot(page, name) {
   /* 13. Прочие кнопки меню ---------------------------------------- */
   await user("gm");
   await act("tool", '[data-tool="select"]');
+  await act("help");
+
+  /* 14. Окно настроек: свои слои, мир (0.7.0) ----------------------- */
+  await act("openSettings");
+  check(await page.locator("#artarius-ui .art-settings").isVisible(), "кнопка «Настройки» открывает окно настроек");
+  await act("settingsPick", '[data-id="new"]');
+  await page.fill('#artarius-ui [data-key="lf-name"]', "Магия");
+  await page.locator('#artarius-ui input[data-model="layerForm.exclusive"]').uncheck();
+  await act("saveLayer");
+  let layers = await ev(() => window.art.backend.layers());
+  const magic = layers.find(l => l.name === "Магия");
+  check(magic && magic.exclusive === false && layers.at(-1).id === magic.id, "новый слой «Магия» добавлен в конец, зоны накладываются");
+  await act("layerUp", `[data-id="${magic.id}"]`);
+  layers = await ev(() => window.art.backend.layers());
+  check(layers.at(-2).id === magic.id, "слой поднимается выше");
+  await page.fill('#artarius-ui [data-key="lf-name"]', "Чары");
+  await page.press('#artarius-ui [data-key="lf-name"]', "Enter");
+  check((await ev(() => window.art.backend.layers())).some(l => l.name === "Чары"), "слой переименован");
+  await act("settingsSection", '[data-section="area"]');
+  await act("settingsPick", '[data-id="new"]');
+  await page.fill('#artarius-ui [data-key="tf-name"]', "Аура");
+  await page.selectOption('#artarius-ui select[data-model="typeForm.layerId"]', magic.id);
+  await act("saveType");
+  check((await ev(id => window.art.backend.atlasTypes.find(t => t.name === "Аура")?.layerId === id, magic.id)), "тип зоны лёг в свой слой");
+  check((await ev(() => window.art.studio.settings.open)), "окно настроек остаётся открытым после сохранения типа");
+  await act("settingsSection", '[data-section="layers"]');
+  await act("settingsPick", `[data-id="${magic.id}"]`);
+  await act("deleteLayer", `[data-id="${magic.id}"]`);
+  layers = await ev(() => window.art.backend.layers());
+  check(!layers.some(l => l.id === magic.id) && (await ev(() => window.art.backend.atlasTypes.find(t => t.name === "Аура")?.layerId)) === "overlay", "слой удалён, его типы переехали в «Прочее»");
+  check(!(await page.locator('#artarius-ui [data-action="deleteLayer"][data-id="terrain"]').count()), "местность удалить нельзя");
+  await act("settingsSection", '[data-section="world"]');
   await act("worldSettings");
   await act("azgaar");
-  await act("help");
-  check((await ev(() => ["worldSettings", "azgaar", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки настроек, Azgaar и справки вызывают свои окна");
+  await act("generator");
+  check((await ev(() => ["worldSettings", "azgaar", "generator", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки мира, Azgaar, генератора и справки вызывают свои окна");
+  await act("closeSettings");
+  check(!(await page.locator("#artarius-ui .art-settings").isVisible()), "крестик закрывает настройки");
   await act("rightTab", '[data-tab="tile"]');
   await act("tool", '[data-tool="select"]');
   check(await page.locator(".art-left").isVisible(), "повторный щелчок по инструменту его не выключает");
@@ -425,6 +439,26 @@ async function shot(page, name) {
     return { n: urls.length, bad };
   });
   check(masks.n > 0 && !masks.bad.length, `значки-маски загружаются (${masks.n}, битых: ${masks.bad.join(", ")})`);
+
+  // 0.6.3: палитра цвета не закрывается на каждом шаге, значок перекрашивается сразу, код цвета рядом.
+  await act("newType", '[data-kind="object"]');
+  const live = await ev(() => {
+    const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
+    el.value = "#ff0000";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    const big = document.querySelector("#artarius-ui .art-icon-big");
+    return { same: el.isConnected, c: big?.style.getPropertyValue("--c"), hex: el.nextElementSibling?.value };
+  });
+  check(live.same && live.c === "#ff0000" && live.hex === "#ff0000", "палитра остаётся открытой, значок и код меняются сразу");
+  await ev(() => {
+    const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  check((await ev(() => window.art.studio.typeForm.color)) === "#ff0000", "цвет записан, когда палитру закрыли");
+  await page.fill('#artarius-ui .art-color-hex[data-model="typeForm.color"]', "00ff00");
+  await page.press('#artarius-ui .art-color-hex[data-model="typeForm.color"]', "Tab");
+  check((await ev(() => window.art.studio.typeForm.color)) === "#00ff00", "код цвета вводится руками");
+  await act("cancelType");
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");

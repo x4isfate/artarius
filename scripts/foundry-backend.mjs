@@ -9,7 +9,7 @@ import {
   requestClaimCheck, ghostsFor
 } from "./review/claims.mjs";
 import { draftOps } from "./review/ops.mjs";
-import { TURN_DEFAULT, cellKey } from "./data/world.mjs";
+import { cellKey } from "./data/world.mjs";
 import { LAYER_NAME } from "./canvas/hex-layer.mjs";
 import { oddRNeighbors } from "./gen/mapgen.mjs";
 
@@ -162,6 +162,13 @@ export default class FoundryBackend {
     return store.getLayers(this.atlas).map(l => ({ ...l, visible: !hidden.has(l.id) }));
   }
 
+  /** Слои атласа целиком: добавить, переименовать, переставить, удалить (только мастер). */
+  async setLayers(layers) {
+    if ( !game.user.isGM ) return;
+    const atlas = this.atlas ?? await store.ensureAtlas(canvas.scene);
+    await store.setLayers(atlas, layers.map(({ visible, ...l }) => l));
+  }
+
   async toggleLayer(id) {
     const hidden = this.hiddenIds();
     if ( hidden.has(id) ) hidden.delete(id); else hidden.add(id);
@@ -198,26 +205,6 @@ export default class FoundryBackend {
   saveType(type) { return store.saveType(type, canvas.scene); }
   deleteType(id) { return store.deleteType(id, canvas.scene); }
   newId() { return foundry.utils.randomID(); }
-
-  /* Ходы -------------------------------------------------------------- */
-
-  turn() { return { ...TURN_DEFAULT, ...(game.settings.get(MODULE_ID, "turn") ?? {}) }; }
-
-  async setTurn(turn) {
-    if ( !game.user.isGM ) return;
-    await game.settings.set(MODULE_ID, "turn", turn);
-  }
-
-  /** Объявить ход в чате: остаётся в истории игры. */
-  async announceTurn(userId, round) {
-    const name = game.users.get(userId)?.name ?? "—";
-    const turn = this.turn();
-    const text = turn.index === 0 ? this.t("ART.Turn.announceRound", { round: turn.round, name }) : this.t("ART.Turn.announce", { name });
-    await ChatMessage.implementation.create({
-      content: `<div class="artarius-turn-msg"><i class="fa-solid fa-hourglass-half"></i> ${foundry.utils.escapeHTML(text)}</div>`,
-      speaker: { alias: game.i18n.localize("VMAP.Check.speaker") }
-    });
-  }
 
   /* Черновик и заявки ------------------------------------------------- */
 
@@ -340,4 +327,5 @@ export default class FoundryBackend {
   openGuide() { game.modules.get(MODULE_ID).api.openGuide(); }
   openWorldSettings() { game.modules.get(MODULE_ID).api.openWorldSettings(); }
   openAzgaar() { game.modules.get(MODULE_ID).api.openAzgaar(); }
+  openGenerator() { game.modules.get(MODULE_ID).api.openGenerator(); }
 }

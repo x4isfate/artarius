@@ -142,7 +142,8 @@
   overflow: hidden;
 }
 /* Левая панель кончается над круглым меню: дуга кнопок занимает около 230 px над центром меню. */
-#artarius-ui > .art-left { left: var(--art-left, 96px); top: var(--art-top, 64px); width: 300px; max-height: max(260px, calc(100vh - var(--art-top, 64px) - var(--art-wheel-bottom, 170px) - 240px)); }
+#artarius-ui > .art-left { left: var(--art-left, 96px); top: var(--art-top, 64px); width: 420px; max-height: max(260px, calc(100vh - var(--art-top, 64px) - var(--art-wheel-bottom, 170px) - 240px)); }
+#artarius-ui > .art-settings { left: 50%; top: var(--art-top, 64px); transform: translateX(-50%); width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - var(--art-top, 64px) - 26px); z-index: 2; }
 #artarius-ui > .art-right { right: var(--art-right, 330px); top: var(--art-top, 64px); width: 360px; max-height: calc(100vh - var(--art-top, 64px) - 26px); }
 .artarius .art-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--art-line); background: var(--art-bg-2); }
 .artarius .art-head h3 { flex: 1; }
@@ -160,24 +161,30 @@
   border: 1px solid var(--art-line); border-radius: var(--art-radius); background: var(--art-bg-2); text-align: left;
 }
 .artarius .art-type span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.artarius .art-type img, .artarius .art-item-icon {
-  width: 20px; height: 20px; border: 0; flex: none; padding: 2px; border-radius: 50%;
+.artarius .art-item-icon { width: 30px; height: 30px; flex: none; }
+.artarius .art-type img {
+  width: 22px; height: 22px; border: 0; flex: none; padding: 2px; border-radius: 50%;
   background: color-mix(in srgb, var(--c) 35%, #000);
 }
 .artarius .art-type.active { border-color: var(--art-warn); box-shadow: inset 0 0 0 1px var(--art-warn); }
 .artarius .art-type:hover { border-color: var(--art-line-2); }
 .artarius .art-form { padding: 10px; border: 1px solid var(--art-warn); border-radius: var(--art-radius); background: var(--art-bg-2); }
 .artarius .art-icons { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
-.artarius .art-icon-pick { width: 32px; height: 32px; padding: 3px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); }
+.artarius .art-icon-pick { width: 44px; height: 44px; padding: 4px; border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-3); }
 .artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; object-fit: contain; }
 .artarius .art-icon-pick { display: grid; place-items: center; }
+/* Поле цвета: палитра и код. */
+.artarius .art-color { display: inline-flex; align-items: center; gap: 6px; }
+.artarius .art-color input[type="color"] { width: 40px; height: 30px; padding: 2px; flex: none; cursor: pointer; }
+.artarius .art-color .art-color-hex { width: 84px; flex: none; font-family: monospace; text-transform: lowercase; }
+
 /* Белый значок, окрашенный цветом типа: так же, как его красит холст. */
 .artarius .art-mask {
   display: inline-block; background: var(--c, #ddd);
   -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat;
 }
-.artarius .art-icon-img { width: 24px; height: 24px; }
-.artarius .art-icon-big { width: 40px; height: 40px; flex: none; object-fit: contain; }
+.artarius .art-icon-img { width: 100%; height: 100%; }
+.artarius .art-icon-big { width: 56px; height: 56px; flex: none; object-fit: contain; }
 .artarius .art-icon-current { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
 .artarius .art-icon-current input { flex: 1; }
 .artarius .art-icon-cats { margin-bottom: 6px; }
@@ -242,25 +249,6 @@
 .artarius .art-claim header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .artarius .art-claim header b { flex: 1; min-width: 80px; }
 .artarius .art-note { font-size: 12px; color: var(--art-ink); }
-
-/* Полоска хода ----------------------------------------------------- */
-
-#artarius-ui > .art-turnbar { position: absolute; top: var(--art-turn-top, 10px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.artarius .art-turn {
-  display: flex; align-items: center; gap: 10px; padding: 5px 6px 5px 14px;
-  background: color-mix(in srgb, var(--art-bg) 94%, transparent); border: 1px solid var(--art-line-2); border-radius: 99px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-}
-.artarius .art-turn .art-btn { border-radius: 99px; min-height: 28px; }
-.artarius .art-turn-round { color: var(--art-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-.artarius .art-turn-cur { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
-.artarius .art-turn-cur .art-dot { background: var(--c); }
-.artarius .art-turn-off { color: var(--art-muted); }
-.artarius .art-turn-menu { width: 300px; padding: 10px 12px; background: var(--art-bg); border: 1px solid var(--art-line-2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
-.artarius .art-order { list-style: none; margin: 0 0 8px; padding: 0; }
-.artarius .art-order li { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 6px; }
-.artarius .art-order li.current { background: var(--art-bg-3); }
-.artarius .art-order li .art-link { flex: 1; text-align: left; color: var(--art-ink); }
 
 /* Круглое меню ----------------------------------------------------- */
 
@@ -368,15 +356,42 @@
 /* ------------------------------------------------------------------ */
 
 .artarius-part .window-content { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.artarius-part .window-content > .artarius { flex: 1; min-height: 0; background: var(--art-bg); color: var(--art-ink); }
+.artarius-part .window-content > .artarius { flex: 1; min-height: 0; background: transparent; color: var(--art-ink); font-family: inherit; }
+/*
+ * В окнах Foundry цвета берутся из темы (ядро v13+, Carolingian UI и другие темы переопределяют эти переменные),
+ * а не из своей коричневой палитры. Свой цвет остаётся только запасным, если переменной темы нет.
+ */
+.artarius-part .artarius {
+  --art-ink: var(--color-text-primary, #f3e6d6);
+  --art-muted: var(--color-text-secondary, var(--color-text-subtle, #a89c8e));
+  --art-bg: transparent;
+  --art-bg-2: var(--input-background-color, color-mix(in srgb, var(--art-ink) 6%, transparent));
+  --art-bg-3: var(--button-background-color, color-mix(in srgb, var(--art-ink) 10%, transparent));
+  --art-line: var(--color-border-light-2, color-mix(in srgb, var(--art-ink) 14%, transparent));
+  --art-line-2: var(--input-border-color, var(--button-border-color, color-mix(in srgb, var(--art-ink) 26%, transparent)));
+  --art-warn: var(--color-warm-2, var(--color-border-highlight, #e8c27a));
+}
+.artarius-part .artarius input[type="text"], .artarius-part .artarius input[type="search"], .artarius-part .artarius input[type="number"],
+.artarius-part .artarius select, .artarius-part .artarius textarea {
+  background: var(--input-background-color, var(--art-bg-2));
+  color: var(--input-text-color, var(--art-ink));
+  border-color: var(--input-border-color, var(--art-line-2));
+}
+.artarius-part .artarius .art-btn:not(.art-accent):not(.art-danger):not(.active) {
+  background: var(--button-background-color, var(--art-bg-3));
+  color: var(--button-text-color, var(--art-ink));
+  border-color: var(--button-border-color, var(--art-line-2));
+}
+.artarius-part .artarius .art-btn:not(.art-accent):not(.art-danger):not(.active):not(:disabled):hover {
+  background: var(--button-hover-background-color, var(--art-bg-3));
+  color: var(--button-hover-text-color, var(--art-ink));
+  border-color: var(--button-hover-border-color, var(--art-ink));
+}
 .artarius-part .art-panel { position: static; display: flex; flex-direction: column; flex: 1; min-height: 0; width: auto; max-height: none; border: 0; border-radius: 0; box-shadow: none; overflow: hidden; }
 .artarius-part .art-panel .art-body { flex: 1; min-height: 0; overflow-y: auto; }
 /* Заголовок и крестик даёт окно Foundry: свои прячем. */
-.artarius-part .art-left > .art-head { display: none; }
+.artarius-part .art-left > .art-head, .artarius-part .art-settings > .art-head { display: none; }
 .artarius-part [data-action="closeRight"] { display: none; }
-.artarius-part .art-turnbar { position: static; transform: none; padding: 8px; align-items: stretch; }
-.artarius-part .art-turn { border-radius: var(--art-radius); box-shadow: none; flex-wrap: wrap; }
-.artarius-part .art-turn-menu { width: auto; box-shadow: none; }
 
 /* Панель на гексе (0.6): кнопки по бокам выбранной клетки, как Token HUD ----- */
 
@@ -447,3 +462,38 @@
 
 /* Окно подробностей гекса: по содержимому, а не на полэкрана. */
 .artarius-part-right .window-content { max-height: 75vh; }
+
+/* Макет C (0.7.0): список слева, правка справа ----------------------- */
+.artarius .art-split { display: grid; grid-template-columns: minmax(130px, 38%) 1fr; gap: 10px; align-items: start; }
+.artarius .art-split-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-height: 440px; overflow-y: auto; padding-right: 4px; border-right: 1px solid var(--art-line); }
+.artarius .art-split-main { min-width: 0; }
+.artarius .art-split-main > h4:first-child { margin-top: 0; display: flex; align-items: center; gap: 6px; }
+.artarius .art-split-list .art-eyebrow { margin: 6px 0 2px; }
+.artarius .art-row-wrap { display: flex; align-items: center; gap: 2px; }
+.artarius .art-row-wrap > .art-row-item { flex: 1; min-width: 0; }
+.artarius .art-row-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 3px 6px; margin: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--art-ink); text-align: left; cursor: pointer; font-size: 13px;
+}
+.artarius .art-row-item:hover { background: var(--art-bg-2); }
+.artarius .art-row-item.active { background: var(--art-bg-3); border-color: var(--art-warn); }
+.artarius .art-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-row-note { color: var(--art-muted); font-size: 11px; flex: none; }
+.artarius .art-row-new { color: var(--art-muted); margin-top: 4px; }
+.artarius .art-row-ico { width: 24px; height: 24px; flex: none; }
+.artarius img.art-row-ico { object-fit: contain; }
+.artarius .art-row-edit { flex: none; width: 26px; height: 26px; padding: 0; background: transparent; border: none; color: var(--art-muted); cursor: pointer; }
+.artarius .art-row-edit:hover { color: var(--art-ink); }
+.artarius .art-type-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; margin-bottom: 8px; padding: 4px; border: 1px solid var(--art-line); border-radius: 4px; }
+.artarius .art-pick-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+.artarius .art-pick-head .art-row-ico { width: 32px; height: 32px; }
+.artarius .art-split-list .art-zone-list { max-height: none; overflow: visible; }
+.artarius .art-split-list .art-search { margin: 6px 0 2px; }
+.artarius .art-settings-tabs { margin: -4px -4px 8px; }
+.artarius .art-settings-body .art-split-list { max-height: 480px; }
+.artarius .art-form-flat { border: none; padding: 0; background: transparent; }
+.artarius .art-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--art-line); border-radius: 10px; font-size: 12px; }
+.artarius .art-world-btns { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.artarius .art-btn.art-icon-only { padding-inline: 8px; }
+@media (max-width: 520px) { .artarius .art-split { grid-template-columns: 1fr; } .artarius .art-split-list { border-right: none; max-height: 200px; } }
