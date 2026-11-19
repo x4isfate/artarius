@@ -19,9 +19,18 @@ import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
  * Значок для показа в панели. Белые значки библиотеки рисуются маской цветом типа,
  * как на карте; свои картинки показываются как есть.
  */
+/**
+ * Полный адрес картинки. Относительный путь внутри CSS-переменной браузер считает
+ * от файла стилей (modules/artarius/styles/), а не от страницы: маска значка не находилась.
+ */
+export function absoluteUrl(path) {
+  try { return new URL(path, globalThis.document?.baseURI).href; }
+  catch { return path; }
+}
+
 export function iconImg(path, color, { tint = true, cls = "art-icon-img" } = {}) {
   if ( !path ) return "";
-  if ( tint ) return `<span class="${cls} art-mask" style="--src:url('${esc(path)}');--c:${esc(color || "#ddd")}"></span>`;
+  if ( tint ) return `<span class="${cls} art-mask" style="--src:url('${esc(absoluteUrl(path))}');--c:${esc(color || "#ddd")}"></span>`;
   return `<img class="${cls}" src="${esc(path)}" alt="">`;
 }
 

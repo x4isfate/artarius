@@ -12,7 +12,10 @@ const TYPES = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/ja
 function serve() {
   const server = http.createServer((req, res) => {
     // Foundry отдаёт модуль по modules/artarius/…: здесь это корень репозитория.
-    const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^.*\/modules\/artarius\//, "/");
+    const raw = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    // Путь, посчитанный от файла стилей (…/styles/modules/artarius/…), в Foundry даёт 404: здесь тоже.
+    if ( /\/styles\/.*modules\/artarius\//.test(raw) ) { res.writeHead(404); return res.end(); }
+    const pathname = raw.replace(/^.*\/modules\/artarius\//, "/");
     // Значков Foundry на стенде нет: отдаём простой кружок.
     if ( pathname.includes("/icons/") ) {
       res.writeHead(200, { "content-type": "image/svg+xml" });
@@ -409,6 +412,19 @@ async function shot(page, name) {
   await act("toggleMenu", ".art-icon-btn");
   check(!(await page.locator(".art-left").isVisible()), "крестик в шапке убирает панель инструмента");
   await shot(page, "end");
+
+  // 0.6.2: значки-маски (палитра, панель на гексе, карточки) грузятся по полному адресу.
+  await ev(() => window.art.studio.setTool("mark", { toggle: false }));
+  await page.waitForTimeout(100);
+  const masks = await ev(async () => {
+    const urls = [...document.querySelectorAll(".art-mask")]
+      .map(el => (getComputedStyle(el).webkitMaskImage || getComputedStyle(el).maskImage || "").match(/url\("?(.*?)"?\)/)?.[1])
+      .filter(Boolean);
+    const bad = [];
+    for ( const u of new Set(urls) ) if ( !(await fetch(u)).ok ) bad.push(u);
+    return { n: urls.length, bad };
+  });
+  check(masks.n > 0 && !masks.bad.length, `значки-маски загружаются (${masks.n}, битых: ${masks.bad.join(", ")})`);
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
