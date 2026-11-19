@@ -497,3 +497,9 @@
 .artarius .art-world-btns { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .artarius .art-btn.art-icon-only { padding-inline: 8px; }
 @media (max-width: 520px) { .artarius .art-split { grid-template-columns: 1fr; } .artarius .art-split-list { border-right: none; max-height: 200px; } }
+
+/* 0.8.0: порядок меток на панели гекса */
+.art-hud .art-hud-item[draggable="true"] { cursor: grab; }
+.art-hud .art-hud-item.dragging { opacity: 0.4; }
+.art-hud .art-hud-item.drop-before { box-shadow: 0 -3px 0 0 var(--art-warn, #e8c27a); }
+.artarius .art-shape-sw { fill: rgba(17, 17, 17, 0.6); stroke: currentColor; stroke-width: 1.6; }

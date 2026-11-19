@@ -460,6 +460,30 @@ async function shot(page, name) {
   check((await ev(() => window.art.studio.typeForm.color)) === "#00ff00", "код цвета вводится руками");
   await act("cancelType");
 
+  /* 15. 0.8.0: осмотр нескольких гексов, порядок и форма меток ---- */
+  await act("tool", '[data-tool="select"]');
+  await click([2, 12]);
+  await click([3, 12], ["Shift"]);
+  await click([4, 12], ["Shift"]);
+  check((await ev(() => window.art.studio.inspectCells().length)) === 3, "Shift-щелчки осматривают три гекса");
+  check((await page.locator("#artarius-hud .art-hud-plate").innerText()).includes("Гексов: 3"), "панель гекса пишет, сколько гексов в осмотре");
+  await click([2, 12]);
+  check((await ev(() => window.art.studio.multi)) === false, "простой щелчок возвращает осмотр одного гекса");
+  await ev(async () => {
+    const s = window.art.studio;
+    const types = s.typesOf("object");
+    for ( const t of types.slice(0, 2) ) { s.mark.typeId = t.id; s.mark.name = t.name; await s.placeMarks([[2, 12]]); }
+  });
+  await click([2, 12]);
+  await click([2, 12]);
+  const ids = await ev(() => window.art.studio.contents().marks.map(m => m.id));
+  check(ids.length === 2 && (await page.locator("#artarius-hud [data-drag-mark]").count()) === 2, "метки гекса можно тянуть на панели");
+  await hud("hudDetails", `[data-id="${ids[1]}"]`);
+  await act("markUp", `[data-id="${ids[1]}"]`);
+  check((await ev(() => window.art.studio.contents().marks.map(m => m.id).join())) === [ids[1], ids[0]].join(), "кнопка «Раньше» меняет порядок меток");
+  await act("setShape", `[data-id="${ids[1]}"][data-shape="shield"]`);
+  check((await page.locator(`#map [data-mark="${ids[1]}"] [data-shape="shield"]`).count()) === 1, "форма метки «щит» видна на карте");
+
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
   console.log("✓ ошибок в консоли нет");

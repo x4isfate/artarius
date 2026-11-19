@@ -17,10 +17,13 @@ const SLOTS = {
 /** Больше четырёх меток: три значка и плашка «+N» на четвёртом месте. */
 export const MAX_SHOWN = 4;
 
-/** Порядок в группе: сначала обычные метки, ресурсы после; дальше по sort и id. */
+/**
+ * Порядок в группе: по sort (его задаёт перетаскивание на панели гекса), при равном sort
+ * обычные метки раньше ресурсов, дальше по id. Пока порядок не трогали, у всех sort 0.
+ */
 export function groupOrder(a, b) {
   const ra = isResourceType(a.system.typeId) ? 1 : 0, rb = isResourceType(b.system.typeId) ? 1 : 0;
-  return (ra - rb) || ((a.system.sort ?? 0) - (b.system.sort ?? 0)) || String(a.id).localeCompare(String(b.id));
+  return ((a.system.sort ?? 0) - (b.system.sort ?? 0)) || (ra - rb) || String(a.id).localeCompare(String(b.id));
 }
 
 /**

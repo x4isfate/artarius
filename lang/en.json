@@ -172,7 +172,8 @@
       "owner": "Demiurge",
       "text": "Description",
       "textPh": "Optional",
-      "typeHere": "A new type applies to this hex only; the rest of the zone stays."
+      "typeHere": "A new type applies to this hex only; the rest of the zone stays.",
+      "typeHereMany": "A new type applies only to the selected hexes of this zone; the rest stays."
     },
     "Guide": {
       "title": "How to play"
@@ -182,7 +183,7 @@
       "clear": "clear"
     },
     "Select": {
-      "hint": "Click a hex to see everything on it on the right: zones, marks, lines, their owners, statuses and aspects."
+      "hint": "Click a hex to see everything on it on the right: zones, marks, lines, their owners, statuses and aspects. Shift-click or Shift-drag inspects several hexes at once."
     },
     "Layer": {
       "title": "Layers",
@@ -295,7 +296,14 @@
       "pan": "Show",
       "removeCell": "Remove hex from zone",
       "delete": "Delete entirely",
-      "deleteConfirm": "Delete “{name}” from the map?"
+      "deleteConfirm": "Delete “{name}” from the map?",
+      "hexes": "{n} hexes",
+      "inOf": "on {k} of {n}",
+      "multiHint": "Shift-click adds or removes a hex, Shift-drag adds several. A plain click inspects one hex.",
+      "removeCells": "Remove selected hexes from the zone",
+      "order": "Order on the hex",
+      "earlier": "Earlier",
+      "later": "Later"
     },
     "Queue": {
       "title": "Claims",
@@ -427,7 +435,9 @@
       "details": "Details",
       "mark": "Place mark: {name}",
       "zone": "Add to zone: {name}",
-      "marksHere": "Marks on this hex"
+      "marksHere": "Marks on this hex",
+      "multiHint": "Shift-click adds or removes a hex",
+      "dragOrder": "drag up or down to reorder"
     },
     "Settings": {
       "title": "Artarius settings",
@@ -441,6 +451,15 @@
         "line": "Lines",
         "world": "World"
       }
+    },
+    "Shape": {
+      "title": "Mark shape",
+      "circle": "Circle",
+      "square": "Square",
+      "diamond": "Diamond",
+      "hexagon": "Hexagon",
+      "shield": "Shield",
+      "none": "No backing"
     }
   }
 }
