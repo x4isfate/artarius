@@ -53,8 +53,9 @@ export default class ArtariusUI {
    * (стенд). В Foundry host раскладывает части по окнам ApplicationV2: их можно
    * двигать и растягивать, темы интерфейса оформляют их как свои окна.
    * host: { wheel: bool, attach(name, el), show(name, on, { title }), setHidden(bool) }.
+   * project(point) — точка сцены → { x, y } в пикселях окна браузера; без неё панели на гексе нет.
    */
-  constructor(studio, backend, { mount = document.body, host = null } = {}) {
+  constructor(studio, backend, { mount = document.body, host = null, project = null } = {}) {
     this.studio = studio;
     this.backend = backend;
     this.host = host;
@@ -80,6 +81,14 @@ export default class ArtariusUI {
         host.attach(name, el);
       }
     } else mount.appendChild(this.root);
+    // Панель кнопок на гексе живёт поверх холста отдельно от окон, как Token HUD у Foundry.
+    this.project = project;
+    this.hud = document.createElement("div");
+    this.hud.id = "artarius-hud";
+    this.hud.className = "artarius art-hud";
+    this.hud.hidden = true;
+    document.body.appendChild(this.hud);
+    this._bind(this.hud);
     this._unsub = studio.subscribe(what => { if ( what !== "overlay" ) this.render(); });
     this.render();
   }
@@ -87,6 +96,8 @@ export default class ArtariusUI {
   destroy() {
     this._unsub?.();
     this.root.remove();
+    this.hud.remove();
+    if ( this._hudFrame ) cancelAnimationFrame(this._hudFrame);
   }
 
   set hidden(v) {
@@ -95,6 +106,7 @@ export default class ArtariusUI {
       this.host.setHidden(this._hidden);
       if ( !this._hidden ) this.render();
     } else this.root.hidden = this._hidden;
+    this.renderHud();
   }
 
   get hidden() { return !!this._hidden; }
@@ -233,6 +245,12 @@ export default class ArtariusUI {
       deletePreset: el => s.deletePreset(el.dataset.id),
       worldSettings: () => this.backend.openWorldSettings?.(),
       azgaar: () => this.backend.openAzgaar?.(),
+      // Панель на гексе
+      hudDetails: el => s.openDetails(el.dataset.id || null),
+      hudMark: () => s.markHere(),
+      hudZone: () => s.zoneHere(),
+      hudPan: () => s.inspected && this.backend.panTo(s.grid.center(s.inspected)),
+      hudClose: () => s.closeHud(),
       // Карточка
       closeRight: () => s.closeRight(),
       rightTab: el => s.setRightTab(el.dataset.tab),
@@ -287,6 +305,7 @@ export default class ArtariusUI {
       this._show("left", !!s.tool, s.tool ? this.t(`ART.Tool.${s.tool}`) : "");
       if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
       this._show("right", s.rightOpen, this.t(s.rightTab === "queue" ? "ART.Queue.title" : "ART.Card.tab"));
+      this.renderHud();
     } catch(err) {
       console.error("artarius | render", err);
     }
@@ -601,6 +620,114 @@ export default class ArtariusUI {
       </div>`;
   }
 
+  /* Панель на гексе ------------------------------------------------- */
+
+  /** Панель видна, когда гекс выбран, инструменты Артария включены и интерфейс не спрятан. */
+  _hudVisible() {
+    const s = this.studio;
+    return !!(this.project && s.hudOpen && s.inspected && s.tool && !this._hidden);
+  }
+
+  renderHud() {
+    const on = this._hudVisible();
+    this.hud.hidden = !on;
+    if ( !on ) {
+      if ( this._hudFrame ) cancelAnimationFrame(this._hudFrame);
+      this._hudFrame = null;
+      this._hudAt = null;
+      return;
+    }
+    if ( patch(this.hud, this.renderHudBody()) ) {
+      // Сводка встаёт над гексом и над колонками кнопок, если они выше гекса.
+      const ch = Math.max(0, ...[...this.hud.querySelectorAll(".art-hud-col")].map(el => el.offsetHeight));
+      this.hud.style.setProperty("--ch", `${ch}px`);
+    }
+    this._placeHud();
+    // Панель едет за гексом, пока карту двигают и приближают: место сверяем каждый кадр.
+    if ( !this._hudFrame ) {
+      const loop = () => {
+        this._hudFrame = this._hudVisible() ? requestAnimationFrame(loop) : null;
+        if ( this._hudFrame ) this._placeHud();
+      };
+      this._hudFrame = requestAnimationFrame(loop);
+    }
+  }
+
+  /** Поставить панель по гексу: центр и полуразмеры гекса на экране. */
+  _placeHud() {
+    const s = this.studio;
+    if ( !s.inspected ) return;
+    let box;
+    try {
+      const pts = s.grid.vertices(s.inspected).map(v => this.project(v));
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      box = [Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2), Math.round((x1 - x0) / 2), Math.round((y1 - y0) / 2)];
+    } catch { return; }
+    const key = box.join();
+    if ( key === this._hudAt ) return;
+    this._hudAt = key;
+    const [x, y, hw, hh] = box;
+    const st = this.hud.style;
+    st.left = `${x}px`;
+    st.top = `${y}px`;
+    st.setProperty("--hw", `${hw}px`);
+    st.setProperty("--hh", `${hh}px`);
+  }
+
+  /** Значок элемента для кнопки: значок метки, цвет зоны или линии. */
+  _hudItemIcon(st) {
+    const type = this.studio.typeById(st.system.typeId);
+    const color = st.system.style?.color ?? type?.style?.color ?? "#ccc";
+    const kind = st.system.kind;
+    if ( kind === "object" ) {
+      const path = st.system.style?.icon ?? type?.style?.icon;
+      const tint = (st.system.style?.tint ?? type?.style?.tint) !== false;
+      if ( path ) return iconImg(path, st.system.style?.iconColor ?? color, { tint, cls: "art-hud-ico" });
+    }
+    if ( kind === "line" ) return `<i class="art-hud-line" style="--c:${esc(color)}"></i>`;
+    return `<i class="art-hud-swatch" style="--c:${esc(color)}"></i>`;
+  }
+
+  renderHudBody() {
+    const s = this.studio;
+    const sum = s.summary();
+    if ( !sum ) return "";
+    const [i, j] = sum.cell;
+    const owner = sum.owner ? this.backend.actors().find(a => a.id === sum.owner) : null;
+    const facts = [sum.terrain?.name, sum.realm?.name, sum.region?.name, owner?.name].filter(Boolean);
+    const plate = `<div class="art-hud-plate">
+      <b>${esc(this.t("ART.Card.hex", { i, j }))}</b>${facts.length ? ` · ${facts.map(esc).join(" · ")}` : ""}
+      ${sum.marks.length ? `<span class="art-hud-count" title="${esc(this.t("ART.Hud.marksHere"))}">${icon("location-dot")} ${sum.marks.length}</span>` : ""}
+    </div>`;
+    const btn = ({ action, ic, title }) => `<button type="button" class="art-hud-btn" data-action="${action}"
+      title="${esc(title)}" aria-label="${esc(title)}">${icon(ic)}</button>`;
+    const markType = s.typeById(s.mark.typeId) ?? s.typesOf("object")[0];
+    const zoneTarget = s.zone.target !== "new" ? s.states.get(s.zone.target) : null;
+    const zoneName = zoneTarget?.name ?? s.typeById(s.zone.typeId)?.name ?? s.typesOf("area")[0]?.name ?? "";
+    const left = [
+      { action: "hudDetails", ic: "circle-info", title: this.t("ART.Hud.details") },
+      { action: "hudMark", ic: "location-dot", title: this.t("ART.Hud.mark", { name: markType?.name ?? "" }) },
+      { action: "hudZone", ic: "draw-polygon", title: this.t("ART.Hud.zone", { name: zoneName }) },
+      { action: "hudPan", ic: "crosshairs", title: this.t("ART.Card.pan") },
+      { action: "hudClose", ic: "xmark", title: this.t("ART.Close") }
+    ].map(btn).join("");
+    // Справа — что лежит на гексе: метки, потом зоны и линии. Щелчок открывает элемент в окне.
+    const items = [...sum.marks, ...sum.zones, ...sum.lines];
+    const MAX = 6;
+    const shown = items.length > MAX ? items.slice(0, MAX - 1) : items;
+    const right = shown.map(st => {
+      const type = s.typeById(st.system.typeId);
+      const title = `${st.name || this.t("ART.Card.unnamed")}${type?.name && type.name !== st.name ? ` (${type.name})` : ""}`;
+      return `<button type="button" class="art-hud-btn art-hud-item" data-action="hudDetails" data-id="${esc(st.id)}"
+        title="${esc(title)}" aria-label="${esc(title)}">${this._hudItemIcon(st)}</button>`;
+    }).join("") + (items.length > shown.length
+      ? `<button type="button" class="art-hud-btn art-hud-more" data-action="hudDetails" title="${esc(this.t("ART.Hud.details"))}">+${items.length - shown.length}</button>`
+      : "");
+    return `${plate}<div class="art-hud-col art-hud-left">${left}</div>
+      ${right ? `<div class="art-hud-col art-hud-right">${right}</div>` : ""}`;
+  }
+
   /* Правая панель --------------------------------------------------- */
 
   renderRight() {
@@ -641,7 +768,9 @@ export default class ArtariusUI {
     const aspects = (st.system.aspects ?? []).filter(x => x.name).map(x => `<span class="art-status art-aspect">${icon("star")} ${esc(formatStatus(x))}</span>`).join("");
     const kind = st.system.kind;
     const head = `<button type="button" class="art-item-head" data-action="openItem" data-id="${esc(st.id)}" aria-expanded="${open}">
-      ${kind === "object" && type?.style?.icon ? `<img class="art-item-icon" src="${esc(st.system.style?.icon ?? type.style.icon)}" alt="" style="--c:${esc(color)}">` : `<i class="art-swatch" style="--c:${esc(color)}"></i>`}
+      ${kind === "object" && (st.system.style?.icon ?? type?.style?.icon)
+        ? iconImg(st.system.style?.icon ?? type.style.icon, color, { tint: (st.system.style?.tint ?? type?.style?.tint) !== false, cls: "art-item-icon" })
+        : `<i class="art-swatch" style="--c:${esc(color)}"></i>`}
       <span class="art-item-title"><b>${esc(st.name || this.t("ART.Card.unnamed"))}</b>
       <span class="art-muted">${esc(type?.name ?? "")}${owner ? ` · ${esc(owner.name)}` : ""}${draft ? ` · <em>${esc(this.t("ART.Card.inDraft"))}</em>` : ""}</span></span>
       ${icon(open ? "chevron-up" : "chevron-down")}</button>`;

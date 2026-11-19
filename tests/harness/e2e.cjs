@@ -74,6 +74,9 @@ async function shot(page, name) {
     const sel = `#artarius-ui [data-action="${action}"]${extra}`;
     await page.locator(sel).first().click();
   };
+  const hud = async (action, extra = "") => {
+    await page.locator(`#artarius-hud [data-action="${action}"]${extra}`).first().click();
+  };
   const user = async id => { await page.click(`#who button[data-u="${id}"]`); };
   const check = (cond, msg) => { assert.ok(cond, msg); console.log("✓", msg); };
 
@@ -188,7 +191,20 @@ async function shot(page, name) {
   check((await ev(() => window.art.backend.atlasLayers.find(l => l.id === "politics").visible)) === false, "глаз скрывает слой");
   await act("toggleLayer", '[data-id="politics"]');
   await click([3, 5]);
-  check(await page.locator(".art-right").isVisible(), "щелчок осмотром открывает карточку гекса");
+  check(await page.locator("#artarius-hud .art-hud-left").isVisible() && !(await page.locator(".art-right").isVisible()),
+    "щелчок осмотром ставит панель на гекс, большое окно не открывается");
+  {
+    const hb = await page.locator("#artarius-hud .art-hud-left").boundingBox();
+    const hr = await page.locator("#artarius-hud .art-hud-right").boundingBox();
+    const c = await at([3, 5]);
+    check(hb && hr && hb.x + hb.width < c.x && hr.x > c.x && Math.abs((hb.y + (hb.height / 2)) - c.y) < 4,
+      "кнопки панели стоят слева и справа от гекса");
+    const plate = await page.locator("#artarius-hud .art-hud-plate").textContent();
+    check(plate.includes("3:5"), `сводка гекса над клеткой: ${plate.trim().replace(/\s+/g, " ")}`);
+  }
+  await shot(page, "hud");
+  await hud("hudDetails");
+  check(await page.locator(".art-right").isVisible(), "кнопка «Подробно» открывает карточку гекса");
   const sections = await page.locator(".art-right .art-block h4").allTextContents();
   check(sections.length === 3, `в карточке зоны, метки и линии: ${sections.join(" | ")}`);
   const markId = await ev(() => window.art.studio.contents().marks[0].id);
@@ -240,6 +256,58 @@ async function shot(page, name) {
   check(!a.some(x => x.id === markId), "метка удалена из карточки");
   await act("closeRight");
   check(!(await page.locator(".art-right").isVisible()), "крестик закрывает карточку");
+
+  /* 9б. Панель на гексе и метки как в Civ 5 ------------------------ */
+  await act("tool", '[data-tool="mark"]');
+  await act("tool", '[data-tool="select"]');
+  await click([6, 6]);
+  const marksAt = async cell => ev(([i, j]) => window.art.studio.markSlots().cells.get(`${i},${j}`)?.count ?? 0, cell);
+  const before6 = await marksAt([6, 6]);
+  await hud("hudMark");
+  await hud("hudMark");
+  await hud("hudMark");
+  check((await marksAt([6, 6])) === before6 + 3, "кнопка метки на панели ставит метку на этот гекс");
+  check(await page.locator('#map [data-count="6,6"]').count() === 1, "на гексе со многими метками виден счётчик");
+  {
+    const slots = await ev(() => window.art.studio.markSlots().slots.filter(s => s.key === "6,6"));
+    const r = await ev(() => window.art.backend.grid.radius);
+    const c = await ev(() => window.art.backend.grid.center([6, 6]));
+    const apart = slots.every((a1, n) => slots.every((b1, k) => k === n || Math.hypot(a1.x - b1.x, a1.y - b1.y) >= Math.min(a1.d, b1.d) * 0.95));
+    const inside = slots.every(s1 => Math.hypot(s1.x - c.x, s1.y - c.y) + (s1.d / 2) <= r * 0.95);
+    const big = slots.every(s1 => s1.d >= r * 0.6);
+    check(apart && inside && big, "метки в гексе не налезают друг на друга, остаются в клетке и не мельчают");
+  }
+  await shot(page, "civ-marks");
+  // Тащим одну метку из группы на соседний гекс.
+  {
+    const slot = await ev(() => window.art.studio.markSlots().slots.find(s => s.key === "6,6" && s.id));
+    const from = await ev(pt => window.art.view.project(pt), { x: slot.x, y: slot.y });
+    const to = await at([8, 7]);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 10 });
+    check(await page.locator("#map .drop").count() === 1, "при перетаскивании подсвечен гекс, куда ляжет метка");
+    await page.mouse.up();
+    const moved = await ev(id => window.art.backend.atlas.get(id).system.geometry, slot.id);
+    check(moved.cell.join() === "8,7" && (await marksAt([6, 6])) === before6 + 2, "метка перетащена зажатой кнопкой на другой гекс");
+    const inspected = await ev(() => window.art.studio.inspected?.join());
+    check(inspected === "6,6", "перетаскивание не переключает осматриваемый гекс");
+  }
+  await hud("hudDetails", '[data-id]');
+  check(await page.locator(".art-right .art-item.open").count() === 1, "значок на панели открывает свой элемент в карточке");
+  await act("closeRight");
+  await act("tool", '[data-tool="zone"]');
+  await act("tool", '[data-tool="select"]');
+  await click([6, 6]);
+  const zonesBefore = await ev(() => window.art.studio.contents().zones.length);
+  await hud("hudZone");
+  check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
+  await hud("hudPan");
+  await click([6, 6]);
+  check(!(await page.locator("#artarius-hud .art-hud-left").isVisible()), "повторный щелчок по гексу убирает панель");
+  await click([6, 6]);
+  await hud("hudClose");
+  check(!(await page.locator("#artarius-hud .art-hud-left").isVisible()), "крестик убирает панель");
 
   /* 10. Ходы ------------------------------------------------------- */
   await act("turnMenu");
