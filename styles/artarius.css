@@ -503,3 +503,13 @@
 .art-hud .art-hud-item.dragging { opacity: 0.4; }
 .art-hud .art-hud-item.drop-before { box-shadow: 0 -3px 0 0 var(--art-warn, #e8c27a); }
 .artarius .art-shape-sw { fill: rgba(17, 17, 17, 0.6); stroke: currentColor; stroke-width: 1.6; }
+
+/* 0.9.0: название линии под курсором */
+#artarius-tip {
+  position: fixed; z-index: 70; pointer-events: none; transform: translate(-50%, calc(-100% - 14px));
+  padding: 3px 8px; border-radius: 4px; font-size: 13px; white-space: nowrap;
+  background: var(--color-cool-5, rgba(17, 17, 17, 0.88)); color: var(--color-text-primary, #f0e6d8);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+#artarius-tip[hidden] { display: none; }
+.artarius .art-line-preview { margin: 4px 0 8px; padding: 4px; border: 1px solid var(--art-line); border-radius: 4px; background: var(--art-bg-2); }

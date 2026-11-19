@@ -9,6 +9,7 @@ import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
 import { layoutMarks, counterAt } from "../data/mark-layout.mjs";
 import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
+import { lineCurve, lineDash } from "./style.mjs";
 
 const color = c => {
   try { return foundry.utils.Color.from(c || "#ffffff").valueOf(); }
@@ -189,19 +190,21 @@ export default class HexRenderer {
   _drawLine(state, style) {
     const pts = state.system.geometry?.points ?? [];
     if ( pts.length < 2 ) return;
-    const curve = catmullRom(meander(pts, style.meander ?? 0, state.id), 6);
+    const curve = lineCurve(pts, style, state.id);
     const g = new PIXI.Graphics();
     const w0 = style.widthStart ?? 3, w1 = style.widthEnd ?? 3;
     const wMax = Math.max(w0, w1);
     const alpha = style.alpha ?? 1;
+    const [dash, gap] = lineDash(style, wMax);
     const stroke = (pts2, width, c) => {
       g.lineStyle({ width, color: c, alpha, join: PIXI.LINE_JOIN.ROUND, cap: PIXI.LINE_CAP.ROUND });
       g.moveTo(pts2[0][0], pts2[0][1]);
       for ( const p of pts2.slice(1) ) g.lineTo(p[0], p[1]);
     };
     if ( style.outlineWidth > 0 ) stroke(curve, wMax + (2 * style.outlineWidth), color(style.outlineColor));
-    if ( style.dash > 0 && style.gap > 0 ) {
-      for ( const part of dashPolyline(curve, style.dash, style.gap) ) if ( part.length >= 2 ) stroke(part, wMax, color(style.color));
+    if ( dash > 0 && gap > 0 ) {
+      // Точки — короткие штрихи с круглыми концами.
+      for ( const part of dashPolyline(curve, dash, gap) ) if ( part.length >= 2 ) stroke(part, wMax, color(style.color));
     } else if ( w0 !== w1 ) {
       g.lineStyle(0);
       g.beginFill(color(style.color), alpha);
@@ -216,6 +219,14 @@ export default class HexRenderer {
         t.position.set(m[0], m[1] - wMax - style.labelSize * 0.6);
         this.labels.addChild(t);
       }
+    }
+    // Подписи участков со своими названиями.
+    if ( style.labelSize > 0 ) for ( const seg of state.system.geometry?.segments ?? [] ) {
+      const m = midpoint(pts.slice(seg.from, seg.to + 1));
+      if ( !m || !seg.name ) continue;
+      const t = makeLabel(seg.name, style.labelSize * 0.85, style.labelColor);
+      t.position.set(m[0], m[1] - wMax - style.labelSize * 0.5);
+      this.labels.addChild(t);
     }
   }
 

@@ -4,8 +4,7 @@
  */
 import { shapePoints, shapeOf } from "../../scripts/data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells, cellKey } from "../../scripts/data/world.mjs";
-import { resolveStyleOf } from "../../scripts/canvas/style.mjs";
-import { catmullRom, meander } from "../../scripts/geometry/geometry.mjs";
+import { resolveStyleOf, lineCurve, lineDash } from "../../scripts/canvas/style.mjs";
 
 const NS = "http://www.w3.org/2000/svg";
 const poly = vs => vs.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(" ");
@@ -20,7 +19,7 @@ export default class SvgView {
     svg.innerHTML = `<g class="base"></g><g class="zones"></g><g class="lines"></g><g class="marks"></g><g class="ghosts"></g><g class="over"></g>`;
     this.g = Object.fromEntries([...svg.children].map(el => [el.getAttribute("class"), el]));
     this.drawBase();
-    studio.subscribe(what => what === "overlay" ? this.drawOverlay() : this.drawAll());
+    studio.subscribe(what => what === "hover" ? null : what === "overlay" ? this.drawOverlay() : this.drawAll());
     this.drawAll();
     this.bind();
   }
@@ -102,11 +101,13 @@ export default class SvgView {
       const st = resolveStyleOf(l, types);
       const pts = l.system.geometry.points ?? [];
       if ( pts.length < 2 ) continue;
-      const curve = catmullRom(meander(pts, st.meander ?? 0, l.id), 6);
+      const curve = lineCurve(pts, st, l.id);
+      const w = Math.max(st.widthStart, st.widthEnd);
+      const [dash, gap] = lineDash(st, w);
       this.el("polyline", {
         points: curve.map(p => p.join(",")).join(" "), fill: "none", stroke: st.color,
-        "stroke-width": Math.max(st.widthStart, st.widthEnd), "stroke-linecap": "round", "stroke-linejoin": "round",
-        "stroke-dasharray": st.dash > 0 ? `${st.dash} ${st.gap}` : "", "data-line": l.id
+        "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round",
+        "stroke-dasharray": dash > 0 ? `${dash < 1 ? 0 : dash} ${gap}` : "", "data-line": l.id, "data-shape": st.shape ?? "curved"
       }, this.g.lines);
     }
     const r = grid.radius;

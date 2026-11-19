@@ -484,6 +484,34 @@ async function shot(page, name) {
   await act("setShape", `[data-id="${ids[1]}"][data-shape="shield"]`);
   check((await page.locator(`#map [data-mark="${ids[1]}"] [data-shape="shield"]`).count()) === 1, "форма метки «щит» видна на карте");
 
+  /* 16. 0.9.0: линии соединяются, подсказка, края гексов, вид ------ */
+  await act("closeRight");
+  await act("tool", '[data-tool="line"]');
+  await act("pickType", '[data-id="road"]');
+  await act("lineMode", '[data-mode="hex"]');
+  await click([10, 2]); await click([10, 5]);
+  await page.fill('#artarius-ui [data-key="line-name"]', "Тракт");
+  await act("finishLine");
+  await click([10, 5]); await click([12, 8]);
+  await act("finishLine");
+  const roads = await ev(() => [...window.art.backend.atlas.values()].filter(s => s.system.typeId === "road"));
+  check(roads.length === 1 && roads[0].name === "Тракт", "вторая дорога от конца первой стала её продолжением");
+  const mid = await at([10, 3]);
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.move(mid.x + 2, mid.y + 1);
+  check((await page.locator("#artarius-tip").isVisible()) && (await page.locator("#artarius-tip").innerText()) === "Тракт", "наведение на линию показывает её название");
+  await act("lineMode", '[data-mode="edge"]');
+  await click([6, 12]); await click([6, 15]);
+  check((await ev(() => window.art.studio.line.points.length)) > 4, "по краям гексов линия идёт по рёбрам клеток");
+  await act("clearLine");
+  await act("editType", '[data-id="road"]');
+  await act("lineShape", '[data-v="rounded"]');
+  await act("linePattern", '[data-v="dot"]');
+  check((await page.locator("#artarius-ui .art-line-preview path[stroke-dasharray]").count()) === 1, "образец линии показывает точки");
+  await act("saveType");
+  check((await ev(() => window.art.backend.atlasTypes.find(t => t.id === "road").style.shape)) === "rounded", "вид типа линии сохранён");
+  check((await page.locator('#map [data-line][data-shape="rounded"]').count()) >= 1, "линия на карте перерисована по новому виду");
+
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
   console.log("✓ ошибок в консоли нет");
