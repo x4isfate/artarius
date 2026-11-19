@@ -162,6 +162,13 @@ export default class FoundryBackend {
     return store.getLayers(this.atlas).map(l => ({ ...l, visible: !hidden.has(l.id) }));
   }
 
+  /** Слои атласа целиком: добавить, переименовать, переставить, удалить (только мастер). */
+  async setLayers(layers) {
+    if ( !game.user.isGM ) return;
+    const atlas = this.atlas ?? await store.ensureAtlas(canvas.scene);
+    await store.setLayers(atlas, layers.map(({ visible, ...l }) => l));
+  }
+
   async toggleLayer(id) {
     const hidden = this.hiddenIds();
     if ( hidden.has(id) ) hidden.delete(id); else hidden.add(id);
@@ -320,4 +327,5 @@ export default class FoundryBackend {
   openGuide() { game.modules.get(MODULE_ID).api.openGuide(); }
   openWorldSettings() { game.modules.get(MODULE_ID).api.openWorldSettings(); }
   openAzgaar() { game.modules.get(MODULE_ID).api.openAzgaar(); }
+  openGenerator() { game.modules.get(MODULE_ID).api.openGenerator(); }
 }

@@ -85,6 +85,7 @@ export default class ArtariusUI {
     this.root.innerHTML = `
       <section class="art-panel art-left" data-part="left" hidden></section>
       <section class="art-panel art-right" data-part="right" hidden></section>
+      <section class="art-panel art-settings" data-part="settings" hidden></section>
       <nav class="art-wheel" data-part="wheel"></nav>`;
     this.parts = Object.fromEntries([...this.root.querySelectorAll("[data-part]")].map(el => [el.dataset.part, el]));
     /** Окно слоёв для «Осмотра» в Foundry открывается только кнопкой, само не всплывает. */
@@ -133,6 +134,7 @@ export default class ArtariusUI {
     if ( name === "left" && s.tool === "select" && this.host ) { this.layersOpen = false; return; }
     if ( name === "left" && s.tool ) s.setTool(null, { toggle: false });
     else if ( name === "right" && s.rightOpen ) s.closeRight();
+    else if ( name === "settings" && s.settings.open ) s.closeSettings();
   }
 
   _show(name, on, title) {
@@ -242,10 +244,25 @@ export default class ArtariusUI {
       clearLine: () => s.clearLine(),
       // Типы
       pickType: el => s.pickType(el.dataset.kind, el.dataset.id),
-      newType: el => s.openTypeForm(el.dataset.kind),
-      editType: el => s.openTypeForm(el.dataset.kind, el.dataset.id),
+      newType: el => s.editTypeInSettings(el.dataset.kind, "new"),
+      editType: el => s.editTypeInSettings(el.dataset.kind, el.dataset.id),
       saveType: () => s.saveTypeForm(),
-      cancelType: () => { s.typeForm = null; s.changed("ui"); },
+      cancelType: () => {
+        if ( s.settings.back ) return s.closeSettings();
+        const sec = s.settings.section;
+        if ( s.settings.id === "new" ) return s.settingsPick(s.typesOf(sec)[0]?.id ?? null);
+        s.settingsPick(s.settings.id);
+      },
+      // Настройки модуля
+      openSettings: el => s.openSettings(el.dataset.section || undefined),
+      closeSettings: () => s.closeSettings(),
+      settingsSection: el => s.settingsSection(el.dataset.section),
+      settingsPick: el => { s.settings.back = false; s.settingsPick(el.dataset.id); },
+      saveLayer: () => s.saveLayerForm(),
+      deleteLayer: el => s.deleteLayer(el.dataset.id),
+      layerUp: el => s.moveLayer(el.dataset.id, -1),
+      layerDown: el => s.moveLayer(el.dataset.id, 1),
+      generator: () => this.backend.openGenerator?.(),
       deleteType: el => s.deleteType(el.dataset.id),
       pickPattern: el => { if ( s.typeForm ) { s.typeForm.pattern = el.dataset.pattern; s.changed("ui"); } },
       pickIcon: el => s.pickIcon(el.dataset.icon),
@@ -309,6 +326,8 @@ export default class ArtariusUI {
       this._show("left", leftOn, this._leftTitle());
       if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
       this._show("right", s.rightOpen, this.t(s.rightTab === "queue" ? "ART.Queue.title" : "ART.Card.tab"));
+      if ( s.settings.open ) patch(this.parts.settings, this.renderSettings());
+      this._show("settings", s.settings.open, this.t("ART.Settings.title"));
       this.renderHud();
     } catch(err) {
       console.error("artarius | render", err);
@@ -421,41 +440,34 @@ export default class ArtariusUI {
           ${custom ? `<button type="button" class="art-icon-btn" data-action="deletePreset" data-id="${esc(custom.id)}" title="${esc(this.t("ART.Preset.delete"))}">${icon("trash")}</button>` : ""}</div>
       </section>
       <section class="art-block"><h4>${esc(this.t("ART.Layer.title"))}</h4><ul class="art-layers">${layers}${parts}</ul></section>
-      ${gm ? `<section class="art-block art-row-btns">
-        <button type="button" class="art-btn" data-action="worldSettings">${icon("sliders")} ${esc(this.t("ART.World.settings"))}</button>
-        <button type="button" class="art-btn" data-action="azgaar">${icon("earth-europe")} ${esc(this.t("ART.World.azgaar"))}</button>
-      </section>` : ""}`;
+      <section class="art-block art-row-btns">
+        <button type="button" class="art-btn" data-action="openSettings" data-section="${gm ? "layers" : "area"}">${icon("gear")} ${esc(this.t("ART.Settings.open"))}</button>
+      </section>`;
   }
 
-  /** Сетка типов вида с кнопкой «новый тип». */
+  /**
+   * Список типов вида для левой колонки окна инструмента (макет C): строки со значком,
+   * у выбранного карандаш правки, внизу «новый тип». Правка открывается в окне настроек.
+   */
   renderTypes(kind, selectedId) {
     const s = this.studio;
     const list = s.typesOf(kind);
-    const layers = s.layers;
-    const chip = t => {
-      const st = t.style ?? {};
-      const sw = kind === "object"
-        ? `<img src="${esc(st.icon ?? "")}" alt="" style="--c:${esc(st.color ?? "#ccc")}">`
-        : kind === "line" ? `<i class="art-line-sw" style="--c:${esc(st.color ?? "#ccc")}"></i>`
-          : `<i class="art-swatch" style="--c:${esc(st.color ?? "#ccc")}"></i>`;
-      return `<button type="button" class="art-type${t.id === selectedId ? " active" : ""}" data-action="pickType" data-kind="${kind}" data-id="${esc(t.id)}"
-        title="${esc(t.name)}${t.personal ? ` · ${esc(this.t("ART.Type.personal"))}` : ""}">${sw}<span>${esc(t.name)}</span></button>`;
+    const row = t => {
+      const edit = t.id === selectedId && s.canEditType(t)
+        ? `<button type="button" class="art-row-edit" data-action="editType" data-kind="${kind}" data-id="${esc(t.id)}" title="${esc(this.t("ART.Type.edit"))}">${icon("pen")}</button>` : "";
+      return `<div class="art-row-wrap">${this.listRow({ action: "pickType", id: t.id, active: t.id === selectedId, sw: this.typeSwatch(t), name: t.name,
+        note: t.personal ? "★" : "", attrs: ` data-kind="${kind}"${t.personal ? ` title="${esc(this.t("ART.Type.personal"))}"` : ""}` })}${edit}</div>`;
     };
-    let groups;
+    let rows;
     if ( kind === "area" ) {
-      groups = layers.map(l => {
+      rows = s.layers.map(l => {
         const items = list.filter(t => (t.layerId ?? "overlay") === l.id);
-        return items.length ? `<div class="art-type-group"><span class="art-eyebrow">${esc(l.name)}</span><div class="art-types">${items.map(chip).join("")}</div></div>` : "";
+        return items.length ? `<span class="art-eyebrow">${esc(l.name)}</span>${items.map(row).join("")}` : "";
       }).join("");
-      const orphan = list.filter(t => !layers.some(l => l.id === (t.layerId ?? "overlay")));
-      if ( orphan.length ) groups += `<div class="art-types">${orphan.map(chip).join("")}</div>`;
-    } else groups = `<div class="art-types">${list.map(chip).join("")}</div>`;
-    const selected = list.find(t => t.id === selectedId);
-    const tools = `<div class="art-row-btns">
-      <button type="button" class="art-btn" data-action="newType" data-kind="${kind}">${icon("plus")} ${esc(this.t("ART.Type.new"))}</button>
-      ${selected && s.canEditType(selected) ? `<button type="button" class="art-btn" data-action="editType" data-kind="${kind}" data-id="${esc(selected.id)}">${icon("pen")} ${esc(this.t("ART.Type.edit"))}</button>` : ""}
-    </div>`;
-    return `${groups}${s.typeForm?.kind === kind ? this.renderTypeForm() : tools}`;
+      const orphan = list.filter(t => !s.layers.some(l => l.id === (t.layerId ?? "overlay")));
+      if ( orphan.length ) rows += orphan.map(row).join("");
+    } else rows = list.map(row).join("");
+    return `${rows}<button type="button" class="art-row-item art-row-new" data-action="newType" data-kind="${kind}">${icon("plus")}<span class="art-row-name">${esc(this.t("ART.Type.new"))}</span></button>`;
   }
 
   /** Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить». */
@@ -506,6 +518,10 @@ export default class ArtariusUI {
       ${n ? `<button type="button" class="art-link" data-action="clearSelection">${esc(this.t("ART.Sel.clear"))}</button>` : ""}</div>`;
   }
 
+  /**
+   * Окно «Зоны» по макету C: слева список (новая зона и зоны по слоям с поиском),
+   * справа то, что делаем с выбранным: тип и поля новой зоны или сведения о зоне, и кнопки.
+   */
   renderZoneTool() {
     const s = this.studio;
     const z = s.zone;
@@ -522,10 +538,10 @@ export default class ArtariusUI {
         .filter(zz => !filter || zz.name.toLowerCase().includes(filter) || typeName(zz.system.typeId).toLowerCase().includes(filter))
         .sort((a, b) => a.name.localeCompare(b.name));
       if ( !list.length ) return "";
-      return `<span class="art-eyebrow">${esc(l.name)}</span>` + list.map(zz => `<button type="button" class="art-zone${zz.id === z.target ? " active" : ""}"
-        data-action="zoneTarget" data-id="${esc(zz.id)}"><i class="art-swatch" style="--c:${esc(colorOf(zz))}"></i>
-        <span class="art-zone-name">${esc(zz.name || this.t("ART.Card.unnamed"))}</span>
-        <span class="art-muted">${esc(typeName(zz.system.typeId))} · ${zoneCells(zz).length}</span></button>`).join("");
+      return `<span class="art-eyebrow">${esc(l.name)}</span>` + list.map(zz => `<button type="button" class="art-zone art-row-item${zz.id === z.target ? " active" : ""}"
+        data-action="zoneTarget" data-id="${esc(zz.id)}" title="${esc(typeName(zz.system.typeId))}"><i class="art-swatch" style="--c:${esc(colorOf(zz))}"></i>
+        <span class="art-zone-name art-row-name">${esc(zz.name || this.t("ART.Card.unnamed"))}</span>
+        <span class="art-row-note">${zoneCells(zz).length}</span></button>`).join("");
     }).join("");
 
     const n = s.selection.size;
@@ -533,33 +549,34 @@ export default class ArtariusUI {
       ...layers.map(l => `<option value="${esc(l.id)}"${l.id === z.detachLayer ? " selected" : ""}>${esc(l.name)}</option>`)].join("");
     const newType = types.find(t => t.id === z.typeId);
     const terrain = newType?.layerId === "terrain";
+    const isNew = z.target === "new" || !target;
+    const list = `<button type="button" class="art-zone art-zone-new art-row-item${isNew ? " active" : ""}" data-action="zoneTarget" data-id="new">
+        ${icon("plus")}<span class="art-zone-name art-row-name">${esc(this.t("ART.Zone.newZone"))}</span></button>
+      ${zones.length ? `<input type="search" class="art-search" data-model="zone.filter" data-key="zone-filter" value="${esc(z.filter)}" placeholder="${esc(this.t("ART.Zone.find"))}">
+      <div class="art-zone-list">${byLayer}</div>` : ""}`;
+    const main = isNew
+      ? `<h4>${esc(this.t("ART.Zone.newZone"))}</h4>
+        <div class="art-type-list">${this.renderTypes("area", z.typeId)}</div>
+        <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+          <input type="text" data-model="zone.name" data-key="zone-name" value="${esc(z.name)}" placeholder="${esc(newType?.name ?? "")}"></label>
+        <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
+          <textarea rows="2" data-model="zone.text" data-key="zone-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(z.text ?? "")}</textarea></label>
+        ${terrain ? "" : `<label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>
+          ${colorField('data-model="zone.color"', z.color || "#c96f4a", "zone-color")}</label>`}`
+      : `<h4><i class="art-swatch" style="--c:${esc(colorOf(target))}"></i> ${esc(target.name || this.t("ART.Card.unnamed"))}</h4>
+        <p class="art-muted">${esc(typeName(target.system.typeId))} · ${esc(this.t("ART.Zone.cells", { n: zoneCells(target).length }))}</p>`;
     return `<p class="art-hint">${esc(this.t("ART.Zone.hint"))}</p>
       ${this.renderSelectionBar()}
-      <section class="art-block">
-        <h4>${esc(this.t("ART.Zone.where"))}</h4>
-        <button type="button" class="art-zone art-zone-new${z.target === "new" || !target ? " active" : ""}" data-action="zoneTarget" data-id="new">
-          ${icon("plus")}<span class="art-zone-name">${esc(this.t("ART.Zone.newZone"))}</span></button>
-        ${z.target === "new" || !target ? `<div class="art-sub">
-          ${this.renderTypes("area", z.typeId)}
-          <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-            <input type="text" data-model="zone.name" data-key="zone-name" value="${esc(z.name)}" placeholder="${esc(newType?.name ?? "")}"></label>
-          <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
-            <textarea rows="2" data-model="zone.text" data-key="zone-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(z.text ?? "")}</textarea></label>
-          ${terrain ? "" : `<label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>
-            ${colorField('data-model="zone.color"', z.color || "#c96f4a", "zone-color")}</label>`}
-        </div>` : ""}
-        ${zones.length ? `<input type="search" class="art-search" data-model="zone.filter" data-key="zone-filter" value="${esc(z.filter)}" placeholder="${esc(this.t("ART.Zone.find"))}">
-        <div class="art-zone-list" data-scroll="zones">${byLayer}</div>` : ""}
-      </section>
-      <div class="art-row-btns art-sticky">
-        <button type="button" class="art-btn art-accent" data-action="attach" ${n ? "" : "disabled"}>${icon("check")} ${esc(this.t(target ? "ART.Zone.attachTo" : "ART.Zone.create", { n, name: target?.name ?? "" }))}</button>
-      </div>
-      <label class="art-check"><input type="checkbox" data-model="zone.paint" ${z.paint ? "checked" : ""}> ${esc(this.t("ART.Zone.paint"))}</label>
-      <section class="art-block">
-        <h4>${esc(this.t("ART.Zone.detachTitle"))}</h4>
-        <div class="art-row-btns"><select data-model="zone.detachLayer">${layerOpts}</select>
-        <button type="button" class="art-btn" data-action="detach" ${n ? "" : "disabled"}>${icon("eraser")} ${esc(this.t("ART.Zone.detach"))}</button></div>
-      </section>`;
+      ${this.renderSplit(list, `${main}
+        <div class="art-row-btns art-sticky">
+          <button type="button" class="art-btn art-accent" data-action="attach" ${n ? "" : "disabled"}>${icon("check")} ${esc(this.t(target ? "ART.Zone.attachTo" : "ART.Zone.create", { n, name: target?.name ?? "" }))}</button>
+        </div>
+        <label class="art-check"><input type="checkbox" data-model="zone.paint" ${z.paint ? "checked" : ""}> ${esc(this.t("ART.Zone.paint"))}</label>
+        <section class="art-block">
+          <h4>${esc(this.t("ART.Zone.detachTitle"))}</h4>
+          <div class="art-row-btns"><select data-model="zone.detachLayer">${layerOpts}</select>
+          <button type="button" class="art-btn" data-action="detach" ${n ? "" : "disabled"}>${icon("eraser")} ${esc(this.t("ART.Zone.detach"))}</button></div>
+        </section>`, "zones")}`;
   }
 
   renderMarkTool() {
@@ -569,15 +586,16 @@ export default class ArtariusUI {
     const type = s.typeById(m.typeId);
     return `<p class="art-hint">${esc(this.t("ART.Mark.hint"))}</p>
       ${this.renderSelectionBar()}
-      <section class="art-block"><h4>${esc(this.t("ART.Mark.type"))}</h4>${this.renderTypes("object", m.typeId)}</section>
-      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-        <input type="text" data-model="mark.name" data-key="mark-name" data-enter="placeMarks" value="${esc(m.name)}" placeholder="${esc(type?.name ?? "")}"></label>
-      <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
-            <textarea rows="2" data-model="mark.text" data-key="mark-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(m.text ?? "")}</textarea></label>
-      <div class="art-row-btns art-sticky">
-        <button type="button" class="art-btn art-accent" data-action="placeMarks" ${n ? "" : "disabled"}>${icon("location-dot")} ${esc(this.t("ART.Mark.place", { n }))}</button>
-      </div>
-      <label class="art-check"><input type="checkbox" data-model="mark.paint" ${m.paint ? "checked" : ""}> ${esc(this.t("ART.Mark.paint"))}</label>`;
+      ${this.renderSplit(this.renderTypes("object", m.typeId), `
+        ${type ? `<div class="art-pick-head">${this.typeSwatch(type)}<b>${esc(type.name)}</b></div>` : ""}
+        <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+          <input type="text" data-model="mark.name" data-key="mark-name" data-enter="placeMarks" value="${esc(m.name)}" placeholder="${esc(type?.name ?? "")}"></label>
+        <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
+          <textarea rows="2" data-model="mark.text" data-key="mark-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(m.text ?? "")}</textarea></label>
+        <div class="art-row-btns art-sticky">
+          <button type="button" class="art-btn art-accent" data-action="placeMarks" ${n ? "" : "disabled"}>${icon("location-dot")} ${esc(this.t("ART.Mark.place", { n }))}</button>
+        </div>
+        <label class="art-check"><input type="checkbox" data-model="mark.paint" ${m.paint ? "checked" : ""}> ${esc(this.t("ART.Mark.paint"))}</label>`, "marks")}`;
   }
 
   renderLineTool() {
@@ -586,21 +604,22 @@ export default class ArtariusUI {
     const n = l.points.length;
     const type = s.typeById(l.typeId);
     return `<p class="art-hint">${esc(this.t("ART.Line.hint"))}</p>
-      <section class="art-block"><h4>${esc(this.t("ART.Line.type"))}</h4>${this.renderTypes("line", l.typeId)}</section>
-      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-        <input type="text" data-model="line.name" data-key="line-name" data-enter="finishLine" value="${esc(l.name)}" placeholder="${esc(type?.name ?? "")}"></label>
-      <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
-            <textarea rows="2" data-model="line.text" data-key="line-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(l.text ?? "")}</textarea></label>
-      <div class="art-field"><span>${esc(this.t("ART.Line.mode"))}</span>
-        <div class="art-seg">${["free", "hex", "draw"].map(m => `<button type="button" class="art-btn${l.mode === m ? " active" : ""}" data-action="lineMode" data-mode="${m}">${icon({ free: "bezier-curve", hex: "border-all", draw: "pencil" }[m])} ${esc(this.t(`ART.Line.modes.${m}`))}</button>`).join("")}</div>
-        <p class="art-hint">${esc(this.t(`ART.Line.hints.${l.mode}`))}</p></div>
-      ${l.mode === "free" ? `<label class="art-check"><input type="checkbox" data-model="line.snap" ${l.snap ? "checked" : ""}> ${esc(this.t("ART.Line.snap"))}</label>` : ""}
-      <div class="art-selbar"><span>${esc(this.t("ART.Line.points", { n }))}</span></div>
-      <div class="art-row-btns art-sticky">
-        <button type="button" class="art-btn art-accent" data-action="finishLine" ${n >= 2 ? "" : "disabled"}>${icon("check")} ${esc(this.t("ART.Line.finish"))}</button>
-        <button type="button" class="art-btn" data-action="undoPoint" ${n ? "" : "disabled"}>${icon("rotate-left")}</button>
-        <button type="button" class="art-btn" data-action="clearLine" ${n ? "" : "disabled"}>${icon("xmark")}</button>
-      </div>`;
+      ${this.renderSplit(this.renderTypes("line", l.typeId), `
+        ${type ? `<div class="art-pick-head">${this.typeSwatch(type)}<b>${esc(type.name)}</b></div>` : ""}
+        <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+          <input type="text" data-model="line.name" data-key="line-name" data-enter="finishLine" value="${esc(l.name)}" placeholder="${esc(type?.name ?? "")}"></label>
+        <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
+          <textarea rows="2" data-model="line.text" data-key="line-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(l.text ?? "")}</textarea></label>
+        <div class="art-field"><span>${esc(this.t("ART.Line.mode"))}</span>
+          <div class="art-seg">${["free", "hex", "draw"].map(m => `<button type="button" class="art-btn${l.mode === m ? " active" : ""}" data-action="lineMode" data-mode="${m}" title="${esc(this.t(`ART.Line.hints.${m}`))}">${icon({ free: "bezier-curve", hex: "border-all", draw: "pencil" }[m])} ${esc(this.t(`ART.Line.modes.${m}`))}</button>`).join("")}</div>
+          <p class="art-hint">${esc(this.t(`ART.Line.hints.${l.mode}`))}</p></div>
+        ${l.mode === "free" ? `<label class="art-check"><input type="checkbox" data-model="line.snap" ${l.snap ? "checked" : ""}> ${esc(this.t("ART.Line.snap"))}</label>` : ""}
+        <div class="art-selbar"><span>${esc(this.t("ART.Line.points", { n }))}</span></div>
+        <div class="art-row-btns art-sticky">
+          <button type="button" class="art-btn art-accent" data-action="finishLine" ${n >= 2 ? "" : "disabled"}>${icon("check")} ${esc(this.t("ART.Line.finish"))}</button>
+          <button type="button" class="art-btn" data-action="undoPoint" ${n ? "" : "disabled"}>${icon("rotate-left")}</button>
+          <button type="button" class="art-btn" data-action="clearLine" ${n ? "" : "disabled"}>${icon("xmark")}</button>
+        </div>`, "lines")}`;
   }
 
   /* Панель на гексе ------------------------------------------------- */
@@ -709,6 +728,111 @@ export default class ArtariusUI {
       : "");
     return `${plate}<div class="art-hud-col art-hud-left">${left}</div>
       ${right ? `<div class="art-hud-col art-hud-right">${right}</div>` : ""}`;
+  }
+
+  /* Схема «список и правка рядом» (макет C от 19.11) --------------- */
+
+  /** Две колонки: слева список, справа правка выбранного. На узком окне колонки встают друг под друга. */
+  renderSplit(list, main, key) {
+    return `<div class="art-split"><nav class="art-split-list" data-scroll="${esc(key)}-list">${list}</nav>
+      <div class="art-split-main" data-scroll="${esc(key)}-main">${main}</div></div>`;
+  }
+
+  /** Строка списка: значок, название, мелкая подпись справа. */
+  listRow({ action, id, active, sw, name, note = "", attrs = "" }) {
+    return `<button type="button" class="art-row-item${active ? " active" : ""}" data-action="${action}" data-id="${esc(id)}"${attrs}>
+      ${sw}<span class="art-row-name">${esc(name)}</span>${note ? `<span class="art-row-note">${esc(note)}</span>` : ""}</button>`;
+  }
+
+  /** Образец типа для списка: значок метки, полоска линии или квадрат зоны. */
+  typeSwatch(t) {
+    const st = t?.style ?? {};
+    const c = st.color ?? "#ccc";
+    if ( t?.kind === "object" && st.icon ) return iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-row-ico" });
+    if ( t?.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(c)}"></i>`;
+    return `<i class="art-swatch" style="--c:${esc(c)}"></i>`;
+  }
+
+  /* Окно настроек модуля -------------------------------------------- */
+
+  renderSettings() {
+    const s = this.studio;
+    const gm = this.backend.isGM;
+    const sec = s.settings.section;
+    const secs = [
+      gm && { id: "layers", ic: "layer-group" },
+      { id: "area", ic: "draw-polygon" },
+      { id: "object", ic: "location-dot" },
+      { id: "line", ic: "route" },
+      gm && { id: "world", ic: "earth-europe" }
+    ].filter(Boolean);
+    const tabs = `<nav class="art-tabs art-settings-tabs">${secs.map(x => `<button type="button" class="${x.id === sec ? "active" : ""}"
+      data-action="settingsSection" data-section="${x.id}">${icon(x.ic)} ${esc(this.t(`ART.Settings.sec.${x.id}`))}</button>`).join("")}</nav>`;
+    let body;
+    if ( sec === "layers" ) body = this.renderSplit(this.renderLayerList(), this.renderLayerForm(), "set-layers");
+    else if ( sec === "world" ) body = this.renderWorldSection();
+    else body = this.renderSplit(this.renderTypeList(sec), s.typeForm?.kind === sec ? this.renderTypeForm() : `<p class="art-empty">${esc(this.t("ART.Settings.pick"))}</p>`, `set-${sec}`);
+    const head = `<header class="art-head">${icon("gear")}<h3>${esc(this.t("ART.Settings.title"))}</h3>
+      <button type="button" class="art-icon-btn" data-action="closeSettings" title="${esc(this.t("ART.Close"))}">${icon("xmark")}</button></header>`;
+    return `${head}<div class="art-body art-settings-body">${tabs}${body}</div>`;
+  }
+
+  renderTypeList(kind) {
+    const s = this.studio;
+    const list = s.typesOf(kind);
+    const sel = s.settings.id;
+    const row = t => this.listRow({ action: "settingsPick", id: t.id, active: t.id === sel, sw: this.typeSwatch(t), name: t.name,
+      note: t.personal ? "★" : "" });
+    let rows;
+    if ( kind === "area" ) {
+      rows = s.layers.map(l => {
+        const items = list.filter(t => (t.layerId ?? "overlay") === l.id);
+        return items.length ? `<span class="art-eyebrow">${esc(l.name)}</span>${items.map(row).join("")}` : "";
+      }).join("");
+      const orphan = list.filter(t => !s.layers.some(l => l.id === (t.layerId ?? "overlay")));
+      if ( orphan.length ) rows += orphan.map(row).join("");
+    } else rows = list.map(row).join("");
+    return `${rows}${this.listRow({ action: "settingsPick", id: "new", active: sel === "new", sw: icon("plus"), name: this.t("ART.Type.new"), attrs: ' data-new="1"' })}`;
+  }
+
+  renderLayerList() {
+    const s = this.studio;
+    const sel = s.settings.id;
+    const types = s.typesOf("area");
+    const rows = s.layers.map(l => this.listRow({ action: "settingsPick", id: l.id, active: l.id === sel, sw: icon("layer-group"),
+      name: l.name, note: String(types.filter(t => (t.layerId ?? "overlay") === l.id).length) })).join("");
+    return `${rows}${this.listRow({ action: "settingsPick", id: "new", active: sel === "new", sw: icon("plus"), name: this.t("ART.Layer.new") })}`;
+  }
+
+  renderLayerForm() {
+    const s = this.studio;
+    const f = s.layerForm;
+    if ( !f ) return `<p class="art-empty">${esc(this.t("ART.Settings.pick"))}</p>`;
+    const n = f.id ? s.layers.findIndex(l => l.id === f.id) : -1;
+    const types = f.id ? s.typesOf("area").filter(t => (t.layerId ?? "overlay") === f.id) : [];
+    return `<div class="art-form art-form-flat">
+      <h4>${esc(this.t(f.id ? "ART.Layer.edit" : "ART.Layer.new"))}</h4>
+      <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
+        <input type="text" data-model="layerForm.name" data-key="lf-name" data-enter="saveLayer" value="${esc(f.name)}" placeholder="${esc(this.t("ART.Layer.namePh"))}"></label>
+      <label class="art-check"><input type="checkbox" data-model="layerForm.exclusive" ${f.exclusive ? "checked" : ""}> ${esc(this.t("ART.Layer.exclusiveCheck"))}</label>
+      <p class="art-hint">${esc(this.t("ART.Layer.exclusiveHint"))}</p>
+      ${types.length ? `<div class="art-field"><span>${esc(this.t("ART.Layer.types"))}</span><div class="art-chips">${types.map(t => `<span class="art-chip">${this.typeSwatch(t)} ${esc(t.name)}</span>`).join("")}</div></div>` : ""}
+      <div class="art-row-btns">
+        <button type="button" class="art-btn art-accent" data-action="saveLayer">${icon("check")} ${esc(this.t("ART.Save"))}</button>
+        ${f.id ? `<button type="button" class="art-btn art-icon-only" data-action="layerUp" data-id="${esc(f.id)}" title="${esc(this.t("ART.Layer.up"))}" ${n > 0 ? "" : "disabled"}>${icon("arrow-up")}</button>
+        <button type="button" class="art-btn art-icon-only" data-action="layerDown" data-id="${esc(f.id)}" title="${esc(this.t("ART.Layer.down"))}" ${n >= 0 && n < s.layers.length - 1 ? "" : "disabled"}>${icon("arrow-down")}</button>
+        ${f.id !== "terrain" ? `<button type="button" class="art-btn art-danger" data-action="deleteLayer" data-id="${esc(f.id)}" title="${esc(this.t("ART.Layer.delete"))}">${icon("trash")}</button>` : ""}` : ""}
+      </div>
+      ${f.id === "terrain" ? `<p class="art-hint">${esc(this.t("ART.Layer.terrainHint"))}</p>` : ""}
+    </div>`;
+  }
+
+  renderWorldSection() {
+    return `<div class="art-world-btns">
+      <button type="button" class="art-btn" data-action="worldSettings">${icon("sliders")} ${esc(this.t("ART.World.settings"))}</button>
+      <button type="button" class="art-btn" data-action="azgaar">${icon("earth-europe")} ${esc(this.t("ART.World.azgaar"))}</button>
+      <button type="button" class="art-btn" data-action="generator">${icon("mountain-sun")} ${esc(this.t("ART.Gen.title"))}</button>
+    </div><p class="art-hint">${esc(this.t("ART.Settings.worldHint"))}</p>`;
   }
 
   /* Правая панель --------------------------------------------------- */

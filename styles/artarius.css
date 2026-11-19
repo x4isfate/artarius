@@ -142,7 +142,8 @@
   overflow: hidden;
 }
 /* Левая панель кончается над круглым меню: дуга кнопок занимает около 230 px над центром меню. */
-#artarius-ui > .art-left { left: var(--art-left, 96px); top: var(--art-top, 64px); width: 300px; max-height: max(260px, calc(100vh - var(--art-top, 64px) - var(--art-wheel-bottom, 170px) - 240px)); }
+#artarius-ui > .art-left { left: var(--art-left, 96px); top: var(--art-top, 64px); width: 420px; max-height: max(260px, calc(100vh - var(--art-top, 64px) - var(--art-wheel-bottom, 170px) - 240px)); }
+#artarius-ui > .art-settings { left: 50%; top: var(--art-top, 64px); transform: translateX(-50%); width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - var(--art-top, 64px) - 26px); z-index: 2; }
 #artarius-ui > .art-right { right: var(--art-right, 330px); top: var(--art-top, 64px); width: 360px; max-height: calc(100vh - var(--art-top, 64px) - 26px); }
 .artarius .art-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--art-line); background: var(--art-bg-2); }
 .artarius .art-head h3 { flex: 1; }
@@ -389,11 +390,8 @@
 .artarius-part .art-panel { position: static; display: flex; flex-direction: column; flex: 1; min-height: 0; width: auto; max-height: none; border: 0; border-radius: 0; box-shadow: none; overflow: hidden; }
 .artarius-part .art-panel .art-body { flex: 1; min-height: 0; overflow-y: auto; }
 /* Заголовок и крестик даёт окно Foundry: свои прячем. */
-.artarius-part .art-left > .art-head { display: none; }
+.artarius-part .art-left > .art-head, .artarius-part .art-settings > .art-head { display: none; }
 .artarius-part [data-action="closeRight"] { display: none; }
-.artarius-part .art-turnbar { position: static; transform: none; padding: 8px; align-items: stretch; }
-.artarius-part .art-turn { border-radius: var(--art-radius); box-shadow: none; flex-wrap: wrap; }
-.artarius-part .art-turn-menu { width: auto; box-shadow: none; }
 
 /* Панель на гексе (0.6): кнопки по бокам выбранной клетки, как Token HUD ----- */
 
@@ -464,3 +462,38 @@
 
 /* Окно подробностей гекса: по содержимому, а не на полэкрана. */
 .artarius-part-right .window-content { max-height: 75vh; }
+
+/* Макет C (0.7.0): список слева, правка справа ----------------------- */
+.artarius .art-split { display: grid; grid-template-columns: minmax(130px, 38%) 1fr; gap: 10px; align-items: start; }
+.artarius .art-split-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-height: 440px; overflow-y: auto; padding-right: 4px; border-right: 1px solid var(--art-line); }
+.artarius .art-split-main { min-width: 0; }
+.artarius .art-split-main > h4:first-child { margin-top: 0; display: flex; align-items: center; gap: 6px; }
+.artarius .art-split-list .art-eyebrow { margin: 6px 0 2px; }
+.artarius .art-row-wrap { display: flex; align-items: center; gap: 2px; }
+.artarius .art-row-wrap > .art-row-item { flex: 1; min-width: 0; }
+.artarius .art-row-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 3px 6px; margin: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--art-ink); text-align: left; cursor: pointer; font-size: 13px;
+}
+.artarius .art-row-item:hover { background: var(--art-bg-2); }
+.artarius .art-row-item.active { background: var(--art-bg-3); border-color: var(--art-warn); }
+.artarius .art-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-row-note { color: var(--art-muted); font-size: 11px; flex: none; }
+.artarius .art-row-new { color: var(--art-muted); margin-top: 4px; }
+.artarius .art-row-ico { width: 24px; height: 24px; flex: none; }
+.artarius img.art-row-ico { object-fit: contain; }
+.artarius .art-row-edit { flex: none; width: 26px; height: 26px; padding: 0; background: transparent; border: none; color: var(--art-muted); cursor: pointer; }
+.artarius .art-row-edit:hover { color: var(--art-ink); }
+.artarius .art-type-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; margin-bottom: 8px; padding: 4px; border: 1px solid var(--art-line); border-radius: 4px; }
+.artarius .art-pick-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+.artarius .art-pick-head .art-row-ico { width: 32px; height: 32px; }
+.artarius .art-split-list .art-zone-list { max-height: none; overflow: visible; }
+.artarius .art-split-list .art-search { margin: 6px 0 2px; }
+.artarius .art-settings-tabs { margin: -4px -4px 8px; }
+.artarius .art-settings-body .art-split-list { max-height: 480px; }
+.artarius .art-form-flat { border: none; padding: 0; background: transparent; }
+.artarius .art-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--art-line); border-radius: 10px; font-size: 12px; }
+.artarius .art-world-btns { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.artarius .art-btn.art-icon-only { padding-inline: 8px; }
+@media (max-width: 520px) { .artarius .art-split { grid-template-columns: 1fr; } .artarius .art-split-list { border-right: none; max-height: 200px; } }

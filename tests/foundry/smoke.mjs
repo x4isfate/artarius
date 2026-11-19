@@ -84,7 +84,7 @@ await check("группа инструментов слева", async () => {
   const c = CONFIG.Canvas.layers[LAYER].layerClass.prepareSceneControls();
   assert(c.name === LAYER && c.layer === LAYER && c.visible === true, "группа не видна на сцене Артария");
   const names = Object.keys(c.tools);
-  for ( const n of ["select", "zone", "mark", "line", "queue", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
+  for ( const n of ["select", "zone", "mark", "line", "queue", "settings", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
   assert(!names.includes("turn"), "кнопка хода осталась");
   // 0.6.3: «Осмотр» не открывает окно сам; окно слоёв — по кнопке, его крестик инструмент не гасит.
   c.onToolChange(new Event("x"), c.tools.select, true);
@@ -98,6 +98,14 @@ await check("группа инструментов слева", async () => {
   await tick();
   assert(api().studio.tool === "select" && !win("left"), "крестик окна слоёв выключил инструмент или окно осталось");
   assert(c.tools.queue.button && c.tools.generator.visible, "кнопки не кнопки или генератор скрыт от мастера");
+  // 0.7.0: кнопка «Настройки» открывает и закрывает окно настроек, крестик окна тоже закрывает.
+  assert(c.tools.settings?.button, "нет кнопки настроек");
+  c.tools.settings.onChange(new Event("x"), true);
+  await tick();
+  assert(win("settings")?.querySelector('[data-action="settingsSection"][data-section="layers"]'), "окно настроек не открылось");
+  await uiL.host.windows.settings.close();
+  await tick();
+  assert(!api().studio.settings.open && !win("settings"), "крестик не закрыл настройки");
   c.onToolChange(new Event("x"), c.tools.mark, true);
   assert(api().studio.tool === "mark", "инструмент из панели не выбран");
   await tick();
@@ -257,25 +265,26 @@ await check("линия по гексам и от руки на холсте", a
 await check("выбор значка: разделы, поиск, своя картинка", async () => {
   const s = api().studio;
   s.setTool("mark", { toggle: false });
-  s.openTypeForm("object");
+  s.editTypeInSettings("object", "new");
   await tick();
-  const left = win("left");
+  const left = win("settings");
   assert(left.querySelectorAll('[data-action="pickIcon"]').length >= 10, "нет значков библиотеки");
   left.querySelector('[data-action="iconCat"][data-cat="resources"]').click();
   await tick();
-  const ore = win("left").querySelector('[data-icon$="/ore.svg"]');
+  const ore = win("settings").querySelector('[data-icon$="/ore.svg"]');
   assert(ore, "нет руды в разделе ресурсов");
   ore.click();
   await tick();
   assert(s.typeForm.icon.endsWith("/ore.svg") && s.typeForm.tint, "значок не выбран");
-  const search = win("left").querySelector('[data-model="typeForm.iconQuery"]');
+  const search = win("settings").querySelector('[data-model="typeForm.iconQuery"]');
   search.value = "храм";
   search.dispatchEvent(new Event("input", { bubbles: true }));
   await tick();
-  assert(win("left").querySelector('[data-icon$="/greek-temple.svg"]'), "поиск не нашёл храм");
-  assert(win("left").querySelector('[data-action="browseIcon"]'), "нет кнопки своей картинки");
-  s.typeForm = null;
-  s.changed("ui");
+  assert(win("settings").querySelector('[data-icon$="/greek-temple.svg"]'), "поиск не нашёл храм");
+  assert(win("settings").querySelector('[data-action="browseIcon"]'), "нет кнопки своей картинки");
+  s.closeSettings();
+  await tick();
+  assert(!win("settings"), "настройки не закрылись");
 });
 
 await check("крестик окна инструмента выключает инструмент", async () => {

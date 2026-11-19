@@ -58,7 +58,7 @@ export default class HexLayer extends InteractionLayer {
 
   /**
    * Группа в колонке инструментов слева. Видна только на сцене Артария.
-   * Четыре инструмента и кнопки: слои, заявки, генератор (мастер), справка, кнопки расширений.
+   * Четыре инструмента и кнопки: слои, заявки, настройки, генератор (мастер), справка, кнопки расширений.
    */
   static prepareSceneControls() {
     const tools = {};
@@ -75,6 +75,7 @@ export default class HexLayer extends InteractionLayer {
     button("layers", "fa-solid fa-layer-group", "ART.Layer.title", 9);
     button("queue", "fa-solid fa-scroll", "ART.Queue.title", 10);
     button("generator", "fa-solid fa-mountain-sun", "ART.Gen.title", 12, gm);
+    button("settings", "fa-solid fa-gear", "ART.Settings.title", 11);
     button("guide", "fa-solid fa-circle-question", "ART.Guide.title", 13);
     let order = 20;
     for ( const a of runtime.extraButtons?.() ?? [] ) {

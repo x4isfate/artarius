@@ -12,8 +12,9 @@ const { ApplicationV2 } = foundry.applications.api;
 
 /** Окна по частям: заголовок, значок, размер по умолчанию. */
 const DEFS = {
-  left: { icon: "fa-solid fa-dice-d6", width: 320, height: 560, at: () => ({ left: 120, top: 80 }) },
+  left: { icon: "fa-solid fa-dice-d6", width: 440, height: 560, at: () => ({ left: 120, top: 80 }) },
   right: { icon: "fa-solid fa-hexagon", width: 340, height: "auto", at: () => ({ left: Math.max(120, window.innerWidth - 760), top: 80 }) },
+  settings: { icon: "fa-solid fa-gear", width: 620, height: 600, at: () => ({ left: Math.max(120, (window.innerWidth - 620) / 2), top: 70 }) },
   wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) }
 };
 

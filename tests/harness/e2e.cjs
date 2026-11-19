@@ -382,10 +382,44 @@ async function shot(page, name) {
   /* 13. Прочие кнопки меню ---------------------------------------- */
   await user("gm");
   await act("tool", '[data-tool="select"]');
+  await act("help");
+
+  /* 14. Окно настроек: свои слои, мир (0.7.0) ----------------------- */
+  await act("openSettings");
+  check(await page.locator("#artarius-ui .art-settings").isVisible(), "кнопка «Настройки» открывает окно настроек");
+  await act("settingsPick", '[data-id="new"]');
+  await page.fill('#artarius-ui [data-key="lf-name"]', "Магия");
+  await page.locator('#artarius-ui input[data-model="layerForm.exclusive"]').uncheck();
+  await act("saveLayer");
+  let layers = await ev(() => window.art.backend.layers());
+  const magic = layers.find(l => l.name === "Магия");
+  check(magic && magic.exclusive === false && layers.at(-1).id === magic.id, "новый слой «Магия» добавлен в конец, зоны накладываются");
+  await act("layerUp", `[data-id="${magic.id}"]`);
+  layers = await ev(() => window.art.backend.layers());
+  check(layers.at(-2).id === magic.id, "слой поднимается выше");
+  await page.fill('#artarius-ui [data-key="lf-name"]', "Чары");
+  await page.press('#artarius-ui [data-key="lf-name"]', "Enter");
+  check((await ev(() => window.art.backend.layers())).some(l => l.name === "Чары"), "слой переименован");
+  await act("settingsSection", '[data-section="area"]');
+  await act("settingsPick", '[data-id="new"]');
+  await page.fill('#artarius-ui [data-key="tf-name"]', "Аура");
+  await page.selectOption('#artarius-ui select[data-model="typeForm.layerId"]', magic.id);
+  await act("saveType");
+  check((await ev(id => window.art.backend.atlasTypes.find(t => t.name === "Аура")?.layerId === id, magic.id)), "тип зоны лёг в свой слой");
+  check((await ev(() => window.art.studio.settings.open)), "окно настроек остаётся открытым после сохранения типа");
+  await act("settingsSection", '[data-section="layers"]');
+  await act("settingsPick", `[data-id="${magic.id}"]`);
+  await act("deleteLayer", `[data-id="${magic.id}"]`);
+  layers = await ev(() => window.art.backend.layers());
+  check(!layers.some(l => l.id === magic.id) && (await ev(() => window.art.backend.atlasTypes.find(t => t.name === "Аура")?.layerId)) === "overlay", "слой удалён, его типы переехали в «Прочее»");
+  check(!(await page.locator('#artarius-ui [data-action="deleteLayer"][data-id="terrain"]').count()), "местность удалить нельзя");
+  await act("settingsSection", '[data-section="world"]');
   await act("worldSettings");
   await act("azgaar");
-  await act("help");
-  check((await ev(() => ["worldSettings", "azgaar", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки настроек, Azgaar и справки вызывают свои окна");
+  await act("generator");
+  check((await ev(() => ["worldSettings", "azgaar", "generator", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки мира, Azgaar, генератора и справки вызывают свои окна");
+  await act("closeSettings");
+  check(!(await page.locator("#artarius-ui .art-settings").isVisible()), "крестик закрывает настройки");
   await act("rightTab", '[data-tab="tile"]');
   await act("tool", '[data-tool="select"]');
   check(await page.locator(".art-left").isVisible(), "повторный щелчок по инструменту его не выключает");

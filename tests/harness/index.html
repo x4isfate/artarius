@@ -6,7 +6,8 @@
 <link rel="stylesheet" href="../../styles/artarius.css">
 <style>
   html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
-  #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* Карта правее окна инструмента: окно на стенде не двигается. */
+  #map { position: absolute; top: 0; bottom: 0; left: 520px; right: 0; width: calc(100% - 520px); height: 100%; }
   #map text.lbl { fill: #fff0e0; text-anchor: middle; paint-order: stroke; stroke: #111; stroke-width: 3px; font-weight: 700; pointer-events: none; }
   #map text.ico { text-anchor: middle; font-weight: 700; pointer-events: none; }
   #who { position: fixed; right: 8px; bottom: 8px; z-index: 100; display: flex; gap: 4px; }
