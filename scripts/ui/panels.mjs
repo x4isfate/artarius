@@ -15,6 +15,7 @@ import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PARTS } from "../data/view.mjs";
 import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
 import { MARK_SHAPES, shapeSwatch, shapeOf } from "../data/mark-shape.mjs";
+import { LINE_SHAPES, LINE_PATTERNS, lineCurve, lineDash } from "../canvas/style.mjs";
 
 /**
  * Значок для показа в панели. Белые значки библиотеки рисуются маской цветом типа,
@@ -106,9 +107,18 @@ export default class ArtariusUI {
     this.hud.className = "artarius art-hud";
     this.hud.hidden = true;
     document.body.appendChild(this.hud);
+    // Подсказка с названием линии под курсором.
+    this.tip = document.createElement("div");
+    this.tip.id = "artarius-tip";
+    this.tip.className = "artarius art-tip";
+    this.tip.hidden = true;
+    document.body.appendChild(this.tip);
     this._bind(this.hud);
     this._bindMarkDrag(this.hud);
-    this._unsub = studio.subscribe(what => { if ( what !== "overlay" ) this.render(); });
+    this._unsub = studio.subscribe(what => {
+      if ( what === "hover" ) return this.renderTip();
+      if ( what !== "overlay" ) this.render();
+    });
     this.render();
   }
 
@@ -116,6 +126,7 @@ export default class ArtariusUI {
     this._unsub?.();
     this.root.remove();
     this.hud.remove();
+    this.tip.remove();
     if ( this._hudFrame ) cancelAnimationFrame(this._hudFrame);
   }
 
@@ -203,6 +214,8 @@ export default class ArtariusUI {
     const onInput = ev => {
       const el = ev.target;
       if ( el.type === "color" && ev.type === "input" ) return this._liveColor(el);
+      // Ползунок пишется, когда его отпустили: иначе перерисовка окна обрывает протяжку.
+      if ( el.type === "range" && ev.type === "input" ) return;
       if ( el.dataset.hex ) {
         // Код цвета: принимаем только целый #rrggbb, и только когда поле отпустили.
         if ( ev.type !== "change" ) return;
@@ -304,6 +317,8 @@ export default class ArtariusUI {
       layerDown: el => s.moveLayer(el.dataset.id, 1),
       generator: () => this.backend.openGenerator?.(),
       deleteType: el => s.deleteType(el.dataset.id),
+      lineShape: el => { if ( s.typeForm ) { s.typeForm.lineShape = el.dataset.v; s.changed("ui"); } },
+      linePattern: el => { if ( s.typeForm ) { s.typeForm.linePattern = el.dataset.v; s.changed("ui"); } },
       pickShape: el => { if ( s.typeForm ) { s.typeForm.shape = el.dataset.shape; s.changed("ui"); } },
       setShape: el => s.setField(el.dataset.id, "shape", el.dataset.shape),
       pickPattern: el => { if ( s.typeForm ) { s.typeForm.pattern = el.dataset.pattern; s.changed("ui"); } },
@@ -545,6 +560,34 @@ export default class ArtariusUI {
           title="${esc(this.t(`ART.Shape.${sh}`))}">${shapeSwatch(sh)}</button>`)).join("")}</div></div>`;
   }
 
+  /** Вид линии в форме типа: форма, излом, узор, толщина в начале и в конце. */
+  renderLineStyle(f) {
+    const seg = (list, cur, key) => `<div class="art-seg">${list.map(v => key === "shape"
+      ? `<button type="button" class="art-btn${v === cur ? " active" : ""}" data-action="lineShape" data-v="${v}">${esc(this.t(`ART.LineStyle.${v}`))}</button>`
+      : `<button type="button" class="art-btn${v === cur ? " active" : ""}" data-action="linePattern" data-v="${v}">${esc(this.t(`ART.LineStyle.${v}`))}</button>`).join("")}</div>`;
+    return `<div class="art-field"><span>${esc(this.t("ART.LineStyle.shape"))}</span>${seg(LINE_SHAPES, f.lineShape, "shape")}</div>
+      ${f.lineShape === "rounded" ? `<label class="art-field"><span>${esc(this.t("ART.LineStyle.bend"))} <b>${Math.round((f.bend ?? 0.5) * 100)}%</b></span>
+        <input type="range" min="0" max="1" step="0.05" value="${esc(f.bend ?? 0.5)}" data-model="typeForm.bend" data-key="tf-bend"></label>` : ""}
+      <div class="art-field"><span>${esc(this.t("ART.LineStyle.pattern"))}</span>${seg(LINE_PATTERNS, f.linePattern, "pattern")}</div>
+      <div class="art-grid2">
+        <label class="art-field"><span>${esc(this.t("ART.LineStyle.widthStart"))}</span><input type="number" min="1" max="40" step="1" value="${esc(f.widthStart)}" data-model="typeForm.widthStart" data-key="tf-w0"></label>
+        <label class="art-field"><span>${esc(this.t("ART.LineStyle.widthEnd"))}</span><input type="number" min="1" max="40" step="1" value="${esc(f.widthEnd)}" data-model="typeForm.widthEnd" data-key="tf-w1"></label>
+      </div>
+      <div class="art-line-preview">${this.linePreview(f)}</div>`;
+  }
+
+  /** Образец линии в форме типа (SVG). */
+  linePreview(f) {
+    const pts = [[8, 34], [60, 10], [112, 34], [164, 10], [212, 30]];
+    const style = { shape: f.lineShape, bend: f.bend, pattern: f.linePattern, meander: 0 };
+    const curve = lineCurve(pts, style);
+    const w = Math.max(Number(f.widthStart) || 3, Number(f.widthEnd) || 3);
+    const [dash, gap] = lineDash(style, w);
+    const d = curve.map(([x, y], n) => `${n ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    return `<svg viewBox="0 0 220 44" width="100%" height="44" aria-hidden="true"><path d="${d}" fill="none" stroke="${esc(f.color)}" stroke-width="${w}"
+      stroke-linecap="round" stroke-linejoin="round"${dash > 0 ? ` stroke-dasharray="${dash < 1 ? 0 : dash} ${gap}"` : ""}/></svg>`;
+  }
+
   renderTypeForm() {
     const f = this.studio.typeForm;
     const layers = this.studio.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("");
@@ -559,6 +602,7 @@ export default class ArtariusUI {
         <div class="art-patterns">${PATTERNS.map(p => `<button type="button" class="art-pattern-pick${p === (f.pattern || "none") ? " active" : ""}" data-action="pickPattern" data-pattern="${p}" title="${esc(this.t(`ART.Pattern.${p}`))}">${patternSwatch(p)}</button>`).join("")}</div></div>
       ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : ""}
       ${f.kind === "object" ? this.renderShapePicker(f.shape) : ""}
+      ${f.kind === "line" ? this.renderLineStyle(f) : ""}
       ${icons}
       <div class="art-row-btns">
         <button type="button" class="art-btn art-accent" data-action="saveType">${icon("check")} ${esc(this.t("ART.Save"))}</button>
@@ -667,9 +711,10 @@ export default class ArtariusUI {
         <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
           <textarea rows="2" data-model="line.text" data-key="line-text" placeholder="${esc(this.t("ART.Field.textPh"))}">${esc(l.text ?? "")}</textarea></label>
         <div class="art-field"><span>${esc(this.t("ART.Line.mode"))}</span>
-          <div class="art-seg">${["free", "hex", "draw"].map(m => `<button type="button" class="art-btn${l.mode === m ? " active" : ""}" data-action="lineMode" data-mode="${m}" title="${esc(this.t(`ART.Line.hints.${m}`))}">${icon({ free: "bezier-curve", hex: "border-all", draw: "pencil" }[m])} ${esc(this.t(`ART.Line.modes.${m}`))}</button>`).join("")}</div>
+          <div class="art-seg">${["free", "hex", "edge", "draw"].map(m => `<button type="button" class="art-btn${l.mode === m ? " active" : ""}" data-action="lineMode" data-mode="${m}" title="${esc(this.t(`ART.Line.hints.${m}`))}">${icon({ free: "bezier-curve", hex: "border-all", edge: "vector-square", draw: "pencil" }[m])} ${esc(this.t(`ART.Line.modes.${m}`))}</button>`).join("")}</div>
           <p class="art-hint">${esc(this.t(`ART.Line.hints.${l.mode}`))}</p></div>
         ${l.mode === "free" ? `<label class="art-check"><input type="checkbox" data-model="line.snap" ${l.snap ? "checked" : ""}> ${esc(this.t("ART.Line.snap"))}</label>` : ""}
+        <label class="art-check"><input type="checkbox" data-model="line.join" ${l.join !== false ? "checked" : ""}> ${esc(this.t("ART.Line.join"))}</label>
         <div class="art-selbar"><span>${esc(this.t("ART.Line.points", { n }))}</span></div>
         <div class="art-row-btns art-sticky">
           <button type="button" class="art-btn art-accent" data-action="finishLine" ${n >= 2 ? "" : "disabled"}>${icon("check")} ${esc(this.t("ART.Line.finish"))}</button>
@@ -709,6 +754,18 @@ export default class ArtariusUI {
       };
       this._hudFrame = requestAnimationFrame(loop);
     }
+  }
+
+  /** Подсказка над линией под курсором: название участка или всей линии. */
+  renderTip() {
+    const h = this.studio.hoverLine;
+    if ( !h || !this.project || this._hidden || this.studio.markDrag ) { this.tip.hidden = true; return; }
+    let p;
+    try { p = this.project(h.at); } catch { this.tip.hidden = true; return; }
+    if ( this.tip.textContent !== h.name ) this.tip.textContent = h.name;
+    this.tip.style.left = `${Math.round(p.x)}px`;
+    this.tip.style.top = `${Math.round(p.y)}px`;
+    this.tip.hidden = false;
   }
 
   /** Поставить панель по гексу: центр и полуразмеры гекса на экране. */
@@ -970,6 +1027,9 @@ export default class ArtariusUI {
         <label class="art-field"><span>${esc(this.t("ART.Field.type"))}</span><select ${f("typeId")}>${typeOpts}</select></label>
         ${terrain ? "" : `<label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span>${colorField(`data-id="${esc(id)}" data-field="color"`, color, `${id}:color`)}</label>`}
       </div>
+      ${kind === "line" && s.inspected ? `<label class="art-field"><span>${esc(this.t(s.multi ? "ART.Line.segmentMany" : "ART.Line.segment"))}</span>
+        <input type="text" value="${esc(s.segmentNameHere(id))}" placeholder="${esc(st.name || "")}" ${f("segment")}></label>
+        <p class="art-hint">${esc(this.t("ART.Line.segmentHint"))}</p>` : ""}
       ${kind === "object" ? this.renderShapePicker(st.system.style?.shape ?? type?.style?.shape, id) : ""}
       ${kind === "object" && s.contents().marks.length > 1 && !s.multi ? `<div class="art-row-btns"><span class="art-muted">${esc(this.t("ART.Card.order"))}</span>
         <button type="button" class="art-btn art-icon-only" data-action="markUp" data-id="${esc(id)}" title="${esc(this.t("ART.Card.earlier"))}">${icon("arrow-up")}</button>

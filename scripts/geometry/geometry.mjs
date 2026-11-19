@@ -351,3 +351,24 @@ export function roughPolygon(vertices, amp, steps = 8) {
   }
   return out;
 }
+
+/**
+ * Ломаная со скруглёнными углами. amount 0 — острые углы, 1 — скругление на половину
+ * соседних отрезков (почти плавная линия). samples — точек на каждый угол.
+ */
+export function roundCorners(points, amount = 0.5, samples = 6) {
+  if ( !(amount > 0) || points.length < 3 ) return points.slice();
+  const k = Math.min(1, amount) * 0.5;
+  const out = [points[0]];
+  for ( let i = 1; i < points.length - 1; i++ ) {
+    const [p0, p1, p2] = [points[i - 1], points[i], points[i + 1]];
+    const a = [p1[0] + ((p0[0] - p1[0]) * k), p1[1] + ((p0[1] - p1[1]) * k)];
+    const b = [p1[0] + ((p2[0] - p1[0]) * k), p1[1] + ((p2[1] - p1[1]) * k)];
+    for ( let s = 0; s <= samples; s++ ) {
+      const t = s / samples, u = 1 - t;
+      out.push([(u * u * a[0]) + (2 * u * t * p1[0]) + (t * t * b[0]), (u * u * a[1]) + (2 * u * t * p1[1]) + (t * t * b[1])]);
+    }
+  }
+  out.push(points.at(-1));
+  return out;
+}

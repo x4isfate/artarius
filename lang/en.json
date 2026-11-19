@@ -263,13 +263,20 @@
       "modes": {
         "free": "Free",
         "hex": "By hexes",
-        "draw": "Freehand"
+        "draw": "Freehand",
+        "edge": "Along edges"
       },
       "hints": {
         "free": "Points go where you click. Hold Ctrl to snap a point to the hex center.",
         "hex": "Click hexes: the line runs through the centers of every hex in between.",
-        "draw": "Drag with the mouse button held. The line is saved when you release it."
-      }
+        "draw": "Drag with the mouse button held. The line is saved when you release it.",
+        "edge": "Click near hex corners: the line follows hex edges to each new point. Handy for borders."
+      },
+      "join": "Join with a line of the same type when ends meet",
+      "joined": "Line joined with “{name}”.",
+      "segment": "Name of the part on this hex",
+      "segmentMany": "Name of the part on selected hexes",
+      "segmentHint": "Empty means the part uses the line name. To name a long part, select its hexes with Shift in Inspect."
     },
     "Card": {
       "tab": "Hex",
@@ -460,6 +467,19 @@
       "hexagon": "Hexagon",
       "shield": "Shield",
       "none": "No backing"
+    },
+    "LineStyle": {
+      "shape": "Shape",
+      "straight": "Straight",
+      "rounded": "Elbow",
+      "curved": "Curved",
+      "bend": "Bend",
+      "pattern": "Pattern",
+      "solid": "Solid",
+      "dash": "Dashed",
+      "dot": "Dotted",
+      "widthStart": "Width at start",
+      "widthEnd": "Width at end"
     }
   }
 }

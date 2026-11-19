@@ -265,6 +265,7 @@ export function adapter(h) {
     cellAt: p => h.cellAt(p),
     center: c => h.center(c),
     vertices: c => h.vertices(c),
+    neighbors: c => h.neighbors(c),
     inBounds: c => h.inBounds(c),
     get radius() { return h.radius; },
     allCells: () => h.allCells()
