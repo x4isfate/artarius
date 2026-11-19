@@ -210,7 +210,8 @@ export default class ArtariusUI {
   get actions() {
     const s = this.studio;
     return {
-      tool: el => s.setTool(el.dataset.tool),
+      // Кнопка уже выбранного инструмента его не выключает: выключает крестик в шапке.
+      tool: el => s.setTool(el.dataset.tool, { toggle: false }),
       toggleMenu: () => s.setTool(s.tool ? null : "select"),
       extra: el => EXTRA_ACTIONS.get(el.dataset.id)?.onClick?.(),
       help: () => this.backend.openGuide?.(),
@@ -412,7 +413,7 @@ export default class ArtariusUI {
     else if ( s.tool === "line" ) body = this.renderLineTool();
     else body = this.renderSelectTool();
     return `<header class="art-head">${icon(TOOL_ICONS[s.tool])}<h3>${esc(title)}</h3>
-      <button type="button" class="art-icon-btn" data-action="tool" data-tool="${esc(s.tool)}" title="${esc(this.t("ART.Menu.close"))}">${icon("xmark")}</button></header>
+      <button type="button" class="art-icon-btn" data-action="toggleMenu" title="${esc(this.t("ART.Menu.close"))}">${icon("xmark")}</button></header>
       <div class="art-body" data-scroll="left">${body}</div>`;
   }
 

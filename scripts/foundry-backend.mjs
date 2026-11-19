@@ -322,7 +322,7 @@ export default class FoundryBackend {
         if ( ui.controls?.control?.name === LAYER_NAME && ui.controls?.tool?.name === tool ) return;
         if ( ui.controls?.controls?.[LAYER_NAME] ) ui.controls.activate({ control: LAYER_NAME, tool });
         else canvas[LAYER_NAME]?.activate({ tool });
-      } else if ( canvas[LAYER_NAME]?.active ) {
+      } else if ( canvas[LAYER_NAME]?.active || canvas.activeLayer === canvas[LAYER_NAME] || ui.controls?.control?.name === LAYER_NAME ) {
         if ( ui.controls?.controls?.tokens ) ui.controls.activate({ control: "tokens", tool: "select" });
         else canvas.tokens?.activate();
       }
