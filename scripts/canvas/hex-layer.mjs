@@ -248,7 +248,7 @@ export default class HexLayer extends InteractionLayer {
       if ( !s?.tool || !d ) return;
       if ( d.right ) {
         // Правая кнопка без протяжки; протяжкой Foundry двигает карту.
-        if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick();
+        if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick(scenePoint(ev, el));
         return;
       }
       s.pointerUp();
@@ -257,6 +257,13 @@ export default class HexLayer extends InteractionLayer {
     add(window, "keydown", ev => {
       if ( ev.target?.matches?.("input, textarea, select, [contenteditable]") ) return;
       if ( !runtime.studio?.tool ) return;
+      if ( (ev.ctrlKey || ev.metaKey) && ev.code === "KeyZ" && runtime.studio.lastDeleted ) {
+        // Ctrl+Z после удаления метки правой кнопкой возвращает её; остальное Ctrl+Z — у Foundry.
+        ev.preventDefault();
+        ev.stopPropagation();
+        runtime.studio.restoreDeleted();
+        return;
+      }
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();
         runtime.studio.finishLine();

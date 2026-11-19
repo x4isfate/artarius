@@ -244,6 +244,8 @@
       "cells": "{n} hexes"
     },
     "Mark": {
+      "quickDeleted": "Mark “{name}” deleted. Ctrl+Z brings it back.",
+      "restored": "Mark “{name}” restored.",
       "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
       "type": "Mark type",
       "place": "Place ({n})",

@@ -48,11 +48,12 @@ export default class SvgView {
     });
     this.svg.addEventListener("mousemove", ev => this.studio.pointerMove(this.pt(ev)));
     window.addEventListener("mouseup", () => this.studio.pointerUp());
-    this.svg.addEventListener("contextmenu", ev => { ev.preventDefault(); this.studio.rightClick(); });
+    this.svg.addEventListener("contextmenu", ev => { ev.preventDefault(); this.studio.rightClick(this.pt(ev)); });
     this.svg.addEventListener("dblclick", () => { if ( this.studio.tool === "line" ) this.studio.finishLine(); });
     window.addEventListener("keydown", ev => {
       if ( ev.target.matches("input, textarea, select") ) return;
       if ( ev.key === "Escape" ) this.studio.dismiss();
+      if ( (ev.ctrlKey || ev.metaKey) && ev.code === "KeyZ" && this.studio.lastDeleted ) this.studio.restoreDeleted();
       if ( ev.key === "Enter" && this.studio.tool === "line" ) this.studio.finishLine();
     });
   }
