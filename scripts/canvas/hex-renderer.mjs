@@ -67,6 +67,8 @@ export default class HexRenderer {
     this.labels = this.container.addChild(new PIXI.Container());
     this.ghosts = this.container.addChild(new PIXI.Graphics());
     this.overlay = this.container.addChild(new PIXI.Graphics());
+    // Метка, которую тащат мышью: рисуется целиком, со значком, поверх всего.
+    this.dragMark = this.container.addChild(new PIXI.Container());
     this.eventMode = "none";
     this.container.eventMode = "none";
   }
@@ -315,6 +317,32 @@ export default class HexRenderer {
     }
   }
 
+  /** Метка под курсором при перетаскивании: та же подложка и тот же значок, что на карте. */
+  _drawDragMark(studio, drag) {
+    const box = this.dragMark;
+    if ( !drag ) {
+      if ( box.children.length ) box.removeChildren().forEach(c => c.destroy({ children: true }));
+      this._dragId = null;
+      return;
+    }
+    const grid = this.grid;
+    if ( this._dragId !== drag.id ) {
+      box.removeChildren().forEach(c => c.destroy({ children: true }));
+      this._dragId = drag.id;
+      const state = studio.stateOf(drag.id);
+      if ( !state ) return;
+      const style = resolveStyleOf(state, studio.types);
+      const size = grid.radius * 2 * Math.min(style.size ?? 0.6, 0.8);
+      const prev = this.marks;
+      // _drawMark кладёт метку в this.marks; на время подменяем на контейнер перетаскивания.
+      this.marks = box;
+      try { this._drawMark(state, style, { x: 0, y: 0, d: size }, false); }
+      finally { this.marks = prev; }
+      box.alpha = 0.9;
+    }
+    box.position.set(drag.at.x, drag.at.y);
+  }
+
   /** Выделение, курсор, осматриваемый гекс, начатая линия, призраки правок. */
   drawOverlay(studio) {
     const g = this.overlay;
@@ -357,11 +385,19 @@ export default class HexRenderer {
       }
     }
     if ( studio.selection.size ) {
-      g.beginFill(0xfff0c8, 0.28).lineStyle({ width: 3, color: 0xffe7a8, alpha: 0.95 });
-      for ( const c of studio.selection.values() ) g.drawPolygon(flatV(grid.vertices(c)));
-      g.endFill().lineStyle(0);
+      // Выделение: лёгкая заливка, чтобы цвет местности остался виден, и общая обводка по краю.
+      const sel = [...studio.selection.values()];
+      g.beginFill(0xfff0c8, 0.14);
+      for ( const c of sel ) g.drawPolygon(flatV(grid.vertices(c)));
+      g.endFill();
+      g.lineStyle({ width: 2, color: 0xffe7a8, alpha: 0.45 });
+      for ( const c of sel ) g.drawPolygon(flatV(grid.vertices(c)));
+      g.lineStyle({ width: 4, color: 0xfff4d6, alpha: 0.95, join: PIXI.LINE_JOIN.ROUND });
+      for ( const [a, b] of boundaryEdges(sel, grid.vertices) ) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+      g.lineStyle(0);
     }
-    if ( studio.inspected ) {
+    if ( studio.inspected && !studio.multi ) {
+      // При осмотре нескольких гексов общая граница уже есть: толстая рамка одного гекса только мешает.
       g.lineStyle({ width: 5, color: 0xffffff, alpha: 1 }).drawPolygon(flatV(grid.vertices(studio.inspected))).lineStyle(0);
     }
     if ( studio.hover && studio.tool && studio.tool !== "line" ) {
@@ -375,10 +411,8 @@ export default class HexRenderer {
       const ok = grid.inBounds(to);
       if ( ok ) g.beginFill(0xffcf8a, 0.18).lineStyle({ width: 4, color: 0xffcf8a, alpha: 0.95 })
         .drawPolygon(flatV(grid.vertices(to))).endFill().lineStyle(0);
-      const r = grid.radius * 0.36;
-      g.beginFill(0x111111, 0.55).lineStyle({ width: 3, color: ok ? 0xffcf8a : 0xff6a5a, alpha: 0.95 })
-        .drawCircle(drag.at.x, drag.at.y, r).endFill().lineStyle(0);
     }
+    this._drawDragMark(studio, drag?.moved ? drag : null);
     const pts = studio.tool === "line" ? studio.line.points : [];
     if ( pts.length ) {
       g.lineStyle({ width: 4, color: 0xffe7a8, alpha: 0.95, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });

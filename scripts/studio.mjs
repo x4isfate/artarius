@@ -350,8 +350,10 @@ export default class Studio {
     this.changed("ui");
   }
 
-  /** Правая кнопка: убрать последнюю точку линии или снять выделение. */
-  rightClick() {
+  /** Правая кнопка: убрать последнюю точку линии, удалить метку под курсором или снять выделение. */
+  rightClick(point) {
+    const hit = point && this.tool === "select" && !this.line.points.length ? markAt(this.markSlots().slots, point) : null;
+    if ( hit ) return this.quickDeleteMark(hit.id);
     if ( this.tool === "line" && this.line.points.length ) this.undoPoint();
     else this.selection.clear();
     this.changed("ui");
@@ -963,6 +965,32 @@ export default class Studio {
     if ( this.openId === id ) this.openId = null;
     await this._commit([{ action: "delete", id, name: s.name }]);
     this.changed("ui");
+  }
+
+  /** Быстрое удаление метки (ПКМ): без вопроса, но Ctrl+Z возвращает её. */
+  async quickDeleteMark(id) {
+    const s = this.stateOf(id);
+    if ( !s ) return;
+    this._pending?.delete(id);
+    if ( this.openId === id ) this.openId = null;
+    this.lastDeleted = foundry_clone(s);
+    const name = s.name || this.t("ART.Card.unnamed");
+    await this._commit([{ action: "delete", id, name: s.name }]);
+    this.backend.notify("info", this.t("ART.Mark.quickDeleted", { name }));
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Вернуть метку, удалённую правой кнопкой. Возвращает true, если было что возвращать. */
+  async restoreDeleted() {
+    const state = this.lastDeleted;
+    if ( !state ) return false;
+    this.lastDeleted = null;
+    await this._commit([{ action: "create", id: state.id, state }]);
+    this.backend.notify("info", this.t("ART.Mark.restored", { name: state.name || this.t("ART.Card.unnamed") }));
+    this.changed("ui");
+    this.changed("overlay");
+    return true;
   }
 
   /** Кусок линии на осматриваемых гексах: [from, to] номера точек или null. */

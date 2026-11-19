@@ -513,3 +513,14 @@
 }
 #artarius-tip[hidden] { display: none; }
 .artarius .art-line-preview { margin: 4px 0 8px; padding: 4px; border: 1px solid var(--art-line); border-radius: 4px; background: var(--art-bg-2); }
+
+/* 0.9.1: выбранная кнопка читается в любой теме: текст не красится, выделяет рамка. */
+.artarius .art-btn.active,
+.artarius-part .artarius .art-btn.active {
+  color: var(--button-text-color, var(--art-ink)); background: var(--button-background-color, var(--art-bg-3));
+  border-color: var(--art-warn); box-shadow: inset 0 0 0 1px var(--art-warn);
+}
+/* Значки в выборе: размер в пикселях. Кнопки Foundry меняют раскладку, и проценты превращались в ноль. */
+.artarius .art-icon-pick, .artarius-part .artarius .art-icon-pick { min-width: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; }
+.artarius .art-icon-pick > .art-icon-img, .artarius .art-icon-pick > img,
+.artarius-part .artarius .art-icon-pick > .art-icon-img { width: 34px; height: 34px; min-width: 34px; flex: none; display: block; margin: 0; }
