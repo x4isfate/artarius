@@ -119,7 +119,7 @@ test("каждый гекс сцены попадает ровно в одну �
 test("страны становятся зонами владений из своих гексов", () => {
   const { features, stats, mapId } = build();
   assert.equal(mapId, "777");
-  assert.deepEqual(stats, { terrain: 2, states: 2, provinces: 0, burgs: 2, rivers: 1, routes: 2 });
+  assert.deepEqual(stats, { terrain: 2, states: 2, provinces: 0, cultures: 0, religions: 0, burgs: 2, rivers: 1, routes: 2 });
   const realm = features.find(f => f.name === "Царство Кумачей");
   assert.equal(realm.system.kind, "area");
   assert.equal(realm.system.typeId, "realm");
@@ -166,7 +166,7 @@ test("реки и дороги остаются свободными линия�
 
 test("можно взять только часть: провинции без остального", () => {
   const { stats, features } = build({ parts: { terrain: false, states: false, provinces: true, burgs: false, rivers: false, routes: false } });
-  assert.deepEqual(stats, { terrain: 0, states: 0, provinces: 1, burgs: 0, rivers: 0, routes: 0 });
+  assert.deepEqual(stats, { terrain: 0, states: 0, provinces: 1, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0 });
   assert.equal(features[0].system.layerId, "regions");
   assert.equal(features[0].system.typeId, "region");
 });

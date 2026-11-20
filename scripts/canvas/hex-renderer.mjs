@@ -7,6 +7,7 @@ import { shapePoints, shapeOf } from "../data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
+import { FIELD_IDS, RAMPS, ICE_TEMP, fieldAt, fieldsFit, rampColor } from "../data/fields.mjs";
 import { layoutMarks, counterAt } from "../data/mark-layout.mjs";
 import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
 import { lineCurve, lineDash } from "./style.mjs";
@@ -62,9 +63,14 @@ export default class HexRenderer {
     this.container = new PIXI.Container();
     this.base = this.container.addChild(new PIXI.Graphics());
     this.zones = this.container.addChild(new PIXI.Container());
+    // Слои данных как в Azgaar (высота, климат, население, лёд) и сетка поверх зон.
+    this.fieldLayer = this.container.addChild(new PIXI.Container());
+    this.gridLines = this.container.addChild(new PIXI.Graphics());
     this.lines = this.container.addChild(new PIXI.Container());
     this.marks = this.container.addChild(new PIXI.Container());
     this.labels = this.container.addChild(new PIXI.Container());
+    // Координаты гексов, роза ветров, масштаб.
+    this.decor = this.container.addChild(new PIXI.Container());
     this.ghosts = this.container.addChild(new PIXI.Graphics());
     this.overlay = this.container.addChild(new PIXI.Graphics());
     // Метка, которую тащат мышью: рисуется целиком, со значком, поверх всего.
@@ -107,9 +113,11 @@ export default class HexRenderer {
     g.beginFill(color(world.baseColor), 1);
     for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
     g.endFill();
+    const lines = this.gridLines;
+    lines.clear();
     if ( world.gridAlpha > 0 ) {
-      g.lineStyle({ width: 1.5, color: color(world.gridColor), alpha: world.gridAlpha });
-      for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
+      lines.lineStyle({ width: 1.5, color: color(world.gridColor), alpha: world.gridAlpha });
+      for ( const c of cells ) lines.drawPolygon(flatV(this.grid.vertices(c)));
     }
   }
 
@@ -118,10 +126,11 @@ export default class HexRenderer {
   }
 
   /** Зоны, линии, метки и подписи. */
-  drawData(states, types, layers, world = {}, view = {}) {
+  drawData(states, types, layers, world = {}, view = {}, fields = null) {
     this.rough = !!world.rough;
-    const show = { marks: true, resources: true, lines: true, labels: true, ...view };
-    for ( const c of [this.zones, this.lines, this.marks, this.labels] ) this._clear(c);
+    const show = { marks: true, resources: true, lines: true, rivers: true, labels: true, borders: true, grid: true, ...view };
+    this.showBorders = show.borders;
+    for ( const c of [this.zones, this.fieldLayer, this.lines, this.marks, this.labels, this.decor] ) this._clear(c);
     const hidden = new Set(layers.filter(l => l.visible === false).map(l => l.id));
     const order = new Map(layers.map((l, n) => [l.id, n]));
     const all = [...states.values()];
@@ -134,29 +143,137 @@ export default class HexRenderer {
       const cells = (vis.get(z.id) ?? []).filter(inside);
       this._drawZone(z, cells, resolveStyleOf(z, types), layerIdOf(z, types));
     }
-    if ( show.lines ) for ( const l of all.filter(s => s.system.kind === "line") ) this._drawLine(l, resolveStyleOf(l, types));
+    this._drawFields(fields, show);
+    for ( const l of all.filter(s => s.system.kind === "line") ) {
+      if ( isRiverLine(l, types) ? show.rivers : show.lines ) this._drawLine(l, resolveStyleOf(l, types));
+    }
     this._drawMarks(all.filter(s => s.system.kind === "object"
       && (isResourceType(s.system.typeId) ? show.resources : show.marks)), types);
     this.labels.visible = show.labels;
+    this.gridLines.visible = show.grid;
+    if ( show.coords ) this._drawCoords();
+    if ( show.windrose ) this._drawWindRose();
+    if ( show.scale ) this._drawScale(world);
+  }
+
+  /** Высота, температура, осадки, население и лёд: гексы красятся по шкале, как слои Azgaar. */
+  _drawFields(fields, show) {
+    const cells = this.grid.allCells();
+    if ( !fields || !fieldsFit(fields, cells) ) return;
+    const ALPHA = { height: 0.8, temp: 0.6, prec: 0.6, pop: 0.65 };
+    const SHOW = { height: "heights", temp: "temp", prec: "prec", pop: "pop" };
+    for ( const id of FIELD_IDS ) {
+      if ( !show[SHOW[id]] ) continue;
+      const g = new PIXI.Graphics();
+      for ( const c of cells ) {
+        const v = fieldAt(fields, id, c);
+        if ( v === null ) continue;
+        // Население моря и пустошей не красим, иначе всё поле фиолетовое.
+        if ( id === "pop" && v <= 0 ) continue;
+        g.beginFill(color(rampColor(RAMPS[id], v)), ALPHA[id]).drawPolygon(flatV(this.grid.vertices(c))).endFill();
+      }
+      this.fieldLayer.addChild(g);
+    }
+    if ( show.ice ) {
+      const g = new PIXI.Graphics();
+      const r = this.grid.radius;
+      for ( const c of cells ) {
+        const t = fieldAt(fields, "temp", c);
+        if ( t === null || t > ICE_TEMP ) continue;
+        g.beginFill(0xf4fbff, 0.78).drawPolygon(flatV(this.grid.vertices(c))).endFill();
+        const { x, y } = this.grid.center(c);
+        g.lineStyle({ width: Math.max(1, r / 30), color: 0x9cc7e0, alpha: 0.9 });
+        g.moveTo(x - (r * 0.35), y - (r * 0.1)).lineTo(x + (r * 0.1), y - (r * 0.35));
+        g.moveTo(x - (r * 0.1), y + (r * 0.35)).lineTo(x + (r * 0.35), y + (r * 0.1));
+        g.lineStyle(0);
+      }
+      this.fieldLayer.addChild(g);
+    }
+  }
+
+  /** Рамка поля в координатах холста. */
+  _bounds() {
+    const cells = this.grid.allCells();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for ( const c of cells ) {
+      const { x, y } = this.grid.center(c);
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    const r = this.grid.radius;
+    return { x0: x0 - r, y0: y0 - r, x1: x1 + r, y1: y1 + r };
+  }
+
+  /** Координаты гексов «ряд:столбец», как в «Перейти к гексу». На большом поле — у каждого пятого гекса. */
+  _drawCoords() {
+    const cells = this.grid.allCells();
+    const step = cells.length > 3000 ? 5 : 1;
+    const size = Math.max(8, Math.round(this.grid.radius * 0.3));
+    for ( const [i, j] of cells ) {
+      if ( step > 1 && (i % step || j % step) ) continue;
+      const { x, y } = this.grid.center([i, j]);
+      const t = makeLabel(`${i}:${j}`, size, "#f6efe2");
+      t.alpha = 0.85;
+      t.position.set(x, y - (this.grid.radius * 0.6));
+      this.decor.addChild(t);
+    }
+  }
+
+  /** Роза ветров в правом верхнем углу поля. */
+  _drawWindRose() {
+    const b = this._bounds();
+    const R = Math.min(this.grid.radius * 2.4, (b.x1 - b.x0) * 0.06);
+    const cx = b.x1 - (R * 1.5), cy = b.y0 + (R * 1.6);
+    const g = new PIXI.Graphics();
+    g.lineStyle({ width: Math.max(1, R / 40), color: 0x3a2d22, alpha: 0.9 });
+    g.beginFill(0xf6efe2, 0.55).drawCircle(cx, cy, R * 0.72).endFill();
+    for ( let n = 0; n < 8; n++ ) {
+      const a = (n * Math.PI / 4) - (Math.PI / 2);
+      const long = n % 2 === 0;
+      const len = long ? R : R * 0.55, w = long ? R * 0.16 : R * 0.1;
+      const tip = [cx + (Math.cos(a) * len), cy + (Math.sin(a) * len)];
+      const l = [cx + (Math.cos(a - (Math.PI / 2)) * w), cy + (Math.sin(a - (Math.PI / 2)) * w)];
+      const rr = [cx + (Math.cos(a + (Math.PI / 2)) * w), cy + (Math.sin(a + (Math.PI / 2)) * w)];
+      g.beginFill(0x3a2d22, 0.95).drawPolygon([cx, cy, ...l, ...tip]).endFill();
+      g.beginFill(0xf6efe2, 0.95).drawPolygon([cx, cy, ...rr, ...tip]).endFill();
+    }
+    this.decor.addChild(g);
+    const t = makeLabel("N", Math.round(R * 0.32), "#f6efe2");
+    t.position.set(cx, cy - R - (R * 0.22));
+    this.decor.addChild(t);
+  }
+
+  /** Линейка масштаба в левом нижнем углу: пять гексов и сколько это километров (если известно). */
+  _drawScale(world) {
+    const b = this._bounds();
+    const hexW = Math.sqrt(3) * this.grid.radius;
+    const n = 5;
+    const len = hexW * n;
+    const x = b.x0 + (this.grid.radius * 1.5), y = b.y1 - (this.grid.radius * 1.4);
+    const g = new PIXI.Graphics();
+    const h = Math.max(4, this.grid.radius * 0.18);
+    g.lineStyle({ width: Math.max(1, h / 4), color: 0x1a1410, alpha: 1 });
+    for ( let k = 0; k < n; k++ ) {
+      g.beginFill(k % 2 ? 0xf6efe2 : 0x1a1410, 0.95).drawRect(x + (k * hexW), y, hexW, h).endFill();
+    }
+    this.decor.addChild(g);
+    const km = Number(world.hexKm);
+    const text = km > 0 ? `${Math.round(km * n)} ${world.distanceUnit || "км"}` : `${n} гексов`;
+    const t = makeLabel(text, Math.round(this.grid.radius * 0.42), "#f6efe2");
+    t.position.set(x + (len / 2), y - (this.grid.radius * 0.35));
+    this.decor.addChild(t);
   }
 
   _drawZone(state, cells, style, layerId) {
     if ( !cells.length ) return;
     const g = new PIXI.Graphics();
-    const solid = (style.alpha ?? 0.3) >= 1;
     // Неровные границы только у местности: державы и области остаются ровно по гексам.
     const rough = this.rough && layerId === "terrain";
     const amp = this.grid.radius * 0.3;
     g.beginFill(color(style.color), style.alpha ?? 0.3);
     for ( const c of cells ) g.drawPolygon(rough ? roughPolygon(this.grid.vertices(c), amp) : flatV(this.grid.vertices(c)));
     g.endFill();
-    if ( solid ) {
-      g.lineStyle({ width: 1, color: 0x000000, alpha: 0.18 });
-      for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
-      g.lineStyle(0);
-    }
     if ( style.pattern && style.pattern !== "none" ) this._drawPattern(g, cells, style);
-    if ( style.borderWidth > 0 ) {
+    if ( style.borderWidth > 0 && this.showBorders !== false ) {
       g.lineStyle({
         width: style.borderWidth, color: color(style.borderColor || style.color), alpha: style.borderAlpha ?? 0.95,
         cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND
@@ -461,4 +578,11 @@ export default class HexRenderer {
       g.lineStyle(0);
     }
   }
+}
+
+/** Река или ручей: тип «river» или тип с пометкой water. Остальные линии — пути. */
+export function isRiverLine(state, types) {
+  const id = state.system?.typeId;
+  if ( id === "river" ) return true;
+  return !!types?.find?.(t => t.id === id)?.water;
 }

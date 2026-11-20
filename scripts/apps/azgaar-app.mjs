@@ -116,28 +116,38 @@ export default class AzgaarApp extends ApplicationV2 {
   static async #onImport() {
     const file = this.element.querySelector("[name=file]")?.files?.[0];
     if ( !file ) return ui.notifications.warn(L("VMAP.Azgaar.noFile"));
-    const scene = canvas.scene;
-    if ( !scene ) return ui.notifications.warn(L("VMAP.Azgaar.noScene"));
-    let data;
-    try {
-      data = JSON.parse(await file.text());
-    } catch {
-      // Чаще всего это сохранение .map: оно не JSON, нужен «Export → Export to JSON → Full».
-      const key = /\.map$/i.test(file.name) ? "isMap" : "notJson";
-      return ui.notifications.error(L(`VMAP.Azgaar.error.${key}`), { permanent: true });
-    }
-    const problem = validateAzgaar(data);
-    if ( problem ) return ui.notifications.error(L(`VMAP.Azgaar.error.${problem}`));
     this.busy = true;
     this.render();
     try {
-      const result = await importAzgaar(data, scene, this.importOptions);
-      ui.notifications.info(game.i18n.format("VMAP.Azgaar.done", result.stats));
+      await importAzgaarText(await file.text(), file.name, this.importOptions);
     } finally {
       this.busy = false;
       this.render();
     }
   }
+}
+
+/**
+ * Импорт из текста файла с понятными ошибками в уведомлениях. Этим пользуются окно импорта и вкладка «Мир».
+ * Возвращает результат импорта или null.
+ */
+export async function importAzgaarText(text, fileName = "", options = {}) {
+  const scene = canvas.scene;
+  if ( !scene ) { ui.notifications.warn(L("VMAP.Azgaar.noScene")); return null; }
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // Чаще всего это сохранение .map: оно не JSON, нужен «Export → Export to JSON → Full».
+    const key = /\.map$/i.test(fileName) ? "isMap" : "notJson";
+    ui.notifications.error(L(`VMAP.Azgaar.error.${key}`), { permanent: true });
+    return null;
+  }
+  const problem = validateAzgaar(data);
+  if ( problem ) { ui.notifications.error(L(`VMAP.Azgaar.error.${problem}`)); return null; }
+  const result = await importAzgaar(data, scene, options);
+  ui.notifications.info(game.i18n.format("VMAP.Azgaar.done", result.stats));
+  return result;
 }
 
 /**
@@ -175,6 +185,14 @@ export async function importAzgaar(data, scene = canvas.scene, { parts = AZGAAR_
   for ( let i = 0; i < create.length; i += 200 ) {
     await applyPlan(atlas, { create: create.slice(i, i + 200), update: [], delete: [], skipped: [] });
   }
+  // Слои климата и масштаб: сколько километров в ширине гекса (у Azgaar distanceScale — единиц на пиксель карты).
+  const scale = Number(data.settings?.distanceScale);
+  const world = { ...(scene.getFlag(MODULE_ID, "world") ?? {}) };
+  if ( Number.isFinite(scale) && scale > 0 && data.info?.width ) {
+    world.hexKm = Math.round(scale * Math.sqrt(3) * grid.radius * (data.info.width / rect.width) * 10) / 10;
+    world.distanceUnit = String(data.settings?.distanceUnit ?? "km");
+  }
+  await scene.update({ [`flags.${MODULE_ID}.fields`]: built.fields, [`flags.${MODULE_ID}.world`]: world });
   if ( built.name && !atlas.getFlag(MODULE_ID, "azgaarName") ) await atlas.setFlag(MODULE_ID, "azgaarName", built.name);
   Hooks.callAll("artarius.importAzgaar", { scene, atlas, data, built, removed: old.length });
   return { ...built, removed: old.length };
