@@ -99,13 +99,13 @@ export function fieldLabel(id, value) {
  * Поля для генератора: высота 0–100 (море ниже 20), температура от широты и высоты,
  * осадки из влажности, население по местности.
  */
-export function generatedFields({ cells, height, moist, lat, seaLevel, terrain, key }) {
+export function generatedFields({ cells, height, moist, lat, temp: tempMap = null, seaLevel, terrain, key }) {
   const land = [...height.values()].filter(h => h >= seaLevel);
   const top = land.length ? Math.max(...land) : seaLevel + 1;
   const bottom = Math.min(...height.values());
   const ms = [...moist.values()];
   const mMin = Math.min(...ms), mMax = Math.max(...ms);
-  const POP = { plains: 12, forest: 5, hills: 6, swamp: 2, desert: 1, mountains: 1, snow: 0, water: 0 };
+  const POP = { plains: 12, forest: 5, hills: 6, swamp: 2, desert: 1, mountains: 1, snow: 0, water: 0, savanna: 7, jungle: 3, taiga: 2, tundra: 1, mangrove: 2 };
   return buildFields(cells, c => {
     const k = key(c);
     const ht = height.get(k);
@@ -113,7 +113,8 @@ export function generatedFields({ cells, height, moist, lat, seaLevel, terrain, 
       ? (SEA_LEVEL - 1) * (ht - bottom) / ((seaLevel - bottom) || 1)
       : SEA_LEVEL + ((100 - SEA_LEVEL) * (ht - seaLevel) / ((top - seaLevel) || 1));
     const la = lat.get(k);
-    const temp = 28 - (la * 48) - (Math.max(0, h - SEA_LEVEL) * 0.35);
+    // Температура генератора 0…1 переводится в градусы: −20…+32 °C.
+    const temp = tempMap?.has(k) ? -20 + (tempMap.get(k) * 52) : 28 - (la * 48) - (Math.max(0, h - SEA_LEVEL) * 0.35);
     const prec = 100 * (moist.get(k) - mMin) / ((mMax - mMin) || 1);
     const t = terrain.get(k);
     const pop = (POP[t] ?? 0) * (0.5 + (prec / 100)) * (temp < -5 ? 0.2 : 1);

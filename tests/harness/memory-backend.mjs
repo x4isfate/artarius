@@ -82,6 +82,7 @@ export default class MemoryBackend {
   permissions() { return permsFor(this.permConfig ?? {}, { id: this.me, role: this.isGM ? 4 : 1, isGM: this.isGM }); }
   permissionConfig() { return clone(this.permConfig ?? {}); }
   setPermissionConfig(config) { this.permConfig = clone(config); this.emit(); }
+  fonts() { return ["Amiri", "Modesto Condensed", "Signika"]; }
   roster() { return this.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, role: 1 })); }
 
   types() {

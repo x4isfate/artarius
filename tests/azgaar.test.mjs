@@ -98,7 +98,11 @@ test("местность: вода по высоте и биому, горы и 
   assert.equal(terrainOf({ h: 40, biome: 0 }), "water");
   assert.equal(terrainOf({ h: 80, biome: 6 }), "mountains");
   assert.equal(terrainOf({ h: 55, biome: 6 }), "hills");
-  assert.equal(terrainOf({ h: 30, biome: 9 }), "forest");
+  assert.equal(terrainOf({ h: 30, biome: 9 }), "taiga");
+  assert.equal(terrainOf({ h: 30, biome: 6 }), "forest");
+  assert.equal(terrainOf({ h: 30, biome: 3 }), "savanna");
+  assert.equal(terrainOf({ h: 30, biome: 7 }), "jungle");
+  assert.equal(terrainOf({ h: 30, biome: 10 }), "tundra");
   assert.equal(terrainOf({ h: 30, biome: 1 }), "desert");
   assert.equal(terrainOf({ h: 30, biome: 12 }), "swamp");
 });
@@ -119,7 +123,7 @@ test("каждый гекс сцены попадает ровно в одну �
 test("страны становятся зонами владений из своих гексов", () => {
   const { features, stats, mapId } = build();
   assert.equal(mapId, "777");
-  assert.deepEqual(stats, { terrain: 2, states: 2, provinces: 0, cultures: 0, religions: 0, burgs: 2, rivers: 1, routes: 2 });
+  assert.deepEqual(stats, { terrain: 2, states: 2, provinces: 0, cultures: 0, religions: 0, burgs: 2, rivers: 1, routes: 2, markers: 0, armies: 0 });
   const realm = features.find(f => f.name === "Царство Кумачей");
   assert.equal(realm.system.kind, "area");
   assert.equal(realm.system.typeId, "realm");
@@ -166,7 +170,7 @@ test("реки и дороги остаются свободными линия�
 
 test("можно взять только часть: провинции без остального", () => {
   const { stats, features } = build({ parts: { terrain: false, states: false, provinces: true, burgs: false, rivers: false, routes: false } });
-  assert.deepEqual(stats, { terrain: 0, states: 0, provinces: 1, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0 });
+  assert.deepEqual(stats, { terrain: 0, states: 0, provinces: 1, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0, markers: 0, armies: 0 });
   assert.equal(features[0].system.layerId, "regions");
   assert.equal(features[0].system.typeId, "region");
 });
@@ -178,4 +182,31 @@ test("недостающие типы и слои добавляются, сво
   assert.equal(types.length, AZGAAR_TYPES.length);
   assert.deepEqual(layers.map(l => l.id).sort(), [...new Set(["politics", ...AZGAAR_LAYERS.map(l => l.id)])].sort());
   assert.equal(layers.find(l => l.id === "politics").name, "П");
+});
+
+test("маркеры Azgaar: эмодзи, название и легенда из заметок; войска отдельным типом со ссылкой на страну", () => {
+  const data = fixture();
+  data.pack.markers = [{ i: 0, icon: "🌋", type: "volcanoes", x: 25, y: 15, cell: 8 }, { i: 1, icon: "🐉", type: "weird stuff", x: 45, y: 25 }];
+  data.notes = [{ id: "marker0", name: "Гора Пепла", legend: "Старый вулкан.<br>Дымит <b>по ночам</b>.<script>alert(1)</script>" }];
+  data.pack.states[2].military = [{ i: 0, name: "Первый легион", x: 45, y: 25, n: 0, a: 1200, u: { infantry: 1000 } }, { i: 1, name: "Флот Винтера", x: 55, y: 35, n: 1 }];
+  const { features, stats, types } = buildAzgaarFeatures(data, { rect, hexes, center, cellAt, newId });
+  assert.equal(stats.markers, 2);
+  assert.equal(stats.armies, 2);
+  const volcano = features.find(f => f.name === "Гора Пепла");
+  assert.equal(volcano.system.typeId, "az-marker-volcanoes");
+  assert.equal(volcano.text, "<p>Старый вулкан.</p><p>Дымит по ночам.</p>");
+  assert.deepEqual(volcano.system.geometry.cell, cellAt(toScene([25, 15])));
+  const vt = types.find(x => x.id === "az-marker-volcanoes");
+  assert.equal(vt.style.emoji, "🌋");
+  assert.equal(vt.name, "Вулканы");
+  assert.equal(vt.folder, "Маркеры Azgaar");
+  assert.ok(types.some(x => x.id === "az-marker-weird-stuff"));
+  const winter = features.find(f => f.name === "Винтер");
+  const legion = features.find(f => f.name === "Первый легион");
+  assert.equal(legion.system.typeId, "army");
+  assert.deepEqual(legion.system.links, [{ target: winter.id, role: "войско" }]);
+  assert.equal(legion.text, "", "без состава");
+  assert.equal(features.find(f => f.name === "Флот Винтера").system.typeId, "fleet");
+  const merged = mergeTypesAndLayers([], [], types);
+  assert.ok(merged.types.some(x => x.id === "army") && merged.types.some(x => x.id === "az-marker-volcanoes"));
 });

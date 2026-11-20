@@ -5,7 +5,7 @@
 import { generatedFields } from "../data/fields.mjs";
 import { MODULE_ID, FEATURE_TYPE } from "../constants.mjs";
 import { getAtlas, ensureAtlas, getAtlasTypes, getLayers, setTypes, setLayers, applyPlan } from "../data/store.mjs";
-import { generateWorld, withResourceTypes, GEN_DEFAULTS } from "../gen/mapgen.mjs";
+import { generateWorld, withResourceTypes, withNeutralTypes, GEN_DEFAULTS } from "../gen/mapgen.mjs";
 import { upgradedTypesAndLayers } from "../data/store.mjs";
 import { esc } from "../ui/dom.mjs";
 import { resizeWorld, sceneDims } from "./world-size.mjs";
@@ -112,12 +112,13 @@ export async function generateTestWorld(options = {}) {
   const built = generateWorld({
     cells: grid.allCells(), center: grid.center, neighbors: grid.neighbors, inBounds: grid.inBounds,
     seed: options.seed, water: options.water, mountains: options.mountains, resources: options.resources,
+    neutral: options.neutral, recipe: options.recipe,
     realms, newId: () => foundry.utils.randomID()
   });
 
   // Типы: стартовый набор (местность, держава, город) и ресурсы.
   const upgraded = upgradedTypesAndLayers(getAtlasTypes(atlas), getLayers(atlas));
-  await setTypes(atlas, withResourceTypes(upgraded.types));
+  await setTypes(atlas, withNeutralTypes(withResourceTypes(upgraded.types)));
   await setLayers(atlas, upgraded.layers);
 
   const old = atlas.pages.filter(p => p.type === FEATURE_TYPE && (options.clear || p._source.system?.ext?.artariusGen)).map(p => p.id);

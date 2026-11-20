@@ -168,14 +168,14 @@ export async function importAzgaar(data, scene = canvas.scene, { parts = AZGAAR_
   const grid = api.backend.grid;
   const rect = canvas.dimensions.sceneRect;
   const atlas = getAtlas(scene) ?? await ensureAtlas(scene);
-  const merged = mergeTypesAndLayers(getAtlasTypes(atlas), getLayers(atlas));
-  await setTypes(atlas, merged.types);
-  await setLayers(atlas, merged.layers);
-
   const built = buildAzgaarFeatures(data, {
     rect, parts, hexes: grid.allCells(), center: grid.center, cellAt: grid.cellAt,
     newId: () => foundry.utils.randomID()
   });
+  // Типы маркеров и войск появляются из самой карты.
+  const merged = mergeTypesAndLayers(getAtlasTypes(atlas), getLayers(atlas), built.types);
+  await setTypes(atlas, merged.types);
+  await setLayers(atlas, merged.layers);
   const old = replace
     ? atlas.pages.filter(p => p.type === FEATURE_TYPE && p._source.system?.ext?.azgaar).map(p => p.id)
     : [];

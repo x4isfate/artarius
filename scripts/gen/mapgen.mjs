@@ -11,6 +11,7 @@
  */
 import { seededRandom } from "../geometry/geometry.mjs";
 import { REALM_COLORS } from "../constants.mjs";
+import { RECIPES, layoutRecipe, piecesHeight, NEUTRAL_OBJECTS, NEUTRAL_TYPES, PIECES } from "./pieces.mjs";
 
 
 /** Типы ресурсов: метки. Недостающие добавляются в атлас при генерации. */
@@ -31,10 +32,15 @@ const RESOURCE_BY_TERRAIN = {
   mountains: [["res-iron", 3], ["res-gold", 1], ["res-stone", 1]],
   swamp: [["res-wood", 1]],
   desert: [["res-gold", 1], ["res-stone", 2]],
+  savanna: [["res-grain", 2], ["res-stone", 1]],
+  jungle: [["res-wood", 2], ["res-gold", 1]],
+  taiga: [["res-wood", 3], ["res-iron", 1]],
+  tundra: [["res-stone", 1], ["res-iron", 1]],
+  mangrove: [["res-wood", 1]],
   coast: [["res-fish", 1]]
 };
 
-export const GEN_DEFAULTS = { seed: "", water: 0.35, mountains: 0.1, resources: 0.1, realms: [] };
+export const GEN_DEFAULTS = { seed: "", water: 0.35, mountains: 0.1, resources: 0.1, neutral: 0.5, recipe: "", realms: [] };
 
 const key = ([i, j]) => `${i},${j}`;
 
@@ -94,52 +100,141 @@ export function generateTerrain(options) {
   return generateTerrainData(options).terrain;
 }
 
-/** Местность и то, из чего она получилась: высота, влажность, широта, уровень моря (для слоёв климата). */
-export function generateTerrainData({ cells, center, seed = "", water = GEN_DEFAULTS.water, mountains = GEN_DEFAULTS.mountains }) {
+/**
+ * Местность и то, из чего она получилась: высота, влажность, температура, широта, уровень моря.
+ *
+ * Рельеф собирается из «кусочков» (pieces.mjs) по случайному рецепту плюс мелкий шум.
+ * Температура падает от экватора к полюсам и с высотой, влажность растёт у воды и падает
+ * за горами (ветер с запада). Биомы идут по порядку тепла и влаги, поэтому пустыня не встаёт
+ * рядом с тундрой, а границы между ними размыты шумом.
+ */
+export function generateTerrainData({ cells, center, seed = "", water = GEN_DEFAULTS.water, mountains = GEN_DEFAULTS.mountains, recipe = null }) {
   const rnd = seededRandom(`terrain:${seed}`);
-  const hNoise = makeNoise(rnd);
+  const dNoise = makeNoise(rnd);
   const mNoise = makeNoise(rnd);
+  const tNoise = makeNoise(rnd);
   const pts = cells.map(c => center(c));
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
-  // Масштаб шума: около 5 «пятен» суши по длинной стороне.
-  const scale = 5 / Math.max(w, h);
-  const height = new Map(), moist = new Map(), lat = new Map();
+  const ax = w / h;
+  const scale = 6 / Math.max(w, h);
+  const pickRecipe = RECIPES.find(r => r.id === recipe) ?? RECIPES[Math.floor(rnd() * RECIPES.length)];
+  const layout = layoutRecipe(pickRecipe, rnd);
+  const shapeH = piecesHeight(layout, ax, rnd);
+  // Экватор гуляет: мир может быть целиком северным или южным.
+  const equator = 0.5 + ((rnd() - 0.5) * 0.5);
+  const height = new Map(), moist = new Map(), lat = new Map(), uv = new Map();
   cells.forEach((c, n) => {
     const p = pts[n];
     const u = (p.x - minX) / w, v = (p.y - minY) / h;
-    // Края поля опускаются: материк в середине, море по краям.
     const edge = Math.min(u, 1 - u, v, 1 - v);
-    const falloff = Math.min(1, edge / 0.18);
+    const falloff = Math.min(1, edge / 0.1);
     const k = key(c);
-    height.set(k, (hNoise(p.x * scale, p.y * scale) * 0.75) + (falloff * 0.35));
-    moist.set(k, mNoise((p.x * scale * 1.3) + 17, (p.y * scale * 1.3) + 31, 3));
-    lat.set(k, Math.abs(v - 0.5) * 2);
+    const detail = (dNoise(p.x * scale, p.y * scale) - 0.5) * 0.4;
+    height.set(k, shapeH(u, v) + detail - ((1 - falloff) * 0.6));
+    lat.set(k, Math.min(1, Math.abs(v - equator) / Math.max(equator, 1 - equator)));
+    uv.set(k, [u, v]);
   });
   const hs = [...height.values()];
   const seaLevel = quantile(hs, water);
   const land = hs.filter(x => x >= seaLevel);
   const mountLevel = quantile(land, 1 - mountains);
   const hillLevel = quantile(land, Math.max(0, 1 - mountains - 0.15));
-  const ms = [...moist.values()];
-  const dry = quantile(ms, 0.18), wet = quantile(ms, 0.62), soaked = quantile(ms, 0.9);
+  const top = land.length ? Math.max(...land) : seaLevel + 1;
+
+  // Расстояние до воды в гексах (волной от моря).
+  const byKey = new Map(cells.map(c => [key(c), c]));
+  const dist = new Map();
+  let front = cells.filter(c => height.get(key(c)) < seaLevel);
+  for ( const c of front ) dist.set(key(c), 0);
+  for ( let d = 1; front.length && d < 40; d++ ) {
+    const next = [];
+    for ( const c of front ) {
+      for ( const nb of oddRNeighbors(c) ) {
+        const nk = key(nb);
+        if ( !byKey.has(nk) || dist.has(nk) ) continue;
+        dist.set(nk, d);
+        next.push(nb);
+      }
+    }
+    front = next;
+  }
+
+  const temp = new Map();
+  for ( const c of cells ) {
+    const k = key(c);
+    const [u, v] = uv.get(k);
+    const ht = height.get(k);
+    const elev = ht < seaLevel ? 0 : (ht - seaLevel) / ((top - seaLevel) || 1);
+    // Тень гор: если в нескольких гексах к западу хребет, ветер приходит сухим.
+    let shadow = 0;
+    for ( let d = 1; d <= 4; d++ ) {
+      const wk = key([c[0], c[1] - d]);
+      if ( height.has(wk) && height.get(wk) >= mountLevel ) { shadow = 0.22 * (1 - ((d - 1) / 4)); break; }
+    }
+    const near = Math.exp(-(dist.get(k) ?? 40) / 5);
+    const m = (0.5 * mNoise((u * 4.2) + 17, (v * 4.2) + 31, 3)) + (0.45 * near) + 0.08 - shadow;
+    moist.set(k, Math.max(0, Math.min(1, m)));
+    const t = 1 - (lat.get(k) * 0.95) - (elev * 0.45) + ((tNoise(u * 3, v * 3, 3) - 0.5) * 0.3);
+    temp.set(k, Math.max(0, Math.min(1, t)));
+  }
+
   const out = new Map();
   for ( const c of cells ) {
     const k = key(c);
-    const ht = height.get(k), m = moist.get(k), la = lat.get(k);
-    let t;
-    if ( ht < seaLevel ) t = "water";
-    else if ( ht >= mountLevel ) t = la > 0.75 ? "snow" : "mountains";
-    else if ( la > 0.86 ) t = "snow";
-    else if ( ht >= hillLevel ) t = "hills";
-    else if ( m >= soaked && ht < quantile(land, 0.35) ) t = "swamp";
-    else if ( m >= wet ) t = "forest";
-    else if ( m <= dry && la < 0.6 ) t = "desert";
-    else t = "plains";
-    out.set(k, t);
+    const ht = height.get(k), m = moist.get(k), t = temp.get(k);
+    const coast = (dist.get(k) ?? 40) === 1;
+    let b;
+    if ( ht < seaLevel ) b = "water";
+    else if ( ht >= mountLevel ) b = t < 0.3 ? "snow" : "mountains";
+    else if ( t < 0.08 ) b = "snow";
+    else if ( ht >= hillLevel ) b = t < 0.22 ? "tundra" : "hills";
+    else b = biomeOf(t, m, { coast, low: ht < quantile(land, 0.3) });
+    out.set(k, b);
   }
-  return { terrain: out, height, moist, lat, seaLevel };
+  smoothBiomes(cells, out);
+  return { terrain: out, height, moist, lat, temp, seaLevel, recipe: pickRecipe.id, pieces: layout.map(p => p.id) };
+}
+
+/** Биом по теплу и влаге (0…1). Порядок как у Уиттекера: холод → тундра, тайга; тепло → саванна, джунгли. */
+export function biomeOf(t, m, { coast = false, low = false } = {}) {
+  if ( t < 0.25 ) return "tundra";
+  if ( t < 0.42 ) return m > 0.38 ? "taiga" : "plains";
+  if ( t < 0.72 ) {
+    if ( m < 0.2 ) return "desert";
+    if ( m < 0.48 ) return "plains";
+    if ( m > 0.82 && low ) return "swamp";
+    return "forest";
+  }
+  if ( m < 0.26 ) return "desert";
+  if ( m < 0.52 ) return "savanna";
+  if ( m > 0.7 && coast && low ) return "mangrove";
+  if ( m > 0.86 && low ) return "swamp";
+  return "jungle";
+}
+
+/** Одиночный гекс среди чужого биома принимает биом соседей: без пятнистости. Вода, горы и холмы не трогаются. */
+function smoothBiomes(cells, terrain) {
+  const fixed = new Set(["water", "mountains", "hills", "snow"]);
+  const changes = [];
+  for ( const c of cells ) {
+    const k = key(c);
+    const own = terrain.get(k);
+    if ( fixed.has(own) ) continue;
+    const counts = new Map();
+    let n = 0;
+    for ( const nb of oddRNeighbors(c) ) {
+      const t = terrain.get(key(nb));
+      if ( !t ) continue;
+      n++;
+      if ( !fixed.has(t) ) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    if ( counts.get(own) ) continue;
+    const [best, cnt] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+    if ( best && cnt >= Math.max(3, n / 2) ) changes.push([k, best]);
+  }
+  for ( const [k, t] of changes ) terrain.set(k, t);
 }
 
 /**
@@ -147,7 +242,11 @@ export function generateTerrainData({ cells, center, seed = "", water = GEN_DEFA
  * Горы и вода не годятся.
  */
 export function pickCapitals({ cells, terrain, center, count, rnd }) {
-  const ok = cells.filter(c => !["water", "mountains", "snow"].includes(terrain.get(key(c))));
+  const bad = ["water", "mountains", "snow", "tundra"];
+  const fine = cells.filter(c => !bad.includes(terrain.get(key(c))));
+  // Столица — не на краю света: все соседи суша, иначе хоть какая-то суша.
+  const inner = fine.filter(c => oddRNeighbors(c).every(nb => { const t = terrain.get(key(nb)); return t && t !== "water"; }));
+  const ok = inner.length >= count ? inner : (fine.length ? fine : cells.filter(c => !["water", "mountains", "snow"].includes(terrain.get(key(c)))));
   if ( !ok.length || count <= 0 ) return [];
   const out = [ok[Math.floor(rnd() * ok.length)]];
   const d2 = (a, b) => { const p = center(a), q = center(b); return ((p.x - q.x) ** 2) + ((p.y - q.y) ** 2); };
@@ -212,10 +311,10 @@ export function generateWorld(options) {
   const all = new Set(cells.map(key));
   const inBounds = o.inBounds ?? (c => all.has(key(c)));
   const rnd = seededRandom(`world:${seed}`);
-  const data = generateTerrainData({ cells, center, seed, water: o.water, mountains: o.mountains });
+  const data = generateTerrainData({ cells, center, seed, water: o.water, mountains: o.mountains, recipe: o.recipe || null });
   const terrain = data.terrain;
   const features = [];
-  const stats = { terrain: 0, hexes: cells.length, resources: 0, realms: 0 };
+  const stats = { terrain: 0, hexes: cells.length, resources: 0, realms: 0, neutral: 0, recipe: data.recipe };
   const ext = kind => ({ seed, kind });
 
   // Местность: одна зона на тип.
@@ -225,7 +324,10 @@ export function generateWorld(options) {
     if ( !byType.has(t) ) byType.set(t, []);
     byType.get(t).push(c);
   }
-  const TERRAIN_NAMES = { plains: "Равнины", forest: "Леса", hills: "Холмы", mountains: "Горы", swamp: "Болота", desert: "Пустыни", snow: "Снега", water: "Море" };
+  const TERRAIN_NAMES = {
+    plains: "Равнины", forest: "Леса", hills: "Холмы", mountains: "Горы", swamp: "Болота", desert: "Пустыни", snow: "Снега", water: "Море",
+    savanna: "Саванны", jungle: "Тропические леса", taiga: "Тайга", tundra: "Тундра", mangrove: "Мангры"
+  };
   let sort = 1;
   for ( const [t, list] of byType ) {
     features.push({
@@ -266,6 +368,30 @@ export function generateWorld(options) {
     });
   }
 
+  // Нейтральные объекты: руины, логова, рощи, оазисы. Не ближе трёх гексов друг к другу и к столицам.
+  const poiRnd = seededRandom(`poi:${seed}`);
+  const landCells = cells.filter(c => terrain.get(key(c)) !== "water");
+  const want = Math.round((landCells.length / 60) * (o.neutral ?? 0) * 2);
+  const placed = [];
+  const far = c => [...placed, ...[...busy].map(k => k.split(",").map(Number))].every(q => hexDist(q, c) >= 3);
+  const isCoast = c => neighbors(c).some(nb => inBounds(nb) && terrain.get(key(nb)) === "water");
+  for ( let tries = 0; placed.length < want && tries < want * 30; tries++ ) {
+    const c = landCells[Math.floor(poiRnd() * landCells.length)];
+    if ( !c || busy.has(key(c)) || !far(c) ) continue;
+    const t = terrain.get(key(c));
+    const fits = NEUTRAL_OBJECTS.filter(x => x.terrain.includes(t) && (!x.coast || isCoast(c)));
+    if ( !fits.length ) continue;
+    const obj = fits[Math.floor(poiRnd() * fits.length)];
+    const p = center(c);
+    features.push({
+      id: newId(), name: obj.names[Math.floor(poiRnd() * obj.names.length)], text: "",
+      system: baseSystem("object", obj.id, ext("neutral"), { geometry: { x: Math.round(p.x), y: Math.round(p.y), cell: [...c] } })
+    });
+    placed.push(c);
+    stats.neutral++;
+  }
+  for ( const c of placed ) busy.add(key(c));
+
   // Ресурсы: по одной метке на гекс, на подходящей местности. Рыба — у берега.
   const names = Object.fromEntries(RESOURCE_TYPES.map(t => [t.id, t.name]));
   const resRnd = seededRandom(`res:${seed}`);
@@ -291,6 +417,22 @@ export function generateWorld(options) {
 
   return { features, stats, seed, terrain, climate: data };
 }
+
+/** Расстояние между гексами odd-r в шагах. */
+export function hexDist([i1, j1], [i2, j2]) {
+  const toCube = (i, j) => { const x = j - ((i - (i & 1)) / 2); return [x, i, -x - i]; };
+  const a = toCube(i1, j1), b = toCube(i2, j2);
+  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+}
+
+/** Добавить недостающие типы нейтральных объектов. */
+export function withNeutralTypes(types) {
+  const out = types.slice();
+  for ( const t of NEUTRAL_TYPES ) if ( !out.some(x => x.id === t.id) ) out.push(structuredClone(t));
+  return out;
+}
+
+export { RECIPES, PIECES };
 
 /** Добавить недостающие типы ресурсов. */
 export function withResourceTypes(types) {

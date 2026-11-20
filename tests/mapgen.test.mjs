@@ -49,8 +49,9 @@ test("ресурсы стоят на подходящей местности, р
   const res = features.filter(f => f.system.ext.artariusGen.kind === "resource");
   assert.ok(res.length > 20, `ресурсов ${res.length}`);
   const allowed = {
-    "res-grain": ["plains"], "res-wood": ["forest", "swamp"], "res-stone": ["hills", "mountains", "desert"],
-    "res-iron": ["hills", "mountains"], "res-gold": ["mountains", "desert"], "res-fish": ["water"]
+    "res-grain": ["plains", "savanna"], "res-wood": ["forest", "swamp", "jungle", "taiga", "mangrove"],
+    "res-stone": ["hills", "mountains", "desert", "savanna", "tundra"],
+    "res-iron": ["hills", "mountains", "taiga", "tundra"], "res-gold": ["mountains", "desert", "jungle"], "res-fish": ["water"]
   };
   for ( const f of res ) {
     const t = terrain.get(k(f.system.geometry.cell));

@@ -70,13 +70,30 @@ export const STARTER_LAYERS = [
   { id: "terrain", name: "Местность", sort: 0, visible: true, exclusive: true },
   { id: "regions", name: "Области", sort: 1, visible: true, exclusive: true },
   { id: "politics", name: "Владения", sort: 2, visible: true, exclusive: true },
-  { id: "overlay", name: "Прочее", sort: 3, visible: true, exclusive: false }
+  { id: "phenomena", name: "Явления природы", sort: 3, visible: true, exclusive: false },
+  { id: "overlay", name: "Прочее", sort: 4, visible: true, exclusive: false }
 ];
 
 const terrain = (id, name, color) => ({
   id, kind: "area", name, layerId: "terrain",
   style: { color, alpha: 1, borderWidth: 0, labelSize: 0 }
 });
+
+/** Природные явления и бедствия: свободный слой, зоны с штриховкой поверх местности. */
+const phenomenon = (id, name, color, pattern) => ({
+  id, kind: "area", name, layerId: "phenomena",
+  style: { color, alpha: 0.18, borderWidth: 3, labelSize: 18, pattern, patternColor: color }
+});
+export const PHENOMENA_TYPES = [
+  phenomenon("hurricane", "Ураган", "#8fb4d9", "cross"),
+  phenomenon("rockfall", "Шаткие скалы", "#9c8b7a", "dots"),
+  phenomenon("wildfire", "Горящий лес", "#e0562f", "hatch"),
+  phenomenon("flood", "Наводнение", "#4f8fd0", "vertical"),
+  phenomenon("drought", "Засуха", "#d9a441", "dots"),
+  phenomenon("quake", "Землетрясение", "#a35f3d", "crosshatch"),
+  phenomenon("eruption", "Извержение", "#c2381f", "crosshatch"),
+  phenomenon("blight", "Мор", "#7a8f3a", "hatch")
+];
 
 /** Типы, которые атлас получает при создании. Мастер может их менять и удалять, игроки добавляют свои. */
 export const STARTER_TYPES = [
@@ -88,6 +105,12 @@ export const STARTER_TYPES = [
   terrain("desert", "Пустыня", "#dcc48e"),
   terrain("snow", "Снега", "#e4ecee"),
   terrain("water", "Вода", "#3c6f9e"),
+  terrain("savanna", "Саванна", "#c8b45e"),
+  terrain("jungle", "Тропический лес", "#2c6a3c"),
+  terrain("taiga", "Тайга", "#3f5a4c"),
+  terrain("tundra", "Тундра", "#a7ab92"),
+  terrain("mangrove", "Мангры", "#4c6e58"),
+  ...PHENOMENA_TYPES,
   { id: "realm", kind: "area", name: "Держава", layerId: "politics", style: { color: "#c96f4a", alpha: 0.28, borderWidth: 4 } },
   { id: "region", kind: "area", name: "Область", layerId: "regions", style: { color: "#d9c39a", alpha: 0.12, borderWidth: 2, labelSize: 20 } },
   { id: "city", kind: "object", name: "Город", style: { icon: "modules/artarius/assets/icons/castle.svg", color: "#f2e3c9" } },

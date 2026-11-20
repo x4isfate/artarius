@@ -457,6 +457,11 @@ async function shot(page, name) {
   const imp = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "importAzgaar")[1]));
   check(imp.name === "map.json" && imp.options.parts.provinces === true && imp.options.parts.cultures === true, "импорт Azgaar берёт файл и галочки частей прямо из вкладки");
   await page.click('#artarius-ui details[data-fold="gen"] > summary');
+  await act("wfQuickWorld");
+  const q = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "generateWorld")[1]));
+  check(q.clear === true && q.recipe === "" && q.seed && q.neutral === 0.5, "«Новый мир» одной кнопкой: случайное зерно, очистка, нейтральные объекты");
+  await ev(() => { window.art.backend.log = window.art.backend.log.filter(l => l[0] !== "generateWorld"); });
+  await page.click('#artarius-ui details[data-fold="gen-more"] > summary');
   await page.fill('#artarius-ui [data-wf="gen.seed"]', "abc");
   await act("wfGenerate");
   const g = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "generateWorld")[1]));
@@ -627,6 +632,27 @@ async function shot(page, name) {
   await page.waitForTimeout(150);
   check((await ev(() => [...window.art.backend.atlas.values()].some(x => x.system.visibility?.mode === "gm"))), "метку можно спрятать");
   await shot(page, "visibility");
+
+  /* 18. Содержимое мира: папки типов, эмодзи, подписи, «Новый мир» --- */
+  await ev(async () => {
+    const s = window.art.studio;
+    s.closeSettings?.();
+    s.openTypeForm("object");
+    Object.assign(s.typeForm, { name: "Дракон", emoji: "🐉", folder: "Чудовища" });
+    await s.saveTypeForm();
+    s.setTool("mark", { toggle: false });
+  });
+  await page.waitForTimeout(150);
+  check(await page.locator('#artarius-ui .art-folder[data-folder="Чудовища"]').count() === 1, "типы меток лежат в папках");
+  check(await page.locator("#artarius-ui .art-emoji").count() >= 1, "эмодзи вместо значка в списке типов");
+  await shot(page, "folders");
+  await ev(() => { const s = window.art.studio; s.openSettings("area"); s.openTypeForm("area", "realm"); });
+  await page.waitForTimeout(150);
+  check(await page.locator('#artarius-ui select[data-model="typeForm.labelMode"]').count() === 1, "у типа зоны выбор подписи");
+  await ev(() => { const s = window.art.studio; s.openSettings("world"); });
+  await page.waitForTimeout(150);
+  check(await page.locator('#artarius-ui [data-action="wfQuickWorld"]').count() === 1, "кнопка «Новый мир» во вкладке «Мир»");
+  await shot(page, "world");
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");

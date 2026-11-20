@@ -12,6 +12,7 @@
  */
 import { simplify, roundPoints } from "../geometry/geometry.mjs";
 import { buildFields } from "../data/fields.mjs";
+import { STARTER_TYPES } from "../constants.mjs";
 
 export const AZGAAR_URL = "https://azgaar.github.io/Fantasy-Map-Generator/";
 
@@ -24,8 +25,45 @@ export const AZGAAR_PARTS = {
   religions: true,
   burgs: true,
   rivers: true,
-  routes: true
+  routes: true,
+  markers: true,
+  armies: true
 };
+
+/** Папки и названия для типов маркеров Azgaar (type → русское имя). Неизвестный тип остаётся как есть. */
+export const MARKER_FOLDER = "Маркеры Azgaar";
+export const ARMY_FOLDER = "Войска";
+const MARKER_NAMES = {
+  volcanoes: "Вулканы", "hot-springs": "Горячие источники", hotsprings: "Горячие источники", mines: "Рудники", bridges: "Мосты",
+  inns: "Постоялые дворы", lighthouses: "Маяки", waterfalls: "Водопады", battlefields: "Поля битв", dungeons: "Подземелья",
+  "lake-monsters": "Озёрные чудовища", "sea-monsters": "Морские чудовища", "hill-monsters": "Чудовища холмов", monsters: "Чудовища",
+  "sacred-mountains": "Священные горы", "sacred-forests": "Священные леса", "sacred-pineries": "Священные боры", "sacred-palm-groves": "Священные пальмовые рощи",
+  brigands: "Разбойники", pirates: "Пираты", statues: "Статуи", ruins: "Руины", portals: "Порталы", rifts: "Разломы", disturbed: "Потревоженные места",
+  "disturbed-burials": "Потревоженные могилы", libraries: "Библиотеки", circuses: "Цирки", jousts: "Турниры", fairs: "Ярмарки", canoes: "Каноэ",
+  migration: "Миграции", dances: "Танцы", mirage: "Миражи", caves: "Пещеры", encounters: "Встречи", necropolises: "Некрополи", "sea-wars": "Морские битвы"
+};
+export const markerTypeId = type => `az-marker-${String(type || "marker").toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+
+/** Тип метки для маркера Azgaar: эмодзи маркера, папка «Маркеры Azgaar». */
+export function markerType(type, emoji) {
+  return {
+    id: markerTypeId(type), kind: "object", name: MARKER_NAMES[type] ?? String(type || "Маркер"), folder: MARKER_FOLDER,
+    style: { emoji: emoji || "📍", color: "#e8d6b0", size: 0.5, labelSize: 14, shape: "none" }
+  };
+}
+
+/** Войска: сухопутные и флот, без состава. */
+export const ARMY_TYPES = [
+  { id: "army", kind: "object", name: "Армия", folder: ARMY_FOLDER, style: { icon: "modules/artarius/assets/icons/crossed-swords.svg", color: "#e05a4a", size: 0.5, labelSize: 13, shape: "shield" } },
+  { id: "fleet", kind: "object", name: "Флот", folder: ARMY_FOLDER, style: { icon: "modules/artarius/assets/icons/galleon.svg", color: "#5a8ee0", size: 0.5, labelSize: 13, shape: "shield" } }
+];
+
+/** HTML легенды Azgaar → безопасные абзацы текста. */
+export function legendToHtml(html) {
+  const text = String(html ?? "").replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  return text.split(/\n+/).map(x => x.trim()).filter(Boolean).map(x => `<p>${esc(x)}</p>`).join("");
+}
 
 /** Типы, на которые опирается импорт. Недостающие добавляются в атлас. */
 export const AZGAAR_TYPES = [
@@ -37,6 +75,7 @@ export const AZGAAR_TYPES = [
   { id: "swamp", kind: "area", name: "Болото", layerId: "terrain", style: { color: "#5e6b4b", alpha: 1, borderWidth: 0, labelSize: 0 } },
   { id: "desert", kind: "area", name: "Пустыня", layerId: "terrain", style: { color: "#dcc48e", alpha: 1, borderWidth: 0, labelSize: 0 } },
   { id: "snow", kind: "area", name: "Снега", layerId: "terrain", style: { color: "#e4ecee", alpha: 1, borderWidth: 0, labelSize: 0 } },
+  ...STARTER_TYPES.filter(x => ["savanna", "jungle", "taiga", "tundra", "mangrove"].includes(x.id)),
   { id: "realm", kind: "area", name: "Держава", layerId: "politics", style: { color: "#c96f4a", alpha: 0.28, borderWidth: 4 } },
   { id: "region", kind: "area", name: "Область", layerId: "regions", style: { color: "#d9c39a", alpha: 0.12, borderWidth: 2, labelSize: 20 } },
   { id: "culture", kind: "area", name: "Народ", layerId: "cultures", style: { color: "#b98bd9", alpha: 0.35, borderWidth: 1, labelSize: 18 } },
@@ -64,7 +103,7 @@ export const AZGAAR_LAYERS = [
  * 6 Temperate deciduous forest, 7 Tropical rainforest, 8 Temperate rainforest, 9 Taiga,
  * 10 Tundra, 11 Glacier, 12 Wetland.
  */
-export const BIOME_TERRAIN = ["water", "desert", "desert", "plains", "plains", "forest", "forest", "forest", "forest", "forest", "snow", "snow", "swamp"];
+export const BIOME_TERRAIN = ["water", "desert", "desert", "savanna", "plains", "jungle", "forest", "jungle", "forest", "taiga", "tundra", "snow", "swamp"];
 
 /** Местность клетки: вода, потом горы и холмы по высоте, потом биом. */
 export function terrainOf(cell) {
@@ -147,7 +186,8 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
   const lineToScene = pts => roundPoints(simplify(pts.map(t.point), tolerance));
   const cells = pack.cells;
   const features = [];
-  const stats = { terrain: 0, states: 0, provinces: 0, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0 };
+  const stats = { terrain: 0, states: 0, provinces: 0, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0, markers: 0, armies: 0 };
+  const newTypes = new Map();
   const nearest = nearestCellIndex(cells, info);
   const hexToCell = new Map();
   for ( const h of hexes ) {
@@ -282,6 +322,52 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
     }
   }
 
+  // Маркеры: вулканы, руины, чудовища… Название и описание из заметок Azgaar (notes[id = "marker<i>"]).
+  if ( parts.markers && Array.isArray(pack.markers) ) {
+    const notes = new Map((data.notes ?? []).map(n => [n.id, n]));
+    for ( const m of pack.markers ) {
+      if ( !m || !Number.isFinite(m.x) || !Number.isFinite(m.y) ) continue;
+      const [x, y] = t.point([m.x, m.y]);
+      const hex = cellAt({ x, y });
+      if ( !hexToCell.has(key(hex)) ) continue;
+      const type = markerType(m.type, m.icon);
+      if ( !newTypes.has(type.id) ) newTypes.set(type.id, type);
+      const note = notes.get(`marker${m.i}`);
+      const c = center(hex);
+      features.push({
+        id: newId(), name: note?.name ?? type.name, text: legendToHtml(note?.legend),
+        system: baseSystem("object", type.id, { mapId, kind: "marker", i: m.i, type: m.type ?? "" }, {
+          geometry: { x: Math.round(c.x), y: Math.round(c.y), cell: [...hex] }
+        })
+      });
+      stats.markers++;
+    }
+  }
+
+  // Войска стран: отряд — метка «Армия» или «Флот» со ссылкой на страну, без состава.
+  if ( parts.armies && Array.isArray(pack.states) ) {
+    for ( const st of pack.states ) {
+      if ( !st?.i || st.removed || !Array.isArray(st.military) ) continue;
+      for ( const r of st.military ) {
+        if ( !r || !Number.isFinite(r.x) || !Number.isFinite(r.y) ) continue;
+        const [x, y] = t.point([r.x, r.y]);
+        const hex = cellAt({ x, y });
+        if ( !hexToCell.has(key(hex)) ) continue;
+        const naval = !!r.n;
+        for ( const at of ARMY_TYPES ) if ( !newTypes.has(at.id) ) newTypes.set(at.id, at);
+        const links = stateIds.has(st.i) ? [{ target: stateIds.get(st.i), role: "войско" }] : [];
+        const c = center(hex);
+        features.push({
+          id: newId(), name: r.name ?? "", text: "",
+          system: baseSystem("object", naval ? "fleet" : "army", { mapId, kind: "army", i: `${st.i}:${r.i}` }, {
+            geometry: { x: Math.round(c.x), y: Math.round(c.y), cell: [...hex] }, links, style: st.color ? { color: st.color } : {}
+          })
+        });
+        stats.armies++;
+      }
+    }
+  }
+
   // Высота, температура, осадки и население гексов для слоёв климата. Температура и осадки лежат в клетках grid.
   const gridCells = data.grid?.cells ?? [];
   const fields = buildFields(hexes, h => {
@@ -291,13 +377,13 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
     const g = gridCells[c.g] ?? {};
     return { height: c.h ?? g.h, temp: g.temp ?? c.temp, prec: g.prec ?? c.prec, pop: c.pop };
   });
-  return { features, stats, mapId, name: info.mapName ?? "", fields };
+  return { features, stats, mapId, name: info.mapName ?? "", fields, types: [...newTypes.values()] };
 }
 
 /** Добавить в списки атласа недостающие типы и слои импорта. Возвращает новые списки. */
-export function mergeTypesAndLayers(types, layers) {
+export function mergeTypesAndLayers(types, layers, extra = []) {
   const outTypes = types.slice();
-  for ( const t of AZGAAR_TYPES ) if ( !outTypes.some(x => x.id === t.id) ) outTypes.push(structuredClone(t));
+  for ( const t of [...AZGAAR_TYPES, ...extra] ) if ( !outTypes.some(x => x.id === t.id) ) outTypes.push(structuredClone(t));
   const outLayers = layers.slice();
   for ( const l of AZGAAR_LAYERS ) if ( !outLayers.some(x => x.id === l.id) ) outLayers.push({ ...l, sort: outLayers.length });
   return { types: outTypes, layers: outLayers };
