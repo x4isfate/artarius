@@ -69,7 +69,7 @@ await check("canvasReady: атлас создан, панели видны", asy
   await F.settle();
   const atlas = api().getAtlas(scene);
   assert(atlas, "атлас не создан");
-  assert(atlas.getFlag("artarius", "version") === 3, "версия атласа не 3");
+  assert(atlas.getFlag("artarius", "version") === 4, "версия атласа не 4");
   assert(!win("left") && !win("right"), "окна открыты без инструмента");
 });
 
@@ -432,7 +432,8 @@ await check("старые области 0.2 переходят на гексы"
   await F.settle();
   const cells = old.pages.get("a1").system.geometry.cells;
   assert(cells.length > 0, "гексы не появились");
-  assert(old.getFlag("artarius", "version") === 3, "атлас не обновлён");
+  assert(old.getFlag("artarius", "version") === 4, "атлас не обновлён");
+  assert(old.getFlag("artarius", "layers").some(l => l.id === "phenomena"), "нет слоя явлений");
   canvas.scene = scene;
 });
 

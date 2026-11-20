@@ -134,7 +134,9 @@
         "routes": "Roads and routes",
         "terrain": "Terrain",
         "cultures": "Cultures",
-        "religions": "Religions"
+        "religions": "Religions",
+        "markers": "Markers",
+        "armies": "Armies"
       },
       "error": {
         "notJson": "This is not a JSON file.",
@@ -234,7 +236,13 @@
       "needName": "Give the type a name.",
       "notYours": "Another player created this type.",
       "personal": "your type, becomes shared once approved",
-      "deleteUsed": "Type “{name}” is already on the map. Delete it anyway? Items stay but lose the type's look."
+      "deleteUsed": "Type “{name}” is already on the map. Delete it anyway? Items stay but lose the type's look.",
+      "emoji": "Emoji instead of icon",
+      "emojiHint": "When filled, the mark shows this emoji in its own colours and the icon is not used.",
+      "folder": "Folder",
+      "folderPh": "No folder",
+      "font": "Label font",
+      "fontDefault": "Foundry default"
     },
     "Zone": {
       "hint": "Click or drag to select hexes, Shift to deselect. Alt-click opens a hex. Then attach the hexes to a zone.",
@@ -402,7 +410,7 @@
     "Gen": {
       "title": "World generator",
       "gmOnly": "Only the GM can generate a world.",
-      "hint": "A test world over the whole scene: terrain from height and moisture, resources as marks and starting realms with capitals.",
+      "hint": "A whole-scene world built from pieces: continents, peninsulas, islands, ridges and inland seas by a recipe. Biomes follow heat and moisture, resources are marks, realms grow from capitals.",
       "seed": "Seed",
       "water": "Water, %",
       "mountains": "Mountains, % of land",
@@ -412,11 +420,18 @@
       "clear": "Clear the scene",
       "clearHint": "Delete every zone, mark and line on this scene. Unchecked, only what the generator made before is replaced.",
       "go": "Create world",
-      "done": "World ready (seed {seed}): hexes {hexes}, terrain zones {terrain}, realms {realms}, resources {resources}.",
+      "done": "World ready (seed {seed}): {hexes} hexes, {terrain} terrain zones, {realms} realms, {resources} resources, {neutral} neutral objects.",
       "realmOf": "Realm of {name}",
       "realmN": "Realm {n}",
       "capitalN": "Capital {n}",
-      "sizeHint": "The scene is resized before generating."
+      "sizeHint": "The scene is resized before generating.",
+      "quick": "New world",
+      "quickHint": "One button: random recipe and seed, a realm per player, ruins, lairs and groves. The scene is cleared. Every world comes out different.",
+      "more": "Custom settings",
+      "recipe": "World recipe",
+      "recipeAny": "Random",
+      "neutral": "Neutral objects, %",
+      "neutralHint": "Ruins, lairs, groves, oases and other ownerless places. 0 turns them off."
     },
     "Pattern": {
       "title": "Pattern",
@@ -478,7 +493,10 @@
         "danger": "Events & danger",
         "people": "People & armies",
         "trade": "Trade & land",
-        "creatures": "Monsters & magic"
+        "creatures": "Monsters & magic",
+        "animals": "Animals",
+        "plants": "Plants",
+        "disasters": "Disasters"
       }
     },
     "Hud": {
@@ -592,6 +610,15 @@
       "appliedFrom": "“{title}” by {name}",
       "changes": "Map changes",
       "more": "and {n} more"
+    },
+    "Label": {
+      "title": "Label",
+      "size": "Label size",
+      "auto": "Auto (realms curved)",
+      "asType": "As type",
+      "curved": "Curved",
+      "straight": "Straight",
+      "none": "Hidden"
     }
   }
 }

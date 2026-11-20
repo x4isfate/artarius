@@ -6,7 +6,7 @@ import { mergeTypes } from "./world.mjs";
 import { resolveStyleOf } from "../canvas/style.mjs";
 
 /** Версия формата атласа. 3 — гекс-мир: слои с exclusive, типы зон знают свой слой. */
-export const ATLAS_VERSION = 3;
+export const ATLAS_VERSION = 4;
 
 /**
  * Где лежат данные карты.
@@ -63,7 +63,13 @@ export async function upgradeAtlas(atlas) {
 /** Чистая часть обновления: старые записи плюс недостающие из стартового набора. */
 export function upgradedTypesAndLayers(oldTypes, oldLayers) {
   const layers = oldLayers.map(l => ({ exclusive: l.id !== "overlay" && l.exclusive !== false, ...l }));
-  for ( const l of STARTER_LAYERS ) if ( !layers.some(x => x.id === l.id) ) layers.push({ ...l });
+  for ( const l of STARTER_LAYERS ) {
+    if ( layers.some(x => x.id === l.id) ) continue;
+    // Новый свободный слой встаёт под «Прочее», чтобы свои пометки мастера оставались сверху.
+    const over = layers.findIndex(x => x.id === "overlay");
+    if ( over >= 0 && l.id !== "overlay" ) layers.splice(over, 0, { ...l });
+    else layers.push({ ...l });
+  }
   const types = [...oldTypes];
   for ( const t of STARTER_TYPES ) if ( !types.some(x => x.id === t.id) ) types.push(foundry.utils.deepClone(t));
   return { types, layers: layers.map((l, i) => ({ ...l, sort: i })) };

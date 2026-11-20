@@ -15,6 +15,7 @@ import { describeOp, diffOf } from "../review/describe.mjs";
 import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
+import { RECIPES } from "../gen/pieces.mjs";
 import { statusIcon, BASE_STATUSES, BASE_ASPECTS } from "../data/statuses.mjs";
 
 import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
@@ -290,6 +291,12 @@ export default class ArtariusUI {
     target.addEventListener("change", onInput);
     // Раскрытые разделы вкладки «Мир» остаются раскрытыми после перерисовки. toggle не всплывает, ловим на захвате.
     target.addEventListener("toggle", ev => {
+      const folder = ev.target?.dataset?.folder;
+      if ( folder !== undefined ) {
+        this.typeFolderShut ??= new Set();
+        if ( ev.target.open ) this.typeFolderShut.delete(folder); else this.typeFolderShut.add(folder);
+        return;
+      }
       const id = ev.target?.dataset?.fold;
       if ( !id ) return;
       this.wfOpen ??= new Set(["settings"]);
@@ -416,6 +423,11 @@ export default class ArtariusUI {
         await this.backend.generateWorld?.(this._wfValues("gen"));
         this.wfSeed = null;
         delete this.wf.gen.seed;
+      }),
+      // Новый мир одной кнопкой: случайное зерно и рецепт, остальное по умолчанию, сцена очищается.
+      wfQuickWorld: () => this._wfRun("quick", async () => {
+        const v = this._wfValues("gen");
+        await this.backend.generateWorld?.({ ...v, seed: Math.floor(Math.random() * 1e9).toString(36), recipe: "", clear: true });
       }),
       azgaar: () => this.backend.openAzgaar?.(),
       // Панель на гексе
@@ -599,8 +611,21 @@ export default class ArtariusUI {
       }).join("");
       const orphan = list.filter(t => !s.layers.some(l => l.id === (t.layerId ?? "overlay")));
       if ( orphan.length ) rows += orphan.map(row).join("");
-    } else rows = list.map(row).join("");
+    } else rows = this._folderRows(kind, list, row);
     return `${rows}<button type="button" class="art-row-item art-row-new" data-action="newType" data-kind="${kind}">${icon("plus")}<span class="art-row-name">${esc(this.t("ART.Type.new"))}</span></button>`;
+  }
+
+  /** Типы по папкам: без папки сверху, папки раскрываются. Открытые папки помнятся до перезагрузки. */
+  _folderRows(kind, list, row) {
+    const folders = this.studio.typeFolders(kind);
+    if ( folders.length < 2 && !folders[0] ) return list.map(row).join("");
+    this.typeFolderShut ??= new Set();
+    return folders.map(name => {
+      const items = list.filter(t => (t.folder ?? "") === name);
+      if ( !name ) return items.map(row).join("");
+      const open = !this.typeFolderShut.has(name);
+      return `<details class="art-folder" data-folder="${esc(name)}"${open ? " open" : ""}><summary>${icon(open ? "folder-open" : "folder")} ${esc(name)} <span class="art-muted">${items.length}</span></summary>${items.map(row).join("")}</details>`;
+    }).join("");
   }
 
   /** Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить». */
@@ -621,6 +646,39 @@ export default class ArtariusUI {
       <input type="text" data-model="typeForm.icon" data-key="tf-icon" value="${esc(f.icon)}" placeholder="worlds/…/my-icon.webp">
       <label class="art-check"><input type="checkbox" data-model="typeForm.tint" ${f.tint !== false ? "checked" : ""}> ${esc(this.t("ART.Icons.tint"))}</label>
       <p class="art-hint">${esc(this.t("ART.Icons.credit"))}</p></div>`;
+  }
+
+  /**
+   * Подпись зоны: изогнутая, прямая или скрытая, и размер. В форме типа (model) — для всех зон типа,
+   * в карточке зоны (id) — только для неё; пустое значение — «как у типа».
+   */
+  renderLabelControls(mode, scale, { model = false, id = "", inherit = "" } = {}) {
+    const bind = f => (model ? `data-model="typeForm.${f}"` : `data-id="${esc(id)}" data-field="${f}"`);
+    const opts = [["", model ? this.t("ART.Label.auto") : `${this.t("ART.Label.asType")} (${this.t(`ART.Label.${inherit || "straight"}`)})`],
+      ["curved", this.t("ART.Label.curved")], ["straight", this.t("ART.Label.straight")], ["none", this.t("ART.Label.none")]]
+      .map(([v, n]) => `<option value="${v}"${(mode ?? "") === v ? " selected" : ""}>${esc(n)}</option>`).join("");
+    const pct = Math.round((Number(scale) || 1) * 100);
+    return `<div class="art-grid2">
+      <label class="art-field"><span>${esc(this.t("ART.Label.title"))}</span><select ${bind("labelMode")}>${opts}</select></label>
+      <label class="art-field"><span>${esc(this.t("ART.Label.size"))}: ${pct}%</span>
+        <input type="range" min="0.4" max="3" step="0.1" value="${esc(String(Number(scale) || 1))}" ${bind("labelScale")} data-key="${model ? "tf-lscale" : `${esc(id)}:lscale`}"></label>
+    </div>`;
+  }
+
+  /** Папка типа: своё название или одна из уже заведённых. */
+  renderFolderField(f) {
+    const opts = this.studio.typeFolders("object").filter(Boolean).map(n => `<option value="${esc(n)}"></option>`).join("");
+    return `<label class="art-field"><span>${esc(this.t("ART.Type.folder"))}</span>
+      <input type="text" list="art-type-folders" data-model="typeForm.folder" data-key="tf-folder" value="${esc(f.folder ?? "")}" placeholder="${esc(this.t("ART.Type.folderPh"))}">
+      <datalist id="art-type-folders">${opts}</datalist></label>`;
+  }
+
+  /** Шрифт подписей элементов этого типа. */
+  renderFontField(f) {
+    const fonts = this.backend.fonts?.() ?? [];
+    const opt = v => `<option value="${esc(v)}"${(f.labelFont ?? "") === v ? " selected" : ""}${v ? ` style="font-family:'${esc(v)}'"` : ""}>${esc(v || this.t("ART.Type.fontDefault"))}</option>`;
+    return `<label class="art-field"><span>${esc(this.t("ART.Type.font"))}</span>
+      <select data-model="typeForm.labelFont">${opt("")}${fonts.map(opt).join("")}</select></label>`;
   }
 
   /** Выбор формы подложки метки: без id — форма типа (pickShape), с id — одной метки (setShape). */
@@ -675,9 +733,15 @@ export default class ArtariusUI {
       <div class="art-field"><span>${esc(this.t("ART.Pattern.title"))}</span>
         <div class="art-patterns">${PATTERNS.map(p => `<button type="button" class="art-pattern-pick${p === (f.pattern || "none") ? " active" : ""}" data-action="pickPattern" data-pattern="${p}" title="${esc(this.t(`ART.Pattern.${p}`))}">${patternSwatch(p)}</button>`).join("")}</div></div>
       ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : ""}
+      ${f.kind === "object" ? this.renderFolderField(f) : ""}
+      ${f.kind === "area" ? this.renderLabelControls(f.labelMode ?? "", f.labelScale ?? 1, { model: true }) : ""}
       ${f.kind === "object" ? this.renderShapePicker(f.shape) : ""}
       ${f.kind === "line" ? this.renderLineStyle(f) : ""}
-      ${icons}
+      ${f.kind === "object" ? `<label class="art-field"><span>${esc(this.t("ART.Type.emoji"))}</span>
+        <input type="text" class="art-emoji-input" maxlength="8" data-model="typeForm.emoji" data-key="tf-emoji" value="${esc(f.emoji ?? "")}" placeholder="🐉"></label>
+        <p class="art-hint">${esc(this.t("ART.Type.emojiHint"))}</p>` : ""}
+      ${f.emoji ? "" : icons}
+      ${this.renderFontField(f)}
       <div class="art-row-btns">
         <button type="button" class="art-btn art-accent" data-action="saveType">${icon("check")} ${esc(this.t("ART.Save"))}</button>
         <button type="button" class="art-btn" data-action="cancelType">${esc(this.t("ART.Cancel"))}</button>
@@ -1120,6 +1184,7 @@ export default class ArtariusUI {
   typeSwatch(t) {
     const st = t?.style ?? {};
     const c = st.color ?? "#ccc";
+    if ( t?.kind === "object" && st.emoji ) return `<span class="art-row-ico art-emoji">${esc(st.emoji)}</span>`;
     if ( t?.kind === "object" && st.icon ) return iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-row-ico" });
     if ( t?.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(c)}"></i>`;
     return `<i class="art-swatch" style="--c:${esc(c)}"></i>`;
@@ -1196,7 +1261,7 @@ export default class ArtariusUI {
       }).join("");
       const orphan = list.filter(t => !s.layers.some(l => l.id === (t.layerId ?? "overlay")));
       if ( orphan.length ) rows += orphan.map(row).join("");
-    } else rows = list.map(row).join("");
+    } else rows = this._folderRows(kind, list, row);
     return `${rows}${this.listRow({ action: "settingsPick", id: "new", active: sel === "new", sw: icon("plus"), name: this.t("ART.Type.new"), attrs: ' data-new="1"' })}`;
   }
 
@@ -1261,7 +1326,7 @@ export default class ArtariusUI {
       <p class="art-hint">${esc(this.t("ART.World.roughHint"))}</p>
       <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="wfSettings">${icon("floppy-disk")} ${esc(this.t("ART.Save"))}</button>
         <button type="button" class="art-btn" data-action="sceneThumb" title="${esc(this.t("ART.World.thumbHint"))}">${icon("image")} ${esc(this.t("ART.World.thumb"))}</button></div>`;
-    const PARTS = ["terrain", "states", "provinces", "cultures", "religions", "burgs", "rivers", "routes"];
+    const PARTS = ["terrain", "states", "provinces", "cultures", "religions", "burgs", "rivers", "routes", "markers", "armies"];
     const DEF = { provinces: false };
     const file = this.azgaarFile;
     const azgaar = `<p class="art-hint">${esc(this.t("VMAP.Azgaar.generateHint"))}</p>
@@ -1278,7 +1343,14 @@ export default class ArtariusUI {
       <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="wfImport" ${file && !this.wfBusy ? "" : "disabled"}>
         ${icon(this.wfBusy === "azgaar" ? "spinner fa-spin" : "file-import")} ${esc(this.t("VMAP.Azgaar.doImport"))}</button></div>`;
     const seed = this.wfSeed ??= Math.floor(Math.random() * 1e9).toString(36);
-    const gen = `<p class="art-hint">${esc(this.t("ART.Gen.hint"))}</p>
+    const recipes = [["", this.t("ART.Gen.recipeAny")], ...RECIPES.map(r => [r.id, r.name])]
+      .map(([id, name]) => `<option value="${esc(id)}"${(val("gen", "recipe", "") === id) ? " selected" : ""}>${esc(name)}</option>`).join("");
+    const gen = `<div class="art-row-btns"><button type="button" class="art-btn art-accent art-wide" data-action="wfQuickWorld" ${this.wfBusy ? "disabled" : ""}>
+        ${icon(this.wfBusy === "quick" ? "spinner fa-spin" : "dice")} ${esc(this.t("ART.Gen.quick"))}</button></div>
+      <p class="art-hint">${esc(this.t("ART.Gen.quickHint"))}</p>
+      <details class="art-fold-inner" data-fold="gen-more"${(this.wfOpen ?? new Set()).has("gen-more") ? " open" : ""}><summary>${esc(this.t("ART.Gen.more"))}</summary>
+      <p class="art-hint">${esc(this.t("ART.Gen.hint"))}</p>
+      <label class="art-field"><span>${esc(this.t("ART.Gen.recipe"))}</span><select data-wf="gen.recipe">${recipes}</select></label>
       <div class="art-grid3">
         ${row("ART.Scene.cols", num("gen", "cols", d.cols, 5, 300))}
         ${row("ART.Scene.rows", num("gen", "rows", d.rows, 5, 300))}
@@ -1288,12 +1360,13 @@ export default class ArtariusUI {
         ${row("ART.Gen.water", num("gen", "water", 35, 0, 80, 5))}
         ${row("ART.Gen.mountains", num("gen", "mountains", 10, 0, 40))}
         ${row("ART.Gen.resources", num("gen", "resources", 10, 0, 60))}</div>
+      ${row("ART.Gen.neutral", num("gen", "neutral", 50, 0, 100, 10), "ART.Gen.neutralHint")}
       ${row("ART.Gen.realms", num("gen", "realms", info.players || 3, 0, 12), "ART.Gen.realmsHint")}
       <label class="art-check">${check("gen", "rough", info.roughDefault)} ${esc(this.t("ART.World.rough"))}</label>
       <label class="art-check">${check("gen", "clear", true)} ${esc(this.t("ART.Gen.clear"))}</label>
       <p class="art-hint">${esc(this.t("ART.Gen.clearHint"))}</p>
       <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="wfGenerate" ${this.wfBusy ? "disabled" : ""}>
-        ${icon(this.wfBusy === "gen" ? "spinner fa-spin" : "wand-magic-sparkles")} ${esc(this.t("ART.Gen.go"))}</button></div>`;
+        ${icon(this.wfBusy === "gen" ? "spinner fa-spin" : "wand-magic-sparkles")} ${esc(this.t("ART.Gen.go"))}</button></div></details>`;
     return `<div class="art-accs">
       ${fold("settings", "sliders", "ART.World.settings", settings)}
       ${fold("azgaar", "earth-europe", "ART.World.azgaar", azgaar)}
@@ -1315,7 +1388,7 @@ export default class ArtariusUI {
       }
     };
     if ( form === "azgaar" ) {
-      const parts = { terrain: true, states: true, provinces: false, cultures: true, religions: true, burgs: true, rivers: true, routes: true };
+      const parts = { terrain: true, states: true, provinces: false, cultures: true, religions: true, burgs: true, rivers: true, routes: true, markers: true, armies: true };
       for ( const k of Object.keys(parts) ) if ( v[`part.${k}`] !== undefined ) parts[k] = !!v[`part.${k}`];
       return { parts, replace: v.replace ?? true, fit: v.fit ?? true, cols: n(v.cols, info.dims.cols) };
     }
@@ -1324,6 +1397,7 @@ export default class ArtariusUI {
       cols: n(v.cols, info.dims.cols), rows: n(v.rows, info.dims.rows), size: n(v.size, info.dims.size),
       water: clamp(n(v.water, 35), 0, 80) / 100, mountains: clamp(n(v.mountains, 10), 0, 40) / 100,
       resources: clamp(n(v.resources, 10), 0, 60) / 100, realmCount: Math.round(clamp(n(v.realms, info.players || 3), 0, 12)),
+      neutral: clamp(n(v.neutral, 50), 0, 100) / 100, recipe: v.recipe || "",
       rough: v.rough ?? !!info.roughDefault, clear: v.clear ?? true
     };
   }
@@ -1416,6 +1490,8 @@ export default class ArtariusUI {
       ${kind === "object" ? this.renderShapePicker(st.system.style?.shape ?? type?.style?.shape, id) : ""}
       ${kind === "object" ? this.renderMarkSize(st, type, id) : ""}
       ${kind === "object" ? this.renderVisibility(st) : ""}
+      ${kind === "area" && !terrain ? this.renderLabelControls(st.system.style?.labelMode ?? "", st.system.style?.labelScale ?? type?.style?.labelScale ?? 1,
+        { id, inherit: type?.style?.labelMode ?? ((type?.layerId ?? st.system.layerId) === "politics" ? "curved" : "straight") }) : ""}
       ${kind === "object" && s.contents().marks.length > 1 && !s.multi ? `<div class="art-row-btns"><span class="art-muted">${esc(this.t("ART.Card.order"))}</span>
         <button type="button" class="art-btn art-icon-only" data-action="markUp" data-id="${esc(id)}" title="${esc(this.t("ART.Card.earlier"))}">${icon("arrow-up")}</button>
         <button type="button" class="art-btn art-icon-only" data-action="markDown" data-id="${esc(id)}" title="${esc(this.t("ART.Card.later"))}">${icon("arrow-down")}</button></div>` : ""}
