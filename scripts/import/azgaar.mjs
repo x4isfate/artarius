@@ -11,6 +11,7 @@
  * по нему повторный импорт находит и заменяет то, что создал прошлый.
  */
 import { simplify, roundPoints } from "../geometry/geometry.mjs";
+import { buildFields } from "../data/fields.mjs";
 
 export const AZGAAR_URL = "https://azgaar.github.io/Fantasy-Map-Generator/";
 
@@ -19,6 +20,8 @@ export const AZGAAR_PARTS = {
   terrain: true,
   states: true,
   provinces: false,
+  cultures: true,
+  religions: true,
   burgs: true,
   rivers: true,
   routes: true
@@ -36,6 +39,8 @@ export const AZGAAR_TYPES = [
   { id: "snow", kind: "area", name: "Снега", layerId: "terrain", style: { color: "#e4ecee", alpha: 1, borderWidth: 0, labelSize: 0 } },
   { id: "realm", kind: "area", name: "Держава", layerId: "politics", style: { color: "#c96f4a", alpha: 0.28, borderWidth: 4 } },
   { id: "region", kind: "area", name: "Область", layerId: "regions", style: { color: "#d9c39a", alpha: 0.12, borderWidth: 2, labelSize: 20 } },
+  { id: "culture", kind: "area", name: "Народ", layerId: "cultures", style: { color: "#b98bd9", alpha: 0.35, borderWidth: 1, labelSize: 18 } },
+  { id: "religion", kind: "area", name: "Вера", layerId: "religions", style: { color: "#e0c060", alpha: 0.35, borderWidth: 1, labelSize: 18 } },
   { id: "city", kind: "object", name: "Город", style: { icon: "modules/artarius/assets/icons/castle.svg", color: "#f2e3c9" } },
   { id: "capital", kind: "object", name: "Столица", style: { icon: "modules/artarius/assets/icons/capitol.svg", color: "#f0c96a", size: 0.72 } },
   { id: "river", kind: "line", name: "Река", style: { color: "#5b8fd6", widthStart: 2, widthEnd: 9, meander: 0.2 } },
@@ -48,7 +53,9 @@ export const AZGAAR_TYPES = [
 export const AZGAAR_LAYERS = [
   { id: "terrain", name: "Местность", visible: true, exclusive: true },
   { id: "regions", name: "Области", visible: true, exclusive: true },
-  { id: "politics", name: "Владения", visible: true, exclusive: true }
+  { id: "politics", name: "Владения", visible: true, exclusive: true },
+  { id: "cultures", name: "Народы", visible: true, exclusive: true },
+  { id: "religions", name: "Религии", visible: true, exclusive: true }
 ];
 
 /**
@@ -140,7 +147,7 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
   const lineToScene = pts => roundPoints(simplify(pts.map(t.point), tolerance));
   const cells = pack.cells;
   const features = [];
-  const stats = { terrain: 0, states: 0, provinces: 0, burgs: 0, rivers: 0, routes: 0 };
+  const stats = { terrain: 0, states: 0, provinces: 0, cultures: 0, religions: 0, burgs: 0, rivers: 0, routes: 0 };
   const nearest = nearestCellIndex(cells, info);
   const hexToCell = new Map();
   for ( const h of hexes ) {
@@ -198,6 +205,17 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
       if ( !p?.i || p.removed || !byProv.has(p.i) ) continue;
       pushZone("province", p, byProv.get(p.i), "region", "regions");
       stats.provinces++;
+    }
+  }
+
+  // Народы и религии: нулевой народ и «Без веры» в Azgaar означают пустое место.
+  for ( const [part, list, field, typeId] of [["cultures", pack.cultures, "culture", "culture"], ["religions", pack.religions, "religion", "religion"]] ) {
+    if ( !parts[part] || !Array.isArray(list) ) continue;
+    const by = group(c => c[field]);
+    for ( const item of list ) {
+      if ( !item?.i || item.removed || !by.has(item.i) ) continue;
+      pushZone(field, item, by.get(item.i), typeId, part);
+      stats[part]++;
     }
   }
 
@@ -264,7 +282,16 @@ export function buildAzgaarFeatures(data, { rect, hexes, center, cellAt, parts =
     }
   }
 
-  return { features, stats, mapId, name: info.mapName ?? "" };
+  // Высота, температура, осадки и население гексов для слоёв климата. Температура и осадки лежат в клетках grid.
+  const gridCells = data.grid?.cells ?? [];
+  const fields = buildFields(hexes, h => {
+    const hit = hexToCell.get(key(h));
+    if ( !hit ) return null;
+    const c = hit.cell;
+    const g = gridCells[c.g] ?? {};
+    return { height: c.h ?? g.h, temp: g.temp ?? c.temp, prec: g.prec ?? c.prec, pop: c.pop };
+  });
+  return { features, stats, mapId, name: info.mapName ?? "", fields };
 }
 
 /** Добавить в списки атласа недостающие типы и слои импорта. Возвращает новые списки. */

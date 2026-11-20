@@ -2,6 +2,7 @@
  * Генератор тестового мира в Foundry: окно с настройками и запись в атлас сцены.
  * Сам мир собирает чистый scripts/gen/mapgen.mjs.
  */
+import { generatedFields } from "../data/fields.mjs";
 import { MODULE_ID, FEATURE_TYPE } from "../constants.mjs";
 import { getAtlas, ensureAtlas, getAtlasTypes, getLayers, setTypes, setLayers, applyPlan } from "../data/store.mjs";
 import { generateWorld, withResourceTypes, GEN_DEFAULTS } from "../gen/mapgen.mjs";
@@ -126,6 +127,11 @@ export async function generateTestWorld(options = {}) {
   for ( let i = 0; i < built.features.length; i += 200 ) {
     await applyPlan(atlas, { create: built.features.slice(i, i + 200), update: [], delete: [], skipped: [] });
   }
+  // Высота, температура, осадки и население для слоёв как в Azgaar.
+  const fields = generatedFields({
+    cells: grid.allCells(), ...built.climate, terrain: built.terrain, key: c => `${c[0]},${c[1]}`
+  });
+  await scene.update({ [`flags.${MODULE_ID}.fields`]: fields });
   Hooks.callAll("artarius.generate", { scene, atlas, built, removed: old.length });
   return { ...built, removed: old.length };
 }

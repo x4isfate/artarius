@@ -532,7 +532,6 @@
   position: absolute; top: 0; right: calc(var(--hw) + 58px); width: 210px; max-height: 320px; overflow-y: auto;
   pointer-events: auto; padding: 4px; border-radius: 7px; border: 1px solid rgba(0, 0, 0, 0.6);
   background: rgba(24, 21, 18, 0.95); color: #e9ddcf; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
-  animation: art-pop 0.15s ease-out;
 }
 #artarius-hud .art-menu-head { padding: 4px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #a89c8e; }
 #artarius-hud .art-menu-row {
@@ -544,7 +543,7 @@
 #artarius-hud .art-menu-row.active { border-color: var(--art-warn); }
 #artarius-hud .art-menu-row .art-swatch, #artarius-hud .art-menu-row img, #artarius-hud .art-menu-row svg { width: 22px; height: 22px; flex: none; }
 #artarius-hud .art-menu-del:hover { color: var(--art-bad); }
-@keyframes art-pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes art-pop { from { opacity: 0; } to { opacity: 1; } }
 
 /* 0.5.0: панель выбранных меток внизу экрана */
 #artarius-bar {
@@ -580,6 +579,94 @@
 .artarius .art-archived { opacity: 0.7; font-style: italic; }
 
 @media (prefers-reduced-motion: reduce) {
-  #artarius-hud .art-hud-menu, #artarius-bar, #artarius-goto { animation: none; }
+  #artarius-bar, #artarius-goto { animation: none; }
   .artarius .art-fold::before { transition: none; }
+}
+
+/* 0.6.0: слои у названия сцены, как панель «Слои» в Azgaar */
+#artarius-layerbar { position: fixed; left: 120px; top: 8px; z-index: 65; pointer-events: none; }
+#artarius-layerbar[hidden] { display: none; }
+#artarius-layerbar > * { pointer-events: auto; }
+#artarius-layerbar .art-lb-toggle {
+  display: inline-flex; align-items: center; gap: 6px; width: auto; height: 30px; padding: 0 10px; margin: 0;
+  border: 1px solid var(--art-line-2); border-radius: 6px; background: rgba(24, 21, 18, 0.9); color: var(--art-ink);
+  font-size: 13px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.15s ease-out;
+}
+#artarius-layerbar .art-lb-toggle b { font-weight: 600; color: var(--art-warn); }
+#artarius-layerbar .art-lb-toggle:hover, #artarius-layerbar .art-lb-toggle.active { border-color: var(--art-warn); }
+#artarius-layerbar .art-lb-panel {
+  margin-top: 6px; width: min(460px, calc(100vw - 32px)); padding: 10px; border-radius: 8px;
+  border: 1px solid var(--art-line-2); background: rgba(24, 21, 18, 0.96); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
+}
+#artarius-layerbar .art-lb-panel .art-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+#artarius-layerbar .art-lb-panel select { flex: 1; min-width: 0; height: 28px; }
+#artarius-layerbar .art-lb-label { font-size: 12px; font-style: italic; color: var(--art-muted); white-space: nowrap; }
+#artarius-layerbar .art-lb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+#artarius-layerbar .art-lb-btn {
+  height: 28px; margin: 0; padding: 0 6px; border: 1px solid transparent; border-radius: 4px;
+  background: rgba(232, 214, 195, 0.05); color: var(--art-muted); font-size: 13px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background-color 0.12s ease-out, color 0.12s ease-out;
+}
+#artarius-layerbar .art-lb-btn:hover:not(:disabled) { border-color: var(--art-line-2); }
+#artarius-layerbar .art-lb-btn.on { background: rgba(201, 87, 63, 0.32); color: var(--art-ink); border-color: rgba(201, 87, 63, 0.6); }
+#artarius-layerbar .art-lb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+#artarius-layerbar .art-hint { margin: 8px 0 0; }
+.artarius .art-keys { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.artarius .art-keys kbd { min-width: 52px; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  #artarius-layerbar .art-lb-btn, #artarius-layerbar .art-lb-toggle { transition: none; }
+}
+
+/* 0.6.0: карточка при наведении и статусы значками */
+#artarius-tip { white-space: normal; max-width: 260px; text-align: left; padding: 6px 9px; animation: art-fade 0.12s ease-out; }
+#artarius-tip .art-hc-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#artarius-tip .art-hc-sub { font-size: 12px; opacity: 0.75; }
+#artarius-tip .art-hc-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.art-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 99px; font-size: 11px; line-height: 18px;
+  background: rgba(232, 214, 195, 0.12); color: inherit; white-space: nowrap;
+}
+.art-chip > i, .art-chip > svg { font-size: 10px; opacity: 0.85; }
+.art-chip-aspect { background: rgba(232, 194, 122, 0.22); }
+.art-chip .art-lvl { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.art-pips { display: inline-flex; gap: 2px; }
+.art-pips i { width: 5px; height: 5px; border-radius: 50%; background: rgba(232, 214, 195, 0.3); }
+.art-pips i.on { background: var(--art-warn, #e8c27a); }
+.artarius .art-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-view-block { margin: 8px 0; }
+.artarius .art-view-block h5 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; }
+.artarius .art-aspect-view { margin: 4px 0 0; padding: 4px 8px; border-left: 2px solid var(--art-warn); }
+.artarius .art-aspect-view p { margin: 2px 0; font-size: 12px; color: var(--art-muted); }
+@keyframes art-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #artarius-tip { animation: none; } }
+
+/* 0.6.0: вкладка «Мир» — разделы раскрываются на месте */
+.artarius .art-accs { display: grid; gap: 6px; }
+.artarius .art-acc { border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-2); }
+.artarius .art-acc > summary {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; list-style: none; font-weight: 600;
+}
+.artarius .art-acc > summary::-webkit-details-marker { display: none; }
+.artarius .art-acc > summary::after { content: "▸"; margin-left: auto; transition: transform 0.15s ease-out; }
+.artarius .art-acc[open] > summary::after { transform: rotate(90deg); }
+.artarius .art-acc-body { padding: 4px 10px 10px; }
+.artarius .art-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.artarius .art-parts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 8px; margin: 6px 0; }
+.artarius .art-file-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .artarius .art-acc > summary::after { transition: none; }
+}
+
+/* 0.6.0: короткие анимации, 0.1–0.3 с, появление с замедлением в конце. */
+/* Анимация только у постоянных контейнеров: она играет, когда панель появляется, а не при каждой перерисовке. */
+#artarius-hud:not([hidden]) { animation: art-fade 0.15s ease-out; }
+#artarius-hud .art-hud-btn { transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out, transform 0.12s ease-out; }
+#artarius-hud .art-hud-btn:hover { transform: translateY(-1px); }
+.artarius .art-btn, .artarius .art-icon-btn { transition: border-color 0.12s ease-out, background-color 0.12s ease-out, color 0.12s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  #artarius-hud:not([hidden]) { animation: none; }
+  #artarius-hud .art-hud-btn, .artarius .art-btn, .artarius .art-icon-btn { transition: none; }
+  #artarius-hud .art-hud-btn:hover { transform: none; }
 }

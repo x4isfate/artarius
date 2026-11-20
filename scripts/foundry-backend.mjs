@@ -133,6 +133,8 @@ export default class FoundryBackend {
 
   isWorld() { return isWorldScene(); }
   world() { return worldOf(); }
+  /** Данные гексов для слоёв климата (импорт Azgaar, генератор). */
+  fields() { return canvas?.scene?.getFlag?.(MODULE_ID, "fields") ?? null; }
 
   players() {
     return game.users.filter(u => !u.isGM).map(u => ({
@@ -359,4 +361,15 @@ export default class FoundryBackend {
   openWorldSettings() { game.modules.get(MODULE_ID).api.openWorldSettings(); }
   openAzgaar() { game.modules.get(MODULE_ID).api.openAzgaar(); }
   openGenerator() { game.modules.get(MODULE_ID).api.openGenerator(); }
+  openAzgaarGenerator() { game.modules.get(MODULE_ID).api.openAzgaarGenerator(); }
+
+  /* Вкладка «Мир»: настройки, импорт и генератор без отдельных окон. */
+  worldInfo() { return game.modules.get(MODULE_ID).api.worldInfo(); }
+  applyWorldSettings(values) { return game.modules.get(MODULE_ID).api.applyWorldSettings(values); }
+  importAzgaarText(text, fileName, options) { return game.modules.get(MODULE_ID).api.importAzgaarText(text, fileName, options); }
+  async generateWorld(options) {
+    const out = await game.modules.get(MODULE_ID).api.generateTestWorld(options);
+    if ( out ) ui.notifications.info(game.i18n.format("ART.Gen.done", { ...out.stats, seed: out.seed }));
+    return out;
+  }
 }

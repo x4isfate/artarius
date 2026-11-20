@@ -12,7 +12,7 @@ import { resizeWorld, sceneDims } from "./apps/world-size.mjs";
 import { normalizeDims, sceneSizeFor } from "./hex/dims.mjs";
 import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
 import GuideApp from "./apps/guide-app.mjs";
-import AzgaarApp, { AzgaarGenerator, importAzgaar } from "./apps/azgaar-app.mjs";
+import AzgaarApp, { AzgaarGenerator, importAzgaar, importAzgaarText } from "./apps/azgaar-app.mjs";
 import { checkForUpdate } from "./update-check.mjs";
 import { SOCKET, onSocket, onCheckMessage, onCheckUpdated, autoApplyTrusted, rollForClaim } from "./review/claims.mjs";
 import { markCell, cellsInShapes, cellKey } from "./data/world.mjs";
@@ -60,7 +60,7 @@ Hooks.once("init", () => {
   // Кнопки в колонке инструментов (группа Артария слева).
   runtime.buttons = {
     queue: () => studio.openQueue(),
-    layers: () => runtime.ui?.toggleLayers(),
+    layers: () => runtime.ui?.toggleLayerPanel(),
     settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()
@@ -81,6 +81,9 @@ Hooks.once("init", () => {
     debugInput: (on = true) => { inputDebug.on = !!on; inputDebug.warned = false; return inputDebug.on; },
     generateTestWorld: options => generateTestWorld(options),
     openWorldSettings: () => openWorldSettings(),
+    applyWorldSettings: values => applyWorldSettings(values),
+    worldInfo: () => worldInfo(),
+    importAzgaarText: (text, fileName, options) => importAzgaarText(text, fileName, options),
     /** Перестроить поле: resizeWorld({ cols, rows, size }). Элементы переносятся на новое поле. */
     resizeWorld: (dims, scene = canvas.scene) => resizeWorld(scene, dims),
     /** Размер поля текущей сцены: { cols, rows, size }. */
@@ -457,9 +460,26 @@ async function openWorldSettings() {
     rejectClose: false
   });
   if ( !result ) return;
+  await applyWorldSettings(result);
+}
+
+/** Записать настройки мира: { dims: { cols, rows, size }, world: { baseColor, gridColor, gridAlpha, rough } }. */
+async function applyWorldSettings({ dims, world }, scene = canvas.scene) {
+  if ( !scene || !game.user.isGM ) return;
   // Сначала поле: правка флагов тоже перерисовывает холст и сбила бы ожидание перерисовки после смены сетки.
-  if ( await resizeWorld(scene, result.dims) ) ui.notifications.info(game.i18n.format("ART.World.resized", normalizeDims(result.dims)));
-  await scene.update({ [`flags.${MODULE_ID}.world`]: { ...worldOf(scene), ...result.world } });
+  if ( dims && await resizeWorld(scene, dims) ) ui.notifications.info(game.i18n.format("ART.World.resized", normalizeDims(dims)));
+  if ( world ) await scene.update({ [`flags.${MODULE_ID}.world`]: { ...worldOf(scene), ...world } });
+}
+
+/** Что показать во вкладке «Мир»: размер поля, цвета, число игроков. */
+function worldInfo(scene = canvas.scene) {
+  if ( !scene ) return null;
+  return {
+    dims: sceneDims(scene),
+    world: worldOf(scene),
+    roughDefault: worldOf(scene).rough || !scene.getFlag(MODULE_ID, "world")?.roughSet,
+    players: game.users.filter(u => !u.isGM).length
+  };
 }
 
 /** Найти элемент: открыть его гекс, раскрыть строку и навести камеру. */

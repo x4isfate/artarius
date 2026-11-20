@@ -69,8 +69,9 @@ test("hatching stays inside the hex", () => {
 });
 
 test("layer presets and view parts", () => {
-  assert.deepEqual(viewOf(["@lines"]), { marks: true, resources: true, lines: false, labels: true });
-  assert.equal(activePreset(["@resources", "regions"], BUILTIN_PRESETS), "political");
+  const v = viewOf(["@lines"]);
+  assert.deepEqual([v.marks, v.resources, v.lines, v.labels], [true, true, false, true]);
+  assert.equal(activePreset(["@resources", "regions", "cultures", "religions"], BUILTIN_PRESETS), "political");
   assert.equal(activePreset(["@lines"], BUILTIN_PRESETS), null);
   assert.ok(isResourceType("res-gold") && !isResourceType("city"));
 });
@@ -150,7 +151,8 @@ test("presets switch hidden layers in the backend", async () => {
   const { backend, studio } = makeStudio();
   await studio.applyPreset("physical");
   assert.equal(studio.activePreset(), "physical");
-  assert.deepEqual(studio.view(), { marks: true, resources: false, lines: true, labels: false });
+  const v = studio.view();
+  assert.deepEqual([v.marks, v.resources, v.lines, v.labels, v.heights], [true, false, true, false, true]);
   backend.prompt = async () => "Мой вид";
   await studio.savePreset();
   assert.ok(studio.presets().some(p => p.custom && p.name === "Мой вид"));
