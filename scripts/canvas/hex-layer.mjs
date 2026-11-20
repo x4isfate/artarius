@@ -154,7 +154,7 @@ export default class HexLayer extends InteractionLayer {
         const s = runtime.studio;
         if ( this._needBase ) this.renderer.drawBase(runtime.backend.world());
         this._needBase = false;
-        this.renderer.drawData(s.states, s.types, s.layers, runtime.backend.world(), s.view());
+        this.renderer.drawData(s.states, s.types, s.layers, runtime.backend.world(), s.view(), runtime.backend.fields?.());
         this.renderer.drawOverlay(s);
       } catch(err) {
         console.error(`${MODULE_ID} | draw`, err);

@@ -90,7 +90,12 @@ function pickWeighted(list, rnd) {
  * Местность каждого гекса.
  * options: { cells, center, seed, water, mountains }. Возвращает Map "i,j" → тип местности.
  */
-export function generateTerrain({ cells, center, seed = "", water = GEN_DEFAULTS.water, mountains = GEN_DEFAULTS.mountains }) {
+export function generateTerrain(options) {
+  return generateTerrainData(options).terrain;
+}
+
+/** Местность и то, из чего она получилась: высота, влажность, широта, уровень моря (для слоёв климата). */
+export function generateTerrainData({ cells, center, seed = "", water = GEN_DEFAULTS.water, mountains = GEN_DEFAULTS.mountains }) {
   const rnd = seededRandom(`terrain:${seed}`);
   const hNoise = makeNoise(rnd);
   const mNoise = makeNoise(rnd);
@@ -134,7 +139,7 @@ export function generateTerrain({ cells, center, seed = "", water = GEN_DEFAULTS
     else t = "plains";
     out.set(k, t);
   }
-  return out;
+  return { terrain: out, height, moist, lat, seaLevel };
 }
 
 /**
@@ -207,7 +212,8 @@ export function generateWorld(options) {
   const all = new Set(cells.map(key));
   const inBounds = o.inBounds ?? (c => all.has(key(c)));
   const rnd = seededRandom(`world:${seed}`);
-  const terrain = generateTerrain({ cells, center, seed, water: o.water, mountains: o.mountains });
+  const data = generateTerrainData({ cells, center, seed, water: o.water, mountains: o.mountains });
+  const terrain = data.terrain;
   const features = [];
   const stats = { terrain: 0, hexes: cells.length, resources: 0, realms: 0 };
   const ext = kind => ({ seed, kind });
@@ -283,7 +289,7 @@ export function generateWorld(options) {
     stats.resources++;
   }
 
-  return { features, stats, seed, terrain };
+  return { features, stats, seed, terrain, climate: data };
 }
 
 /** Добавить недостающие типы ресурсов. */

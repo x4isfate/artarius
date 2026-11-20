@@ -190,9 +190,15 @@ async function shot(page, name) {
 
   /* 9. Карточка гекса ---------------------------------------------- */
   await act("tool", '[data-tool="select"]');
-  await act("toggleLayer", '[data-id="politics"]');
-  check((await ev(() => window.art.backend.atlasLayers.find(l => l.id === "politics").visible)) === false, "глаз скрывает слой");
-  await act("toggleLayer", '[data-id="politics"]');
+  await page.click('#artarius-layerbar [data-action="toggleLayerPanel"]');
+  check(await page.locator("#artarius-layerbar .art-lb-grid").isVisible(), "кнопка «Слои» у сцены открывает панель слоёв");
+  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  check((await ev(() => window.art.backend.atlasLayers.find(l => l.id === "politics").visible)) === false, "кнопка слоя скрывает слой");
+  check(!(await page.locator('#artarius-layerbar [data-id="politics"]').getAttribute("class")).includes(" on"), "выключенный слой виден на кнопке");
+  check(await page.locator('#artarius-layerbar [data-id="@temp"]').isDisabled(), "слой без данных (температура) недоступен");
+  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  await page.keyboard.press("Escape");
+  check(!(await page.locator("#artarius-layerbar .art-lb-panel").count()), "Esc закрывает панель слоёв");
   await click([3, 5]);
   check(await page.locator("#artarius-hud .art-hud-left").isVisible() && !(await page.locator(".art-right").isVisible()),
     "щелчок осмотром ставит панель на гекс, большое окно не открывается");
@@ -214,6 +220,8 @@ async function shot(page, name) {
   await act("openItem", `[data-id="${markId}"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:name"]`, "Винтерфол-на-Скале");
   await page.selectOption(`#artarius-ui select[data-key="${markId}:demiurge"]`, "a-ice");
+  check(!(await page.locator(`#artarius-ui [data-action="addStatus"][data-id="${markId}"]`).count()), "статусы сначала только для чтения");
+  await act("editStatuses", `[data-id="${markId}"]`);
   await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:statuses.0.name"]`, "Голод");
   await page.fill(`#artarius-ui [data-key="${markId}:statuses.0.max"]`, "10");
@@ -238,6 +246,9 @@ async function shot(page, name) {
   a = await atlas();
   m = a.find(x => x.id === markId);
   check(m.statuses.length === 1 && m.aspects.length === 1 && m.aspects[0].name === "Защищённая крепость" && m.aspects[0].value === 1, "статус стал аспектом, уровни аспекта и его статусы работают");
+  await act("editStatuses", '[data-id=""]');
+  check(await page.locator(`#artarius-ui .art-view-block .art-chip`).count() >= 2, "после «Готово» статусы и аспекты видны значками");
+  await act("editStatuses", `[data-id="${markId}"]`);
   await act("removeStatus", `[data-id="${markId}"][data-path="statuses"]`);
   await page.fill(`#artarius-ui textarea[data-key="${markId}:text"]`, "Северная твердыня.");
   await page.locator(`#artarius-ui textarea[data-key="${markId}:text"]`).blur();
@@ -425,10 +436,28 @@ async function shot(page, name) {
   check(!layers.some(l => l.id === magic.id) && (await ev(() => window.art.backend.atlasTypes.find(t => t.name === "Аура")?.layerId)) === "overlay", "слой удалён, его типы переехали в «Прочее»");
   check(!(await page.locator('#artarius-ui [data-action="deleteLayer"][data-id="terrain"]').count()), "местность удалить нельзя");
   await act("settingsSection", '[data-section="world"]');
-  await act("worldSettings");
+  check(await page.locator('#artarius-ui details[data-fold="settings"][open]').count() === 1, "во вкладке «Мир» настройки раскрыты, остальное свёрнуто");
+  await page.fill('#artarius-ui [data-wf="settings.cols"]', "40");
+  await ev(() => window.art.studio.changed("ui"));
+  check((await page.inputValue('#artarius-ui [data-wf="settings.cols"]')) === "40", "набранное в полях «Мира» не стирается перерисовкой");
+  await act("wfSettings");
+  const saved = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "applyWorldSettings")[1]));
+  check(saved.dims.cols === 40 && saved.world.baseColor === "#1f3b57", "«Сохранить» пишет размер поля и цвета");
+  await page.click('#artarius-ui details[data-fold="azgaar"] > summary');
+  await page.setInputFiles('#artarius-ui [data-wf-file="azgaar"]', { name: "map.json", mimeType: "application/json", buffer: Buffer.from('{"info":{}}') });
+  await page.waitForTimeout(150);
+  check(await page.locator('#artarius-ui details[data-fold="azgaar"][open]').count() === 1, "раскрытый раздел остаётся раскрытым");
+  await page.click('#artarius-ui details[data-fold="azgaar"] [data-wf="azgaar.part.provinces"]');
+  await act("wfImport");
+  const imp = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "importAzgaar")[1]));
+  check(imp.name === "map.json" && imp.options.parts.provinces === true && imp.options.parts.cultures === true, "импорт Azgaar берёт файл и галочки частей прямо из вкладки");
+  await page.click('#artarius-ui details[data-fold="gen"] > summary');
+  await page.fill('#artarius-ui [data-wf="gen.seed"]', "abc");
+  await act("wfGenerate");
+  const g = await ev(() => JSON.parse(window.art.backend.log.find(l => l[0] === "generateWorld")[1]));
+  check(g.seed === "abc" && g.water === 0.35 && g.realmCount === 2, "генератор запускается из вкладки с набранным зерном");
   await act("azgaar");
-  await act("generator");
-  check((await ev(() => ["worldSettings", "azgaar", "generator", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "кнопки мира, Azgaar, генератора и справки вызывают свои окна");
+  check((await ev(() => ["azgaar", "guide"].every(k => window.art.backend.log.some(l => l[0] === k)))), "Azgaar открывается и отдельным окном, справка — своим");
   await act("closeSettings");
   check(!(await page.locator("#artarius-ui .art-settings").isVisible()), "крестик закрывает настройки");
   await act("rightTab", '[data-tab="tile"]');
@@ -507,10 +536,16 @@ async function shot(page, name) {
   await act("finishLine");
   const roads = await ev(() => [...window.art.backend.atlas.values()].filter(s => s.system.typeId === "road"));
   check(roads.length === 1 && roads[0].name === "Тракт", "вторая дорога от конца первой стала её продолжением");
-  const mid = await at([10, 3]);
+  // Между центрами гексов: на линии, но мимо меток (метка под курсором показала бы свою карточку).
+  const m3 = await at([10, 3]), m4 = await at([10, 4]);
+  const mid = { x: (m3.x + m4.x) / 2, y: (m3.y + m4.y) / 2 };
   await page.mouse.move(mid.x, mid.y);
-  await page.mouse.move(mid.x + 2, mid.y + 1);
-  check((await page.locator("#artarius-tip").isVisible()) && (await page.locator("#artarius-tip").innerText()) === "Тракт", "наведение на линию показывает её название");
+  await page.mouse.move(mid.x + 1, mid.y);
+  check((await page.locator("#artarius-tip").isVisible()) && (await page.locator("#artarius-tip .art-hc-title").innerText()) === "Тракт", "наведение на линию показывает её название");
+  check((await page.locator("#artarius-tip .art-hc-sub").innerText()).includes("Дорога"), "в карточке при наведении виден тип");
+  await page.mouse.move(m3.x, m3.y);
+  await page.mouse.move(m3.x + 1, m3.y);
+  check((await page.locator("#artarius-tip .art-hc-sub").innerText()).length > 0 && (await page.locator("#artarius-tip .art-hc-title").innerText()) !== "Тракт", "наведение на метку показывает её карточку, а не линию под ней");
   await act("lineMode", '[data-mode="edge"]');
   await click([6, 12]); await click([6, 15]);
   check((await ev(() => window.art.studio.line.points.length)) > 4, "по краям гексов линия идёт по рёбрам клеток");

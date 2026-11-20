@@ -132,7 +132,9 @@
         "burgs": "Burgs",
         "rivers": "Rivers",
         "routes": "Roads and routes",
-        "terrain": "Terrain"
+        "terrain": "Terrain",
+        "cultures": "Cultures",
+        "religions": "Religions"
       },
       "error": {
         "notJson": "This is not a JSON file.",
@@ -203,7 +205,9 @@
       "down": "Down",
       "delete": "Delete layer",
       "deleteAsk": "Delete layer “{name}”? Its types ({n}) and zones move to “{to}”.",
-      "terrainHint": "Terrain cannot be deleted: hex colours and the generator rely on it."
+      "terrainHint": "Terrain cannot be deleted: hex colours and the generator rely on it.",
+      "barTitle": "Map layers and presets",
+      "barHint": "Click toggles a layer. Only you see the change."
     },
     "World": {
       "settings": "World settings",
@@ -216,7 +220,8 @@
       "thumb": "Update scene preview",
       "thumbHint": "Map snapshot for the Scenes list",
       "thumbDone": "Scene preview updated",
-      "thumbFail": "Could not update the scene preview, see the console (F12)"
+      "thumbFail": "Could not update the scene preview, see the console (F12)",
+      "azgaarWindow": "In a separate window"
     },
     "Type": {
       "new": "New type",
@@ -318,7 +323,11 @@
       "order": "Order on the hex",
       "earlier": "Earlier",
       "later": "Later",
-      "deleted": "“{name}” deleted. Ctrl+Z brings it back."
+      "deleted": "“{name}” deleted. Ctrl+Z brings it back.",
+      "statusesAspects": "Statuses and aspects",
+      "editStatuses": "Edit",
+      "doneStatuses": "Done",
+      "noStatusesYet": "No statuses or aspects yet."
     },
     "Queue": {
       "title": "Claims",
@@ -420,13 +429,29 @@
       "physical": "Physical map",
       "resources": "Resources",
       "admin": "Regions",
-      "terrain": "Terrain only"
+      "terrain": "Terrain only",
+      "borders": "Borders",
+      "peoples": "Peoples",
+      "religions": "Religions",
+      "climate": "Climate"
     },
     "View": {
       "marks": "Marks",
       "resources": "Resources",
-      "lines": "Lines",
-      "labels": "Labels"
+      "lines": "Routes",
+      "labels": "Labels",
+      "rivers": "Rivers",
+      "borders": "Borders",
+      "grid": "Grid",
+      "coords": "Coordinates",
+      "heights": "Heightmap",
+      "temp": "Temperature",
+      "prec": "Precipitation",
+      "pop": "Population",
+      "ice": "Ice",
+      "windrose": "Wind rose",
+      "scale": "Scale bar",
+      "noData": "No data: import an Azgaar map or run the generator"
     },
     "Icons": {
       "search": "Search: castle, ore, temple…",
@@ -514,6 +539,16 @@
       "nothing": "Nothing to undo.",
       "undo": "Undo (Ctrl+Z)",
       "redo": "Redo (Ctrl+Shift+Z)"
+    },
+    "Keys": {
+      "title": "Keys",
+      "shift": "click a mark to add it to the selection, a hex to inspect one more",
+      "box": "drag to box-select marks",
+      "alt": "drag a mark to any point",
+      "del": "delete selected marks",
+      "undo": "undo, Ctrl+Shift+Z to redo",
+      "goto": "go to hex",
+      "esc": "clear selection"
     }
   }
 }
