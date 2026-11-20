@@ -244,6 +244,20 @@
 .artarius .art-op-create { border-left-color: var(--art-ok); }
 .artarius .art-op-update { border-left-color: var(--art-warn); }
 .artarius .art-op-delete { border-left-color: var(--art-bad); }
+.artarius .art-diff { flex: 1; min-width: 0; }
+.artarius .art-diff summary { cursor: pointer; list-style: none; }
+.artarius .art-diff summary::-webkit-details-marker { display: none; }
+.artarius .art-diff summary::before { content: "\25BE"; display: inline-block; margin-right: 4px; opacity: .6; transform: rotate(-90deg); transition: transform .15s; }
+.artarius .art-diff[open] summary::before { transform: none; }
+.artarius .art-diff table { width: 100%; margin: 4px 0 2px; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.artarius .art-diff th, .artarius .art-diff td { padding: 2px 4px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--art-line-2); }
+.artarius .art-diff thead th { opacity: .65; font-weight: 600; }
+.artarius .art-diff tbody th { width: 26%; font-weight: 500; opacity: .8; }
+.artarius .art-diff .art-was { color: var(--art-bad); }
+.artarius .art-diff .art-now { color: var(--art-ok); }
+.artarius-chat h3 { margin: 0 0 4px; font-size: 14px; }
+.artarius-chat p { margin: 0 0 4px; }
+.artarius-chat ul { margin: 0; padding-left: 18px; font-size: 12px; }
 .artarius .art-claim { padding: 8px; margin: 0 0 8px; border: 1px solid var(--art-line); border-radius: var(--art-radius); background: var(--art-bg-2); }
 .artarius .art-claim.previewing { border-color: var(--art-warn); }
 .artarius .art-claim header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
@@ -670,3 +684,13 @@
   #artarius-hud .art-hud-btn, .artarius .art-btn, .artarius .art-icon-btn { transition: none; }
   #artarius-hud .art-hud-btn:hover { transform: none; }
 }
+
+/* 0.7.0: быстрые кнопки базовых статусов и аспектов */
+.artarius .art-quick { margin-top: 6px; }
+.artarius button.art-chip-add { border: 1px dashed var(--art-line-2); cursor: pointer; height: auto; width: auto; margin: 0; }
+.artarius button.art-chip-add:hover { border-style: solid; border-color: var(--art-warn); }
+.artarius .art-rights { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 13px; }
+.artarius .art-rights th, .artarius .art-rights td { padding: 4px 6px; border-bottom: 1px solid var(--art-line); text-align: center; }
+.artarius .art-rights th:first-child { text-align: left; }
+.artarius .art-rights thead th { font-weight: 500; color: var(--art-muted); font-size: 12px; }
+.artarius .art-rights select { width: auto; }

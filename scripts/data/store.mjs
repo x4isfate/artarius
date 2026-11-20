@@ -202,6 +202,7 @@ export async function commit(op, scene = canvas?.scene) {
   }
   if ( Hooks.call("artarius.preCommit", op, { scene, direct: game.user.isGM }) === false ) return;
   let result;
+  const before = game.user.isGM ? atlasStates(atlas).get(op.id) : undefined;
   if ( game.user.isGM ) {
     const plan = buildApplyPlan([{ ...op, baseRev: revOf(atlas, op.id) }], id => revOf(atlas, id), { force: true });
     result = await applyPlan(atlas, plan);
@@ -211,7 +212,7 @@ export async function commit(op, scene = canvas?.scene) {
     const baseRev = prev?.baseRev ?? revOf(atlas, op.id) ?? null;
     result = await setDraft(addToDraft(draft, { ...op, baseRev }), game.user, scene.id);
   }
-  Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM });
+  Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM, before });
   return result;
 }
 
@@ -230,6 +231,7 @@ export async function commitOps(ops, scene = canvas?.scene) {
   const allowed = ops.filter(op => Hooks.call("artarius.preCommit", op, { scene, direct: game.user.isGM }) !== false);
   if ( !allowed.length ) return;
   let result;
+  const base = game.user.isGM ? atlasStates(atlas) : new Map();
   if ( game.user.isGM ) {
     const plan = buildApplyPlan(allowed.map(op => ({ ...op, baseRev: revOf(atlas, op.id) })), id => revOf(atlas, id), { force: true });
     result = await applyPlan(atlas, plan);
@@ -241,7 +243,7 @@ export async function commitOps(ops, scene = canvas?.scene) {
     }
     result = await setDraft(draft, game.user, scene.id);
   }
-  for ( const op of allowed ) Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM });
+  for ( const op of allowed ) Hooks.callAll("artarius.commit", op, { scene, direct: game.user.isGM, before: base.get(op.id) });
   return result;
 }
 

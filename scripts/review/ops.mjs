@@ -103,12 +103,13 @@ export const DIFF_FIELDS = [
   ["geometry", s => s.system?.geometry ?? {}],
   ["style", s => s.system?.style ?? {}],
   ["layer", s => [s.system?.layerId ?? "", s.system?.blend ?? "", s.system?.sort ?? 0]],
-  ["links", s => s.system?.links ?? []]
+  ["links", s => s.system?.links ?? []],
+  ["visibility", s => s.system?.visibility?.mode ?? "all"]
 ];
 
 /** Какие части элемента меняет правка. */
 export function changedFields(before, after) {
-  if ( !before ) return DIFF_FIELDS.map(([k]) => k).filter(k => k !== "layer" || after?.system?.kind === "area");
+  if ( !before ) return DIFF_FIELDS.map(([k]) => k).filter(k => (k !== "layer" || after?.system?.kind === "area") && (k !== "visibility" || after?.system?.kind === "object"));
   return DIFF_FIELDS.filter(([, get]) => JSON.stringify(get(before)) !== JSON.stringify(get(after))).map(([k]) => k);
 }
 

@@ -7,6 +7,7 @@ import { shapePoints, shapeOf } from "../data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
+import { isHidden } from "../data/access.mjs";
 import { FIELD_IDS, RAMPS, ICE_TEMP, fieldAt, fieldsFit, rampColor } from "../data/fields.mjs";
 import { layoutMarks, counterAt } from "../data/mark-layout.mjs";
 import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
@@ -421,6 +422,8 @@ export default class HexRenderer {
     const size = slot.d;
     const c = new PIXI.Container();
     c.position.set(x, y);
+    // Скрытую метку мастер видит полупрозрачной, как скрытый токен.
+    if ( isHidden(state) ) c.alpha = 0.5;
     const bg = new PIXI.Graphics();
     const shape = shapeOf(style);
     if ( shape !== "none" ) {
