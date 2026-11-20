@@ -38,6 +38,10 @@ const TYPES = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/ja
   }
   const done = await page.evaluate(() => !!window.__done);
   if ( shot ) await page.screenshot({ path: shot });
+  if ( process.env.ART_THUMB ) {
+    const data = await page.evaluate(() => window.__thumb ?? "");
+    require("fs").writeFileSync(process.env.ART_THUMB, Buffer.from(data.split(",")[1] ?? "", "base64"));
+  }
   if ( !done ) { bad++; console.log("✗ сценарий не дошёл до конца"); }
   const extra = errors.filter(e => !steps.some(s => !s[1] && e.includes(s[0])));
   if ( extra.length ) { bad++; console.log("✗ ошибки в консоли:\n  " + extra.join("\n  ")); }

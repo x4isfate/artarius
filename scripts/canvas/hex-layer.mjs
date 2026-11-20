@@ -248,7 +248,7 @@ export default class HexLayer extends InteractionLayer {
       if ( !s?.tool || !d ) return;
       if ( d.right ) {
         // Правая кнопка без протяжки; протяжкой Foundry двигает карту.
-        if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick(scenePoint(ev, el));
+        if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick();
         return;
       }
       s.pointerUp();
@@ -257,13 +257,17 @@ export default class HexLayer extends InteractionLayer {
     add(window, "keydown", ev => {
       if ( ev.target?.matches?.("input, textarea, select, [contenteditable]") ) return;
       if ( !runtime.studio?.tool ) return;
-      if ( (ev.ctrlKey || ev.metaKey) && ev.code === "KeyZ" && runtime.studio.lastDeleted ) {
-        // Ctrl+Z после удаления метки правой кнопкой возвращает её; остальное Ctrl+Z — у Foundry.
-        ev.preventDefault();
-        ev.stopPropagation();
-        runtime.studio.restoreDeleted();
-        return;
-      }
+      const s = runtime.studio;
+      const ctrl = ev.ctrlKey || ev.metaKey;
+      const own = () => { ev.preventDefault(); ev.stopPropagation(); };
+      if ( !this._owns() ) return;
+      // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: отмена и возврат правок Артария (Foundry их не получает).
+      if ( ctrl && ev.code === "KeyZ" ) { own(); (ev.shiftKey ? s.redo() : s.undo()); return; }
+      if ( ctrl && ev.code === "KeyY" ) { own(); s.redo(); return; }
+      // Delete: удалить выбранные метки.
+      if ( (ev.key === "Delete" || ev.key === "Backspace") && s.markSel.size ) { own(); s.deleteMarks(); return; }
+      // Shift+Пробел: перейти к гексу по координатам.
+      if ( ev.shiftKey && ev.code === "Space" ) { own(); runtime.ui?.openGoto?.(); return; }
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();
         runtime.studio.finishLine();

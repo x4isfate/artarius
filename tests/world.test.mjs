@@ -22,10 +22,11 @@ test("новая зона забирает гексы у соседей в ис�
   assert.equal(ops.some(o => o.id === "r"), false, "держава в другом слое не тронута");
 });
 
-test("зона без гексов удаляется", () => {
+test("зона без гексов не удаляется, а уходит в архив с 0 гексов", () => {
   const states = world(zone("f", "forest", [[1, 1]]), zone("p", "plains", [[2, 2]]));
   const ops = attachOps({ states, types, layers, cells: [[1, 1]], target: "p" });
-  assert.deepEqual(ops.map(o => [o.action, o.id]), [["update", "p"], ["delete", "f"]]);
+  assert.deepEqual(ops.map(o => [o.action, o.id]), [["update", "p"], ["update", "f"]]);
+  assert.deepEqual(ops[1].state.system.geometry.cells, []);
   assert.deepEqual(ops[0].state.system.geometry.cells, [[2, 2], [1, 1]]);
 });
 
@@ -40,7 +41,8 @@ test("снять гексы можно с одной зоны или со все
   const states = world(zone("f", "forest", [[0, 0], [0, 1]]), zone("r", "realm", [[0, 0], [0, 1]]));
   assert.deepEqual(detachOps({ states, types, cells: [[0, 0]], zoneId: "r" }).map(o => o.id), ["r"]);
   const all = detachOps({ states, types, cells: [[0, 0], [0, 1]], layerId: "terrain" });
-  assert.deepEqual(all.map(o => [o.action, o.id]), [["delete", "f"]]);
+  assert.deepEqual(all.map(o => [o.action, o.id]), [["update", "f"]]);
+  assert.deepEqual(all[0].state.system.geometry.cells, []);
 });
 
 test("метки встают по одной на гекс в его центр", () => {
