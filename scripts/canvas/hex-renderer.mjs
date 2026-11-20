@@ -3,6 +3,7 @@
  * Три слоя перерисовки: основа (пустые гексы), данные (зоны, линии, метки)
  * и накладка (выделение, курсор, призраки, начатая линия).
  */
+import { largestComponent, labelPath, placeLetters, fitFontSize } from "../geometry/label-path.mjs";
 import { shapePoints, shapeOf } from "../data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
 import { resolveStyleOf } from "./style.mjs";
@@ -20,11 +21,11 @@ const color = c => {
 
 const flatV = vs => vs.flatMap(v => [v.x, v.y]);
 
-function makeLabel(text, size, fill) {
+function makeLabel(text, size, fill, font = null) {
   const PreciseText = foundry.canvas.containers.PreciseText;
-  const style = PreciseText.getTextStyle({
-    fontSize: size, fill: color(fill), strokeThickness: Math.max(3, size / 5), stroke: 0x111111, fontWeight: "bold"
-  });
+  const opts = { fontSize: size, fill: color(fill), strokeThickness: Math.max(3, size / 5), stroke: 0x111111, fontWeight: "bold" };
+  if ( font ) opts.fontFamily = font;
+  const style = PreciseText.getTextStyle(opts);
   const t = new PreciseText(text ?? "", style);
   t.anchor.set(0.5, 0.5);
   return t;
@@ -285,12 +286,40 @@ export default class HexRenderer {
       }
     }
     this.zones.addChild(g);
-    if ( style.labelSize > 0 && state.name ) {
-      const p = this.grid.center(labelCell(cells, this.grid.center));
-      const t = makeLabel(state.name, style.labelSize, style.labelColor);
-      t.position.set(p.x, p.y);
-      this.labels.addChild(t);
+    if ( style.labelSize > 0 && state.name ) this._drawZoneLabel(state, style, cells, layerId);
+  }
+
+  /**
+   * Подпись зоны. Державы по умолчанию подписаны изогнутой надписью вдоль зоны, как в Azgaar;
+   * labelMode у типа или зоны: "curved", "straight" или "none". labelScale меняет размер.
+   */
+  _drawZoneLabel(state, style, cells, layerId) {
+    const mode = style.labelMode ?? (layerId === "politics" ? "curved" : "straight");
+    if ( mode === "none" ) return;
+    const scale = Number(style.labelScale) > 0 ? Number(style.labelScale) : 1;
+    if ( mode === "curved" && this.grid.neighbors ) {
+      const part = largestComponent(cells, c => this.grid.neighbors(c));
+      const lp = part.length >= 3 ? labelPath(part.map(c => { const p = this.grid.center(c); return [p.x, p.y]; }), { bend: (style.labelBend ?? 1) * Math.min(1, part.length / 14) }) : null;
+      if ( lp && lp.length > this.grid.radius * 2 ) {
+        const size = fitFontSize(state.name, lp.length, { min: Math.max(10, style.labelSize * 0.7), max: style.labelSize * 3, scale });
+        const box = new PIXI.Container();
+        const letters = [...state.name].map(ch => makeLabel(ch, size, style.labelColor, style.labelFont));
+        const spacing = size * 0.06;
+        const widths = letters.map(t => Math.max(size * 0.25, t.width - (Math.max(3, size / 5) * 0.9)));
+        const at = placeLetters(lp.path, widths, spacing);
+        letters.forEach((t, i) => {
+          t.position.set(at[i].x, at[i].y);
+          t.rotation = at[i].angle;
+          box.addChild(t);
+        });
+        this.labels.addChild(box);
+        return;
+      }
     }
+    const p = this.grid.center(labelCell(cells, this.grid.center));
+    const t = makeLabel(state.name, Math.round(style.labelSize * scale), style.labelColor, style.labelFont);
+    t.position.set(p.x, p.y);
+    this.labels.addChild(t);
   }
 
   /**
@@ -357,7 +386,7 @@ export default class HexRenderer {
     if ( style.labelSize > 0 && state.name ) {
       const m = midpoint(curve);
       if ( m ) {
-        const t = makeLabel(state.name, style.labelSize, style.labelColor);
+        const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
         t.position.set(m[0], m[1] - wMax - style.labelSize * 0.6);
         this.labels.addChild(t);
       }
@@ -366,7 +395,7 @@ export default class HexRenderer {
     if ( style.labelSize > 0 ) for ( const seg of state.system.geometry?.segments ?? [] ) {
       const m = midpoint(pts.slice(seg.from, seg.to + 1));
       if ( !m || !seg.name ) continue;
-      const t = makeLabel(seg.name, style.labelSize * 0.85, style.labelColor);
+      const t = makeLabel(seg.name, style.labelSize * 0.85, style.labelColor, style.labelFont);
       t.position.set(m[0], m[1] - wMax - style.labelSize * 0.5);
       this.labels.addChild(t);
     }
@@ -434,7 +463,12 @@ export default class HexRenderer {
       bg.endFill();
     }
     c.addChild(bg);
-    if ( style.icon ) {
+    if ( style.emoji ) {
+      // Эмодзи рисуется как текст своими цветами, без окраски цветом типа.
+      const e = new PIXI.Text(style.emoji, { fontSize: Math.max(8, Math.round(size * 0.56)), fontFamily: "Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif" });
+      e.anchor.set(0.5);
+      c.addChild(e);
+    } else if ( style.icon ) {
       const sprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
       sprite.anchor.set(0.5);
       // Значки библиотеки белые и красятся цветом типа; свою цветную картинку можно не красить.
@@ -452,7 +486,7 @@ export default class HexRenderer {
     }
     this.marks.addChild(c);
     if ( label !== false && state.name && style.labelSize > 0 ) {
-      const t = makeLabel(state.name, style.labelSize, style.labelColor);
+      const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
       if ( label ) t.position.set(label.x, label.y);
       else t.position.set(x, y + (size * 0.5) + (style.labelSize * 0.75));
       this.labels.addChild(t);

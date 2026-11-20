@@ -57,6 +57,26 @@ export const ICON_LIBRARY = {
     ["unicorn", "Единорог"], ["ghost", "Призраки"], ["vampire-dracula", "Вампир"], ["skull-crossed-bones", "Опасно"],
     ["plague-doctor-profile", "Чума"], ["cauldron", "Ведьма, котёл"], ["potion-ball", "Зелье"], ["magic-swirl", "Магия"],
     ["rune-stone", "Рунный камень"], ["crystal-wand", "Жезл"], ["book-aura", "Гримуар"], ["fire-ring", "Огненный круг"]
+  ],
+  animals: [
+    ["deer", "Олени"], ["stag-head", "Благородный олень"], ["boar", "Кабаны"], ["rabbit", "Зайцы"], ["fox-head", "Лисы"],
+    ["eagle-head", "Орлы"], ["raven", "Вороны"], ["owl", "Совы"], ["bird-twitter", "Птицы"], ["snake", "Змеи"], ["bee", "Пчёлы"],
+    ["bison", "Зубры, бизоны"], ["elephant-head", "Слоны"], ["lion", "Львы"], ["tiger-head", "Тигры"], ["shark-fin", "Акулы"],
+    ["dolphin", "Дельфины"], ["whale-tail", "Киты"], ["turtle", "Черепахи"], ["frog", "Лягушки"], ["bat-wing", "Летучие мыши"],
+    ["butterfly", "Бабочки"], ["crab", "Крабы"], ["goat", "Козы"], ["ram", "Бараны"], ["wolf-howl", "Волчья стая"]
+  ],
+  plants: [
+    ["oak", "Дуб"], ["beech", "Бук"], ["birch-trees", "Берёзы"], ["willow-tree", "Ива"], ["fruit-tree", "Плодовый сад"],
+    ["tree-branch", "Ветви"], ["bamboo", "Бамбук"], ["cactus", "Кактус"], ["reed", "Тростник"], ["grass", "Трава"], ["flax", "Лён"],
+    ["sprout", "Росток"], ["vine-leaf", "Лоза"], ["thorny-vine", "Терновник"], ["maple-leaf", "Клён"], ["linden-leaf", "Липа"],
+    ["acorn", "Жёлуди"], ["cherry", "Вишня"], ["berries-bowl", "Ягоды"], ["mushrooms", "Грибница"], ["mushroom-gills", "Поганки"],
+    ["rose", "Роза"], ["sunflower", "Подсолнух"], ["lotus-flower", "Лотос"], ["daisy", "Ромашка"], ["dandelion-flower", "Одуванчик"],
+    ["clover", "Клевер"], ["flower-emblem", "Цветы"], ["leaf-swirl", "Листва"], ["carnivorous-plant", "Хищное растение"],
+    ["venus-flytrap", "Мухоловка"]
+  ],
+  disasters: [
+    ["tornado", "Ураган, смерч"], ["falling-rocks", "Камнепад, шаткие скалы"], ["flood", "Наводнение"], ["fire-zone", "Пожар"],
+    ["lava", "Лава, извержение"]
   ]
 };
 
