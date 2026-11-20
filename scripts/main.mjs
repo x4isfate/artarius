@@ -449,6 +449,7 @@ async function openWorldSettings() {
       ${row("ART.Scene.baseColor", `<input type="color" name="baseColor" value="${esc(w.baseColor)}">`)}
       ${row("ART.Scene.gridColor", `<input type="color" name="gridColor" value="${esc(w.gridColor)}">`)}
       ${row("ART.Scene.gridAlpha", num("gridAlpha", w.gridAlpha, 0, 1, 0.05))}
+      ${row("ART.World.style", `<select name="style">${["atlas", "flat"].map(v => `<option value="${v}" ${(w.style ?? "atlas") === v ? "selected" : ""}>${esc(L(`ART.World.style_${v}`))}</option>`).join("")}</select>`, "ART.World.styleHint")}
       ${row("ART.World.rough", `<input type="checkbox" name="rough" ${w.rough ? "checked" : ""}>`, "ART.World.roughHint")}
       <p class="hint">${esc(L("ART.Scene.settingsHint"))}</p>`,
     ok: {
@@ -460,7 +461,7 @@ async function openWorldSettings() {
           world: {
             baseColor: f.baseColor.value, gridColor: f.gridColor.value,
             gridAlpha: Math.max(0, Math.min(1, Number(f.gridAlpha.value) || 0)),
-            rough: f.rough.checked
+            rough: f.rough.checked, style: f.style.value
           }
         };
       }

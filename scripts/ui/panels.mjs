@@ -1322,6 +1322,8 @@ export default class ArtariusUI {
         ${row("ART.Scene.baseColor", `<input type="color" data-wf="settings.baseColor" value="${esc(val("settings", "baseColor", w.baseColor))}">`)}
         ${row("ART.Scene.gridColor", `<input type="color" data-wf="settings.gridColor" value="${esc(val("settings", "gridColor", w.gridColor))}">`)}
         ${row("ART.Scene.gridAlpha", num("settings", "gridAlpha", w.gridAlpha, 0, 1, 0.05))}</div>
+      <label class="art-field"><span>${esc(this.t("ART.World.style"))}</span><select data-wf="settings.style">${["atlas", "flat"].map(v => `<option value="${v}" ${val("settings", "style", w.style ?? "atlas") === v ? "selected" : ""}>${esc(this.t(`ART.World.style_${v}`))}</option>`).join("")}</select></label>
+      <p class="art-hint">${esc(this.t("ART.World.styleHint"))}</p>
       <label class="art-check">${check("settings", "rough", w.rough)} ${esc(this.t("ART.World.rough"))}</label>
       <p class="art-hint">${esc(this.t("ART.World.roughHint"))}</p>
       <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="wfSettings">${icon("floppy-disk")} ${esc(this.t("ART.Save"))}</button>
@@ -1384,7 +1386,8 @@ export default class ArtariusUI {
       dims: { cols: n(v.cols, info.dims.cols), rows: n(v.rows, info.dims.rows), size: n(v.size, info.dims.size) },
       world: {
         baseColor: v.baseColor ?? info.world.baseColor, gridColor: v.gridColor ?? info.world.gridColor,
-        gridAlpha: clamp(n(v.gridAlpha, info.world.gridAlpha) || 0, 0, 1), rough: v.rough ?? !!info.world.rough
+        gridAlpha: clamp(n(v.gridAlpha, info.world.gridAlpha) || 0, 0, 1), rough: v.rough ?? !!info.world.rough,
+        style: v.style ?? info.world.style ?? "atlas"
       }
     };
     if ( form === "azgaar" ) {
