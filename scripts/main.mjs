@@ -14,6 +14,7 @@ import FeaturePageSheet from "./sheets/feature-page-sheet.mjs";
 import GuideApp from "./apps/guide-app.mjs";
 import AzgaarApp, { AzgaarGenerator, importAzgaar, importAzgaarText } from "./apps/azgaar-app.mjs";
 import { checkForUpdate } from "./update-check.mjs";
+import { onDirectCommit, postClaimsApplied } from "./review/chat.mjs";
 import { SOCKET, onSocket, onCheckMessage, onCheckUpdated, autoApplyTrusted, rollForClaim } from "./review/claims.mjs";
 import { markCell, cellsInShapes, cellKey } from "./data/world.mjs";
 import { esc } from "./ui/dom.mjs";
@@ -51,6 +52,11 @@ Hooks.once("init", () => {
   S("hiddenLayers", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("layerPresets", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("windows", { scope: "client", config: false, type: Object, default: {} });
+  S("permissions", { scope: "world", config: false, type: Object, default: {}, onChange: () => runtime.backend?.emit() });
+  S("chatChanges", {
+    name: "ART.Chat.setting", hint: "ART.Chat.settingHint",
+    scope: "world", config: true, type: Boolean, default: true
+  });
 
   const backend = new FoundryBackend();
   const studio = new Studio(backend);
@@ -196,6 +202,8 @@ function scheduleThumb(delay = 1200) {
   clearTimeout(thumbTimer);
   thumbTimer = setTimeout(() => runtime.backend?.updateThumb(), delay);
 }
+Hooks.on("artarius.commit", onDirectCommit);
+Hooks.on("artarius.claimsApplied", (entries, bases) => postClaimsApplied(entries, bases));
 Hooks.on("artarius.importAzgaar", () => scheduleThumb());
 Hooks.on("artarius.generate", () => scheduleThumb());
 

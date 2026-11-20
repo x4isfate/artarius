@@ -10,19 +10,13 @@
  */
 import { esc, data, patch, icon, htmlToText } from "./dom.mjs";
 import { cellKey, zoneCells, layerIdOf } from "../data/world.mjs";
-import { formatStatus, changedFields } from "../review/ops.mjs";
+import { formatStatus } from "../review/ops.mjs";
+import { describeOp, diffOf } from "../review/describe.mjs";
 import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
+import { statusIcon, BASE_STATUSES, BASE_ASPECTS } from "../data/statuses.mjs";
 
-/** Значок статуса по названию; у незнакомых — кружок. Базовые статусы получат свои значки в 0.7. */
-export function statusIcon(name) {
-  const n = String(name ?? "").toLowerCase();
-  const map = [["осад", "shield-halved"], ["разруш", "house-crack"], ["гор", "fire"], ["пожар", "fire"], ["чум", "biohazard"],
-    ["восстан", "fist-raised"], ["бунт", "fist-raised"], ["блокад", "ban"], ["заброш", "ghost"], ["защит", "shield"],
-    ["стро", "trowel-bricks"], ["раскоп", "person-digging"], ["изуч", "book-open"], ["марев", "smog"]];
-  return map.find(([k]) => n.includes(k))?.[1] ?? "circle-dot";
-}
 import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
 import { MARK_SHAPES, shapeSwatch, shapeOf } from "../data/mark-shape.mjs";
 import { LINE_SHAPES, LINE_PATTERNS, lineCurve, lineDash } from "../canvas/style.mjs";
@@ -341,6 +335,20 @@ export default class ArtariusUI {
       tool: el => s.setTool(el.dataset.tool, { toggle: false }),
       toggleMenu: () => s.setTool(s.tool ? null : "select"),
       toggleLayerPanel: () => this.toggleLayerPanel(),
+      addBaseStatus: el => s.addBaseStatus(el.dataset.id, el.dataset.path, el.dataset.key),
+      addBaseAspect: el => s.addBaseAspect(el.dataset.id, el.dataset.key),
+      permRole: el => this._setPerm(cfg => { ((cfg.roles ??= {})[el.dataset.role] ??= {})[el.dataset.perm] = el.checked; }),
+      permUser: el => this._setPerm(cfg => {
+        const u = ((cfg.users ??= {})[el.dataset.user] ??= {});
+        if ( el.value === "" ) delete u[el.dataset.perm]; else u[el.dataset.perm] = el.value === "true";
+      }),
+      visMode: el => s.setVisibility(el.dataset.id, el.value),
+      visUser: el => {
+        const st = s.stateOf(el.dataset.id);
+        const set = new Set(st?.system.visibility?.users ?? []);
+        if ( el.checked ) set.add(el.dataset.user); else set.delete(el.dataset.user);
+        s.setVisibility(el.dataset.id, "some", [...set]);
+      },
       editStatuses: el => { this.statusEdit = el.dataset.id || null; this.render(); },
       extra: el => EXTRA_ACTIONS.get(el.dataset.id)?.onClick?.(),
       help: () => this.backend.openGuide?.(),
@@ -445,6 +453,7 @@ export default class ArtariusUI {
       submit: () => s.submit(),
       undoOp: el => s.undoDraftOp(el.dataset.id),
       preview: el => s.togglePreview(el.dataset.id),
+      claimGoTo: el => s.goToClaim(el.dataset.id),
       check: el => s.toggleChecked(el.dataset.id),
       checkAll: () => s.checkAll(),
       apply: el => s.applyClaims([el.dataset.id]),
@@ -873,7 +882,7 @@ export default class ArtariusUI {
       const level = !has ? "" : (max > 0 && max <= 5
         ? `<span class="art-pips">${Array.from({ length: max }, (_, n) => `<i class="${n < Number(x.value) ? "on" : ""}"></i>`).join("")}</span>`
         : `<span class="art-lvl">${esc(String(x.value))}${max ? `/${max}` : ""}</span>`);
-      return `<span class="art-chip${aspect ? " art-chip-aspect" : ""}" title="${esc(formatStatus(x))}">${icon(aspect ? "star" : statusIcon(x.name))}<span>${esc(x.name)}</span>${level}</span>`;
+      return `<span class="art-chip${aspect ? " art-chip-aspect" : ""}" title="${esc(formatStatus(x))}">${icon(aspect ? (x.key ? statusIcon(x) : "star") : statusIcon(x))}<span>${esc(x.name)}</span>${level}</span>`;
     };
     const list = [...(st.system.statuses ?? []).filter(x => x.name).map(x => chip(x, false)),
       ...(st.system.aspects ?? []).filter(x => x.name).map(x => chip(x, true))];
@@ -1127,17 +1136,50 @@ export default class ArtariusUI {
       { id: "area", ic: "draw-polygon" },
       { id: "object", ic: "location-dot" },
       { id: "line", ic: "route" },
-      gm && { id: "world", ic: "earth-europe" }
+      gm && { id: "world", ic: "earth-europe" },
+      gm && { id: "rights", ic: "user-shield" }
     ].filter(Boolean);
     const tabs = `<nav class="art-tabs art-settings-tabs">${secs.map(x => `<button type="button" class="${x.id === sec ? "active" : ""}"
       data-action="settingsSection" data-section="${x.id}">${icon(x.ic)} ${esc(this.t(`ART.Settings.sec.${x.id}`))}</button>`).join("")}</nav>`;
     let body;
     if ( sec === "layers" ) body = this.renderSplit(this.renderLayerList(), this.renderLayerForm(), "set-layers");
     else if ( sec === "world" ) body = this.renderWorldSection();
+    else if ( sec === "rights" ) body = this.renderRights();
     else body = this.renderSplit(this.renderTypeList(sec), s.typeForm?.kind === sec ? this.renderTypeForm() : `<p class="art-empty">${esc(this.t("ART.Settings.pick"))}</p>`, `set-${sec}`);
     const head = `<header class="art-head">${icon("gear")}<h3>${esc(this.t("ART.Settings.title"))}</h3>
       <button type="button" class="art-icon-btn" data-action="closeSettings" title="${esc(this.t("ART.Close"))}">${icon("xmark")}</button></header>`;
     return `${head}<div class="art-body art-settings-body">${tabs}${body}</div>`;
+  }
+
+  /**
+   * Права игроков: строки — роли и отдельные игроки, столбцы — что можно.
+   * У роли галочка, у игрока выбор «как у роли / можно / нельзя».
+   */
+  renderRights() {
+    const cfg = this.backend.permissionConfig?.() ?? {};
+    const PERMS = ["place", "draw", "editOthers", "statuses"];
+    const head = `<tr><th></th>${PERMS.map(p => `<th>${esc(this.t(`ART.Perm.${p}`))}</th>`).join("")}</tr>`;
+    const ROLE = { 1: "ART.Perm.player", 2: "ART.Perm.trusted" };
+    const roleRows = [1, 2].map(r => `<tr><th>${esc(this.t(ROLE[r]))}</th>${PERMS.map(p => {
+      const on = cfg.roles?.[r]?.[p] ?? true;
+      return `<td><input type="checkbox" data-change="permRole" data-role="${r}" data-perm="${p}" ${on ? "checked" : ""} aria-label="${esc(this.t(`ART.Perm.${p}`))}"></td>`;
+    }).join("")}</tr>`).join("");
+    const users = this.backend.roster?.() ?? [];
+    const userRows = users.map(u => `<tr><th>${esc(u.name)}</th>${PERMS.map(p => {
+      const v = cfg.users?.[u.id]?.[p];
+      const opt = (val, label) => `<option value="${val}"${String(v ?? "") === val ? " selected" : ""}>${esc(this.t(label))}</option>`;
+      return `<td><select data-change="permUser" data-user="${esc(u.id)}" data-perm="${p}" aria-label="${esc(this.t(`ART.Perm.${p}`))}">
+        ${opt("", "ART.Perm.asRole")}${opt("true", "ART.Perm.yes")}${opt("false", "ART.Perm.no")}</select></td>`;
+    }).join("")}</tr>`).join("");
+    return `<p class="art-hint">${esc(this.t("ART.Perm.hint"))}</p>
+      <table class="art-rights"><thead>${head}</thead><tbody>${roleRows}</tbody></table>
+      ${users.length ? `<h4>${esc(this.t("ART.Perm.players"))}</h4><table class="art-rights"><thead>${head}</thead><tbody>${userRows}</tbody></table>` : `<p class="art-empty">${esc(this.t("ART.Perm.noPlayers"))}</p>`}`;
+  }
+
+  async _setPerm(fn) {
+    const cfg = this.backend.permissionConfig?.() ?? {};
+    fn(cfg);
+    await this.backend.setPermissionConfig?.(cfg);
   }
 
   renderTypeList(kind) {
@@ -1373,6 +1415,7 @@ export default class ArtariusUI {
         <p class="art-hint">${esc(this.t("ART.Line.segmentHint"))}</p>` : ""}
       ${kind === "object" ? this.renderShapePicker(st.system.style?.shape ?? type?.style?.shape, id) : ""}
       ${kind === "object" ? this.renderMarkSize(st, type, id) : ""}
+      ${kind === "object" ? this.renderVisibility(st) : ""}
       ${kind === "object" && s.contents().marks.length > 1 && !s.multi ? `<div class="art-row-btns"><span class="art-muted">${esc(this.t("ART.Card.order"))}</span>
         <button type="button" class="art-btn art-icon-only" data-action="markUp" data-id="${esc(id)}" title="${esc(this.t("ART.Card.earlier"))}">${icon("arrow-up")}</button>
         <button type="button" class="art-btn art-icon-only" data-action="markDown" data-id="${esc(id)}" title="${esc(this.t("ART.Card.later"))}">${icon("arrow-down")}</button></div>` : ""}
@@ -1386,6 +1429,20 @@ export default class ArtariusUI {
         <button type="button" class="art-btn art-danger" data-action="deleteFeature" data-id="${esc(id)}" title="${esc(this.t("ART.Card.delete"))}">${icon("trash")}</button>
       </div>
     </div>`;
+  }
+
+  /** Кому видна метка, как у скрытого токена. Мастер и помощник видят всё. Менять может мастер или автор. */
+  renderVisibility(st) {
+    const id = st.id;
+    const v = st.system.visibility ?? { mode: "all", users: [] };
+    const can = this.studio.canChangeVisibility(st);
+    const opt = m => `<option value="${m}"${(v.mode ?? "all") === m ? " selected" : ""}>${esc(this.t(`ART.Vis.${m}`))}</option>`;
+    const players = v.mode === "some" ? this.backend.players().filter(p => p.id !== st.system.author).map(p => `<label class="art-check">
+      <input type="checkbox" data-change="visUser" data-id="${esc(id)}" data-user="${esc(p.id)}" ${(v.users ?? []).includes(p.id) ? "checked" : ""} ${can ? "" : "disabled"}> ${esc(p.name)}</label>`).join("") : "";
+    return `<label class="art-field"><span>${icon(v.mode && v.mode !== "all" ? "eye-slash" : "eye")} ${esc(this.t("ART.Vis.title"))}</span>
+      <select data-change="visMode" data-id="${esc(id)}" ${can ? "" : "disabled"}>${opt("all")}${opt("gm")}${opt("some")}</select></label>
+      ${players ? `<div class="art-parts">${players}</div>` : ""}
+      ${can ? "" : `<p class="art-hint">${esc(this.t("ART.Vis.onlyAuthor"))}</p>`}`;
   }
 
   /** Статусы и аспекты для чтения: значки с уровнями, у аспекта описание. Правка — по кнопке. */
@@ -1412,6 +1469,12 @@ export default class ArtariusUI {
       <section class="art-sub-block"><h5>${esc(this.t("ART.Card.aspects"))}
         <button type="button" class="art-icon-btn" data-action="addAspect" data-id="${esc(id)}" title="${esc(this.t("ART.Card.addAspect"))}">${icon("plus")}</button></h5>
         ${(st.system.aspects ?? []).map((a, n) => this.renderAspect(id, a, n)).join("") || `<p class="art-empty">${esc(this.t("ART.Card.noAspects"))}</p>`}
+        ${(() => {
+          const have = new Set((st.system.aspects ?? []).map(a => a.key).filter(Boolean));
+          const quick = BASE_ASPECTS.filter(a => !have.has(a.key)).map(a => `<button type="button" class="art-chip art-chip-add art-chip-aspect" data-action="addBaseAspect"
+            data-id="${esc(id)}" data-key="${esc(a.key)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join("");
+          return quick ? `<div class="art-chips art-quick">${quick}</div>` : "";
+        })()}
       </section>
       <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="editStatuses" data-id="">${icon("check")} ${esc(this.t("ART.Card.doneStatuses"))}</button></div>`;
   }
@@ -1431,9 +1494,19 @@ export default class ArtariusUI {
         <button type="button" class="art-icon-btn" data-action="removeStatus" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" title="${esc(this.t("ART.Card.remove"))}">${icon("xmark")}</button>
       </li>`;
     }).join("");
+    // Быстрые кнопки базовых статусов: у метки — десять общих, у базового аспекта — его собственные.
+    const st = this.studio.stateOf(id);
+    const aspectN = path.startsWith("aspects.") ? Number(path.split(".")[1]) : null;
+    const aspectKey = aspectN !== null ? st?.system.aspects?.[aspectN]?.key : null;
+    const bases = aspectKey ? (BASE_ASPECTS.find(a => a.key === aspectKey)?.statuses ?? [])
+      : (path === "statuses" && st?.system.kind === "object" ? BASE_STATUSES : []);
+    const have = new Set(list.map(x => x.key).filter(Boolean));
+    const quick = bases.filter(b => !have.has(b.key)).map(b => `<button type="button" class="art-chip art-chip-add" data-action="addBaseStatus"
+      data-id="${esc(id)}" data-path="${esc(path)}" data-key="${esc(b.key)}" title="${esc(this.t("ART.Card.addStatus"))}">${icon(b.icon)}<span>${esc(b.name)}</span></button>`).join("");
     return `<section class="art-sub-block"><h5>${esc(this.t(path === "statuses" ? "ART.Card.statuses" : "ART.Card.aspectStatuses"))}
-      <button type="button" class="art-icon-btn" data-action="addStatus" data-id="${esc(id)}" data-path="${esc(path)}" title="${esc(this.t("ART.Card.addStatus"))}">${icon("plus")}</button></h5>
-      ${rows ? `<ul class="art-status-list">${rows}</ul>` : `<p class="art-empty">${esc(this.t("ART.Card.noStatuses"))}</p>`}</section>`;
+      <button type="button" class="art-icon-btn" data-action="addStatus" data-id="${esc(id)}" data-path="${esc(path)}" title="${esc(this.t("ART.Card.addOwnStatus"))}">${icon("plus")}</button></h5>
+      ${rows ? `<ul class="art-status-list">${rows}</ul>` : `<p class="art-empty">${esc(this.t("ART.Card.noStatuses"))}</p>`}
+      ${quick ? `<div class="art-chips art-quick">${quick}</div>` : ""}</section>`;
   }
 
   renderAspect(id, a, n) {
@@ -1459,22 +1532,24 @@ export default class ArtariusUI {
 
   /** Короткое описание правки: «Зона «Лес»: +12 гексов». */
   describeOp(op, base) {
-    const before = base.get(op.id);
-    const st = op.state ?? before;
-    const kind = st?.system?.kind ?? "object";
-    const what = this.t(`ART.Kind.${KIND_TOOL[kind] ?? "mark"}`);
-    const name = st?.name || op.name || this.t("ART.Card.unnamed");
-    if ( op.action === "delete" ) return this.t("ART.Op.delete", { what, name });
-    if ( op.action === "create" ) {
-      const n = kind === "area" ? zoneCells(st).length : 0;
-      return n ? this.t("ART.Op.createZone", { name, n }) : this.t("ART.Op.create", { what, name });
-    }
-    if ( kind === "area" && before ) {
-      const d = zoneCells(st).length - zoneCells(before).length;
-      if ( d ) return this.t(d > 0 ? "ART.Op.cellsPlus" : "ART.Op.cellsMinus", { name, n: Math.abs(d) });
-    }
-    const fields = changedFields(before, st).map(k => this.t(`ART.Diff.${k}`)).join(", ");
-    return this.t("ART.Op.update", { what, name, fields: fields || "—" });
+    return describeOp(op, base, this._describeCtx());
+  }
+
+  _describeCtx() {
+    return { t: (k, d) => this.t(k, d), typeName: id => this.studio.typeById(id)?.name ?? id,
+      layerName: id => this.studio.layers?.find?.(l => l.id === id)?.name ?? id };
+  }
+
+  /** Правка заявки: строка и под стрелкой «было/стало». */
+  renderClaimOp(op, base, conflict) {
+    const rows = diffOf(op, base, this._describeCtx());
+    const warn = conflict ? ` <em class="art-warn">${esc(this.t(`VMAP.Conflict.${conflict}`))}</em>` : "";
+    const head = `${esc(this.describeOp(op, base))}${warn}`;
+    if ( !rows.length ) return `<li class="art-op art-op-${op.action}">${head}</li>`;
+    const table = rows.map(r => `<tr><th>${esc(r.label)}</th><td class="art-was">${esc(r.before) || "—"}</td><td class="art-now">${esc(r.after) || "—"}</td></tr>`).join("");
+    return `<li class="art-op art-op-${op.action}"><details class="art-diff"><summary>${head}</summary>
+      <table><thead><tr><th></th><th>${esc(this.t("ART.Queue.was"))}</th><th>${esc(this.t("ART.Queue.now"))}</th></tr></thead><tbody>${table}</tbody></table>
+      </details></li>`;
   }
 
   renderQueue() {
@@ -1525,9 +1600,10 @@ export default class ArtariusUI {
           <span class="art-pill">${esc(this.t(`VMAP.ClaimStatus.${claim.status}`))}</span>${outcome}
         </header>
         ${claim.note ? `<p class="art-note">${esc(claim.note)}</p>` : ""}
-        <ul class="art-ops">${(claim.ops ?? []).map(op => `<li class="art-op art-op-${op.action}">${esc(this.describeOp(op, base))}${conflicts[op.id] ? ` <em class="art-warn">${esc(this.t(`VMAP.Conflict.${conflicts[op.id]}`))}</em>` : ""}</li>`).join("")}</ul>
+        <ul class="art-ops">${(claim.ops ?? []).map(op => this.renderClaimOp(op, base, conflicts[op.id])).join("")}</ul>
         <div class="art-row-btns">
-          <button type="button" class="art-btn${s.previewIds.has(id) ? " active" : ""}" data-action="preview" data-id="${esc(id)}" title="${esc(this.t("ART.Queue.preview"))}">${icon("eye")}</button>
+          <button type="button" class="art-btn${s.previewIds.has(id) ? " active" : ""}" data-action="preview" data-id="${esc(id)}" title="${esc(this.t("ART.Queue.preview"))}">${icon("eye")} ${esc(this.t("ART.Queue.highlight"))}</button>
+          <button type="button" class="art-btn" data-action="claimGoTo" data-id="${esc(id)}">${icon("location-crosshairs")} ${esc(this.t("ART.Queue.goTo"))}</button>
           <button type="button" class="art-btn art-accent" data-action="apply" data-id="${esc(id)}">${icon("check")} ${esc(this.t("ART.Queue.apply"))}</button>
           <button type="button" class="art-btn" data-action="reject" data-id="${esc(id)}">${icon("xmark")} ${esc(this.t("ART.Queue.reject"))}</button>
           ${claim.status === "pending" ? `<button type="button" class="art-btn" data-action="requestCheck" data-id="${esc(id)}" title="${esc(this.t("ART.Queue.checkHint"))}">${icon("dice-six")}</button>` : ""}

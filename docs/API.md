@@ -71,12 +71,12 @@ await page.update({ "system.ext.my-module": { morale: 7 } });
 | Хук | Когда | Аргументы |
 |---|---|---|
 | `artarius.preCommit` | перед записью правки; `return false` отменяет её | `op, { scene, direct }` |
-| `artarius.commit` | правка записана: у мастера в атлас, у игрока в черновик | `op, { scene, direct }` |
-| `artarius.claimsApplied` | мастер принял заявки | `entries` |
+| `artarius.commit` | правка записана: у мастера в атлас, у игрока в черновик | `op, { scene, direct, before }` |
+| `artarius.claimsApplied` | мастер принял заявки | `entries, bases` |
 | `artarius.claimsRejected` | мастер отклонил заявки | `entries, comment` |
 | `artarius.importAzgaar` | импорт из Azgaar закончен | `{ scene, atlas, data, built, removed }` |
 
-`op` — это `{ action: "create" | "update" | "delete", id, state }`. `entries` — `[{ user, claim }]`.
+`op` — это `{ action: "create" | "update" | "delete", id, state }`. `entries` — `[{ user, claim }]`. `before` — элемент до правки мастера (у игрока нет). `bases` — `Map` id сцены → элементы атласа до применения заявок.
 
 ## Хранилище
 

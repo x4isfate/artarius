@@ -19,6 +19,8 @@ import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS, VIEW_PARTS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
 import { layoutMarks, markAt, groupOrder, markFootprint } from "./data/mark-layout.mjs";
+import { baseStatus, baseAspect } from "./data/statuses.mjs";
+import { checkOps } from "./data/access.mjs";
 import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
@@ -1213,21 +1215,8 @@ export default class Studio {
   }
 
   panTo(id) {
-    const s = this.stateOf(id);
-    if ( !s ) return;
-    const kind = s.system.kind;
-    let pt;
-    if ( kind === "object" ) pt = { x: s.system.geometry.x, y: s.system.geometry.y };
-    else if ( kind === "line" ) {
-      const pts = s.system.geometry.points ?? [];
-      const m = pts[Math.floor(pts.length / 2)] ?? [0, 0];
-      pt = { x: m[0], y: m[1] };
-    } else {
-      const cells = zoneCells(s);
-      if ( !cells.length ) return;
-      pt = this.grid.center(cells[Math.floor(cells.length / 2)]);
-    }
-    this.backend.panTo(pt);
+    const pt = this.pointOf(this.stateOf(id));
+    if ( pt ) this.backend.panTo(pt);
   }
 
   /* Статусы и аспекты. path — "statuses" или "aspects.N.statuses". */
@@ -1263,6 +1252,41 @@ export default class Studio {
       const [st] = s.system.statuses.splice(n, 1);
       if ( st ) s.system.aspects.push(statusToAspect(st, randomId()));
     }, { now: true });
+  }
+
+  /** Базовый статус: «Осаждён», «Строится» (с уровнем)… path — "statuses" или "aspects.N.statuses". */
+  addBaseStatus(id, path, key) {
+    const st = baseStatus(key, randomId);
+    if ( !st ) return;
+    this.edit(id, s => {
+      const list = this._list(s, path);
+      if ( !list.some(x => x.key === key) ) list.push(st);
+    }, { now: true });
+  }
+
+  /** Базовый аспект вместе с его статусами («Ассимилированный Хвонами»). */
+  addBaseAspect(id, key) {
+    const a = baseAspect(key, randomId);
+    if ( !a ) return;
+    this.edit(id, s => {
+      s.system.aspects ??= [];
+      if ( !s.system.aspects.some(x => x.key === key) ) s.system.aspects.push(a);
+    }, { now: true });
+  }
+
+  /** Кому видна метка: "all" — всем, "gm" — мастеру и автору, "some" — ещё выбранным игрокам. */
+  setVisibility(id, mode, users = null) {
+    const st = this.stateOf(id);
+    if ( !st || st.system.kind !== "object" || !this.canChangeVisibility(st) ) return;
+    this.edit(id, s => {
+      const cur = s.system.visibility ?? { mode: "all", users: [] };
+      s.system.visibility = { mode: mode ?? cur.mode, users: users ?? cur.users ?? [] };
+    }, { now: true });
+  }
+
+  /** Видимость меняет мастер или автор метки. */
+  canChangeVisibility(st) {
+    return this.backend.isGM || (!!st?.system.author && st.system.author === this.backend.userId);
   }
 
   addAspect(id) {
@@ -1382,6 +1406,33 @@ export default class Studio {
     this.changed("overlay");
   }
 
+  /** Точка элемента на карте: метка, середина линии или средний гекс зоны. */
+  pointOf(s) {
+    if ( !s?.system ) return null;
+    const kind = s.system.kind;
+    if ( kind === "object" ) return { x: s.system.geometry.x, y: s.system.geometry.y };
+    if ( kind === "line" ) {
+      const pts = s.system.geometry.points ?? [];
+      const m = pts[Math.floor(pts.length / 2)];
+      return m ? { x: m[0], y: m[1] } : null;
+    }
+    const cells = zoneCells(s);
+    return cells.length ? this.grid.center(cells[Math.floor(cells.length / 2)]) : null;
+  }
+
+  /** Перейти к правкам заявки: камера в середину, заявка подсвечена. */
+  goToClaim(claimId) {
+    const [entry] = this._entries([claimId]);
+    if ( !entry ) return false;
+    const base = this.backend.atlasStates();
+    const pts = (entry.claim.ops ?? []).map(op => this.pointOf(op.state ?? base.get(op.id))).filter(Boolean);
+    if ( !pts.length ) return false;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    this.backend.panTo({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 });
+    if ( !this.previewIds.has(claimId) ) this.togglePreview(claimId);
+    return true;
+  }
+
   toggleChecked(claimId) {
     if ( this.checkedIds.has(claimId) ) this.checkedIds.delete(claimId);
     else this.checkedIds.add(claimId);
@@ -1473,6 +1524,21 @@ export default class Studio {
   async _commit(ops, { record = true, label = "" } = {}) {
     ops = (ops ?? []).filter(Boolean);
     if ( !ops.length ) return;
+    // Новый элемент помнит автора: от этого зависят «чужое» в правах и кто видит скрытую метку.
+    const me = this.backend.userId;
+    for ( const op of ops ) {
+      if ( op.action === "create" && op.state?.system && !op.state.system.author && me && !this.states.has(op.id) ) op.state.system.author = me;
+    }
+    // Права игрока: что нельзя, отбрасывается с объяснением.
+    if ( !this.backend.isGM && this.backend.permissions ) {
+      const { allowed, denied } = checkOps(ops, id => this.states.get(id), this.backend.permissions(), me);
+      if ( denied.length ) {
+        const what = [...new Set(denied.map(d => this.t(`ART.Perm.${d.perm}`)))].join(", ");
+        this.backend.notify("warn", this.t("ART.Perm.denied", { what }));
+      }
+      ops = allowed;
+      if ( !ops.length ) return;
+    }
     if ( record ) {
       // Обратные операции считаем до записи, пока прежнее состояние ещё на месте.
       const inverse = ops.map(op => {

@@ -375,6 +375,11 @@ async function shot(page, name) {
   const claimId = await ev(() => window.art.backend.claims()[0].claim.id);
   await act("preview", `[data-id="${claimId}"]`);
   check((await ev(() => window.art.studio.ghosts().length)) >= 2, "предпросмотр показывает правки на карте");
+  const pans = await ev(() => window.art.backend.log.filter(([k]) => k === "pan").length);
+  await act("claimGoTo", `[data-id="${claimId}"]`);
+  check((await ev(() => window.art.backend.log.filter(([k]) => k === "pan").length)) === pans + 1, "«Перейти» ведёт камеру к заявке");
+  await page.locator("#artarius-ui .art-diff summary").first().click();
+  check(await page.locator("#artarius-ui .art-diff[open] table").count() === 1, "«было/стало» раскрывается под стрелкой");
   await shot(page, "queue");
   await act("checkAll");
   await act("applyChecked");
@@ -602,6 +607,26 @@ async function shot(page, name) {
   check(iw >= 30, `значок в выборе виден под кнопками в стиле Foundry (${iw}px)`);
   const ac = await ev(() => { const b = document.querySelector(".art-icon-cats .art-btn.active"); const c = getComputedStyle(b); return [c.color, c.borderColor]; });
   check(ac[0] !== ac[1], "текст выбранной кнопки не красится в цвет рамки");
+
+  /* 17. Игра с игроками: права и видимость -------------------------- */
+  await ev(() => window.art.studio.openSettings("rights"));
+  await page.waitForTimeout(150);
+  await page.locator('#artarius-ui [data-change="permRole"][data-role="1"][data-perm="draw"]').uncheck();
+  check((await ev(() => window.art.backend.permConfig?.roles?.[1]?.draw)) === false, "галочка права у роли пишет настройку");
+  await shot(page, "rights");
+  await ev(async () => {
+    const s = window.art.studio; s.closeSettings?.();
+    s.setTool("mark", { toggle: false }); await s.placeMarks([[3, 9]]); s.setTool("select", { toggle: false });
+    s.inspect([3, 9], { toggle: false }); s.openDetails();
+    s.openId = s.contents().marks.at(-1).id; s.changed("ui");
+  });
+  await page.waitForTimeout(150);
+  const vis = page.locator('#artarius-ui [data-change="visMode"]').first();
+  check(await vis.count() === 1, "в карточке метки есть «Кто видит»");
+  await vis.selectOption("gm");
+  await page.waitForTimeout(150);
+  check((await ev(() => [...window.art.backend.atlas.values()].some(x => x.system.visibility?.mode === "gm"))), "метку можно спрятать");
+  await shot(page, "visibility");
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");
