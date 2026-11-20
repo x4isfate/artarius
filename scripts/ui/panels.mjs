@@ -113,7 +113,20 @@ export default class ArtariusUI {
     this.tip.className = "artarius art-tip";
     this.tip.hidden = true;
     document.body.appendChild(this.tip);
+    // Панель действий над выбранными метками: внизу по центру, как в стратегиях.
+    this.bar = document.createElement("div");
+    this.bar.id = "artarius-bar";
+    this.bar.className = "artarius art-bar";
+    this.bar.hidden = true;
+    document.body.appendChild(this.bar);
+    // Переход к гексу по координатам (Shift+Пробел).
+    this.goto = document.createElement("div");
+    this.goto.id = "artarius-goto";
+    this.goto.className = "artarius art-goto";
+    this.goto.hidden = true;
+    document.body.appendChild(this.goto);
     this._bind(this.hud);
+    this._bind(this.bar);
     this._bindMarkDrag(this.hud);
     this._unsub = studio.subscribe(what => {
       if ( what === "hover" ) return this.renderTip();
@@ -127,6 +140,8 @@ export default class ArtariusUI {
     this.root.remove();
     this.hud.remove();
     this.tip.remove();
+    this.bar.remove();
+    this.goto.remove();
     if ( this._hudFrame ) cancelAnimationFrame(this._hudFrame);
   }
 
@@ -145,6 +160,8 @@ export default class ArtariusUI {
   windowClosed(name) {
     const s = this.studio;
     if ( name === "left" && s.tool === "select" && this.host ) { this.layersOpen = false; return; }
+    // Крестик закрывает только окно: инструмент остаётся, Foundry не уходит к токенам.
+    if ( name === "left" && s.tool && this.host ) { this.leftClosed = { tool: s.tool, picks: s.toolPicks ?? 0 }; return; }
     if ( name === "left" && s.tool ) s.setTool(null, { toggle: false });
     else if ( name === "right" && s.rightOpen ) s.closeRight();
     else if ( name === "settings" && s.settings.open ) s.closeSettings();
@@ -289,6 +306,7 @@ export default class ArtariusUI {
       detach: () => s.detach(),
       clearSelection: () => s.clearSelection(),
       zoneTarget: el => s.setZoneTarget(el.dataset.id),
+      toggleArchive: () => { s.zone.archiveOpen = !s.zone.archiveOpen; s.changed("ui"); },
       // Метка, линия
       placeMarks: () => s.placeMarks(),
       finishLine: () => s.finishLine(),
@@ -333,10 +351,20 @@ export default class ArtariusUI {
       savePreset: () => s.savePreset(),
       deletePreset: el => s.deletePreset(el.dataset.id),
       worldSettings: () => this.backend.openWorldSettings?.(),
+      sceneThumb: () => this.backend.updateThumb?.({ quiet: false }),
       azgaar: () => this.backend.openAzgaar?.(),
       // Панель на гексе
       hudDetails: el => s.openDetails(el.dataset.id || null),
-      hudMark: () => s.markHere(),
+      hudMark: () => s.toggleTypeMenu(),
+      quickMark: el => s.quickMark(el.dataset.id),
+      hudDelete: () => s.hudDelete(),
+      deleteMark: el => s.deleteMarks([el.dataset.id]),
+      deleteSelected: () => s.deleteMarks(),
+      clearMarkSel: () => s.clearMarkSel(),
+      bulkType: el => { if ( el.value ) s.retypeMarks(el.value); },
+      markScale: el => s.setField(el.dataset.id, "size", Number(el.value) / 100),
+      undo: () => s.undo(),
+      redo: () => s.redo(),
       hudZone: () => s.zoneHere(),
       hudPan: () => s.inspected && this.backend.panTo(s.grid.center(s.inspected)),
       hudClose: () => s.closeHud(),
@@ -388,6 +416,7 @@ export default class ArtariusUI {
       if ( s.settings.open ) patch(this.parts.settings, this.renderSettings());
       this._show("settings", s.settings.open, this.t("ART.Settings.title"));
       this.renderHud();
+      this.renderBar();
     } catch(err) {
       console.error("artarius | render", err);
     }
@@ -397,6 +426,8 @@ export default class ArtariusUI {
   _leftVisible() {
     const tool = this.studio.tool;
     if ( !tool ) return false;
+    const c = this.leftClosed;
+    if ( c && c.tool === tool && c.picks === (this.studio.toolPicks ?? 0) ) return false;
     return !this.host || tool !== "select" || this.layersOpen;
   }
 
@@ -472,8 +503,12 @@ export default class ArtariusUI {
     else if ( s.tool === "mark" ) body = this.renderMarkTool();
     else if ( s.tool === "line" ) body = this.renderLineTool();
     else body = this.renderSelectTool();
+    const undo = `<button type="button" class="art-icon-btn" data-action="undo" ${s.canUndo ? "" : "disabled"}
+        title="${esc(this.t("ART.Undo.undo"))}" aria-label="${esc(this.t("ART.Undo.undo"))}">${icon("rotate-left")}</button>
+      <button type="button" class="art-icon-btn" data-action="redo" ${s.canRedo ? "" : "disabled"}
+        title="${esc(this.t("ART.Undo.redo"))}" aria-label="${esc(this.t("ART.Undo.redo"))}">${icon("rotate-right")}</button>`;
     return `<header class="art-head">${icon(TOOL_ICONS[s.tool])}<h3>${esc(title)}</h3>
-      ${close}</header>
+      ${undo}${close}</header>
       <div class="art-body" data-scroll="left">${body}</div>`;
   }
 
@@ -618,6 +653,23 @@ export default class ArtariusUI {
       ${n ? `<button type="button" class="art-link" data-action="clearSelection">${esc(this.t("ART.Sel.clear"))}</button>` : ""}</div>`;
   }
 
+  /** Папка «Архив»: зоны, у которых не осталось гексов. Выбрал — и можно снова красить ею. */
+  _archiveList(zones, filter, typeName, colorOf) {
+    const z = this.studio.zone;
+    const list = zones.filter(zz => !zoneCells(zz).length)
+      .filter(zz => !filter || zz.name.toLowerCase().includes(filter) || typeName(zz.system.typeId).toLowerCase().includes(filter))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if ( !list.length ) return "";
+    const open = z.archiveOpen || list.some(zz => zz.id === z.target) || !!filter;
+    const rows = list.map(zz => `<button type="button" class="art-zone art-row-item art-archived${zz.id === z.target ? " active" : ""}"
+        data-action="zoneTarget" data-id="${esc(zz.id)}" title="${esc(typeName(zz.system.typeId))}"><i class="art-swatch" style="--c:${esc(colorOf(zz))}"></i>
+        <span class="art-zone-name art-row-name">${esc(zz.name || this.t("ART.Card.unnamed"))}</span>
+        <span class="art-row-note">0</span></button>`).join("");
+    return `<button type="button" class="art-eyebrow art-fold${open ? " open" : ""}" data-action="toggleArchive" aria-expanded="${open}">
+        ${icon(open ? "chevron-down" : "chevron-right")} ${esc(this.t("ART.Zone.archive"))} <span class="art-row-note">${list.length}</span></button>
+      ${open ? rows : ""}`;
+  }
+
   /**
    * Окно «Зоны» по макету C: слева список (новая зона и зоны по слоям с поиском),
    * справа то, что делаем с выбранным: тип и поля новой зоны или сведения о зоне, и кнопки.
@@ -634,7 +686,7 @@ export default class ArtariusUI {
     const colorOf = st => st.system.style?.color ?? types.find(t => t.id === st.system.typeId)?.style?.color ?? "#ccc";
 
     const byLayer = layers.map(l => {
-      const list = zones.filter(zz => layerIdOf(zz, types) === l.id)
+      const list = zones.filter(zz => layerIdOf(zz, types) === l.id && zoneCells(zz).length)
         .filter(zz => !filter || zz.name.toLowerCase().includes(filter) || typeName(zz.system.typeId).toLowerCase().includes(filter))
         .sort((a, b) => a.name.localeCompare(b.name));
       if ( !list.length ) return "";
@@ -642,7 +694,7 @@ export default class ArtariusUI {
         data-action="zoneTarget" data-id="${esc(zz.id)}" title="${esc(typeName(zz.system.typeId))}"><i class="art-swatch" style="--c:${esc(colorOf(zz))}"></i>
         <span class="art-zone-name art-row-name">${esc(zz.name || this.t("ART.Card.unnamed"))}</span>
         <span class="art-row-note">${zoneCells(zz).length}</span></button>`).join("");
-    }).join("");
+    }).join("") + this._archiveList(zones, filter, typeName, colorOf);
 
     const n = s.selection.size;
     const layerOpts = [`<option value="">${esc(this.t("ART.Zone.allLayers"))}</option>`,
@@ -827,11 +879,13 @@ export default class ArtariusUI {
     const zoneName = zoneTarget?.name ?? s.typeById(s.zone.typeId)?.name ?? s.typesOf("area")[0]?.name ?? "";
     const left = [
       { action: "hudDetails", ic: "circle-info", title: this.t("ART.Hud.details") },
-      { action: "hudMark", ic: "location-dot", title: this.t("ART.Hud.mark", { name: markType?.name ?? "" }) },
+      { action: "hudMark", ic: "location-dot", title: this.t("ART.Hud.markPick") },
       { action: "hudZone", ic: "draw-polygon", title: this.t("ART.Hud.zone", { name: zoneName }) },
+      ...(sum.marks.length ? [{ action: "hudDelete", ic: "trash", title: this.t("ART.Hud.delete") }] : []),
       { action: "hudPan", ic: "crosshairs", title: this.t("ART.Card.pan") },
       { action: "hudClose", ic: "xmark", title: this.t("ART.Close") }
-    ].map(btn).join("");
+    ].map(b => btn(b).replace('class="art-hud-btn"', `class="art-hud-btn${s.hudMenu && ((b.action === "hudMark" && s.hudMenu.kind === "type") || (b.action === "hudDelete" && s.hudMenu.kind === "delete")) ? " active" : ""}"`)).join("");
+    const menu = this._hudMenu(sum, markType);
     // Справа — что лежит на гексе: метки, потом зоны и линии. Щелчок открывает элемент в окне.
     const items = [...sum.marks, ...sum.zones, ...sum.lines];
     const MAX = 6;
@@ -843,16 +897,81 @@ export default class ArtariusUI {
       const drag = st.system.kind === "object" && sum.marks.length > 1 && sum.cells === 1
         ? ` draggable="true" data-drag-mark="${esc(st.id)}"` : "";
       const hint = drag ? ` · ${this.t("ART.Hud.dragOrder")}` : "";
-      return `<button type="button" class="art-hud-btn art-hud-item" data-action="hudDetails" data-id="${esc(st.id)}"${drag}
+      const sel = s.markSel.has(st.id) ? " selected" : "";
+      return `<button type="button" class="art-hud-btn art-hud-item${sel}" data-action="hudDetails" data-id="${esc(st.id)}"${drag}
         title="${esc(title + hint)}" aria-label="${esc(title)}">${this._hudItemIcon(st)}</button>`;
     }).join("") + (items.length > shown.length
       ? `<button type="button" class="art-hud-btn art-hud-more" data-action="hudDetails" title="${esc(this.t("ART.Hud.details"))}">+${items.length - shown.length}</button>`
       : "");
-    return `${plate}<div class="art-hud-col art-hud-left">${left}</div>
+    return `${plate}<div class="art-hud-col art-hud-left">${left}</div>${menu}
       ${right ? `<div class="art-hud-col art-hud-right">${right}</div>` : ""}`;
   }
 
+  /** Быстрое меню у панели гекса: выбор типа метки или какую метку удалить. */
+  _hudMenu(sum, current) {
+    const s = this.studio;
+    const m = s.hudMenu;
+    if ( !m ) return "";
+    if ( m.kind === "type" ) {
+      const rows = s.markTypesForMenu().map(t => `<button type="button" class="art-menu-row${t.id === current?.id ? " active" : ""}" data-action="quickMark" data-id="${esc(t.id)}">
+        ${this.typeSwatch(t)}<span>${esc(t.name)}</span></button>`).join("");
+      return `<div class="art-hud-menu" role="menu"><div class="art-menu-head">${esc(this.t("ART.Hud.markPick"))}</div>${rows}</div>`;
+    }
+    const rows = sum.marks.map(st => `<button type="button" class="art-menu-row art-menu-del" data-action="deleteMark" data-id="${esc(st.id)}">
+        ${this._hudItemIcon(st)}<span>${esc(st.name || this.t("ART.Card.unnamed"))}</span>${icon("trash")}</button>`).join("");
+    return `<div class="art-hud-menu" role="menu"><div class="art-menu-head">${esc(this.t("ART.Hud.deleteWhich"))}</div>${rows}</div>`;
+  }
+
+  /** Панель внизу: сколько меток выбрано и что с ними сделать. */
+  renderBar() {
+    const s = this.studio;
+    const marks = s.tool && !this._hidden ? s.selectedMarks() : [];
+    this.bar.hidden = !marks.length;
+    if ( !marks.length ) return;
+    const types = s.typesOf("object").map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+    patch(this.bar, `<div class="art-bar-in">
+      <b class="art-bar-count">${esc(this.t("ART.Bar.count", { n: marks.length }))}</b>
+      <select data-change="bulkType" aria-label="${esc(this.t("ART.Bar.retype"))}"><option value="">${esc(this.t("ART.Bar.retype"))}</option>${types}</select>
+      <button type="button" class="art-btn art-danger" data-action="deleteSelected" title="${esc(this.t("ART.Bar.deleteHint"))}">${icon("trash")} ${esc(this.t("ART.Bar.delete"))} <kbd>Del</kbd></button>
+      <button type="button" class="art-btn art-icon-only" data-action="clearMarkSel" title="${esc(this.t("ART.Bar.clear"))}" aria-label="${esc(this.t("ART.Bar.clear"))}">${icon("xmark")}</button>
+    </div>`);
+  }
+
+  /** Поле «Перейти к гексу» (Shift+Пробел). */
+  openGoto() {
+    const g = this.goto;
+    g.innerHTML = `<form class="art-goto-in"><label for="art-goto-field">${esc(this.t("ART.Goto.title"))}</label>
+      <input id="art-goto-field" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(this.t("ART.Goto.ph"))}">
+      <span class="art-hint">${esc(this.t("ART.Goto.hint"))}</span></form>`;
+    g.hidden = false;
+    const input = g.querySelector("input");
+    const close = () => { g.hidden = true; g.innerHTML = ""; };
+    g.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      if ( this.studio.goTo(input.value) ) close();
+    });
+    input.addEventListener("keydown", ev => {
+      ev.stopPropagation();
+      if ( ev.key === "Escape" ) close();
+    });
+    input.addEventListener("blur", () => setTimeout(close, 150));
+    input.focus();
+  }
+
   /* Схема «список и правка рядом» (макет C от 19.11) --------------- */
+
+  /** Размер метки, как у токена: сколько клеток занимает и масштаб вида внутри них. */
+  renderMarkSize(st, type, id) {
+    const style = { ...(type?.style ?? {}), ...(st.system.style ?? {}) };
+    const cells = style.cells ?? 1;
+    const pct = Math.round((style.size ?? 0.62) * 100);
+    const opts = [1, 2, 3, 4].map(n => `<option value="${n}"${n === cells ? " selected" : ""}>${n}×${n}</option>`).join("");
+    return `<div class="art-grid2">
+      <label class="art-field"><span>${esc(this.t("ART.Size.cells"))}</span><select data-id="${esc(id)}" data-field="cells">${opts}</select></label>
+      <label class="art-field"><span>${esc(this.t("ART.Size.scale", { n: pct }))}</span>
+        <input type="range" min="20" max="200" step="5" value="${pct}" data-change="markScale" data-id="${esc(id)}"></label>
+    </div><p class="art-hint">${esc(this.t("ART.Size.hint"))}</p>`;
+  }
 
   /** Две колонки: слева список, справа правка выбранного. На узком окне колонки встают друг под друга. */
   renderSplit(list, main, key) {
@@ -954,6 +1073,7 @@ export default class ArtariusUI {
       <button type="button" class="art-btn" data-action="worldSettings">${icon("sliders")} ${esc(this.t("ART.World.settings"))}</button>
       <button type="button" class="art-btn" data-action="azgaar">${icon("earth-europe")} ${esc(this.t("ART.World.azgaar"))}</button>
       <button type="button" class="art-btn" data-action="generator">${icon("mountain-sun")} ${esc(this.t("ART.Gen.title"))}</button>
+      <button type="button" class="art-btn" data-action="sceneThumb" title="${esc(this.t("ART.World.thumbHint"))}">${icon("image")} ${esc(this.t("ART.World.thumb"))}</button>
     </div><p class="art-hint">${esc(this.t("ART.Settings.worldHint"))}</p>`;
   }
 
@@ -1035,6 +1155,7 @@ export default class ArtariusUI {
         <input type="text" value="${esc(s.segmentNameHere(id))}" placeholder="${esc(st.name || "")}" ${f("segment")}></label>
         <p class="art-hint">${esc(this.t("ART.Line.segmentHint"))}</p>` : ""}
       ${kind === "object" ? this.renderShapePicker(st.system.style?.shape ?? type?.style?.shape, id) : ""}
+      ${kind === "object" ? this.renderMarkSize(st, type, id) : ""}
       ${kind === "object" && s.contents().marks.length > 1 && !s.multi ? `<div class="art-row-btns"><span class="art-muted">${esc(this.t("ART.Card.order"))}</span>
         <button type="button" class="art-btn art-icon-only" data-action="markUp" data-id="${esc(id)}" title="${esc(this.t("ART.Card.earlier"))}">${icon("arrow-up")}</button>
         <button type="button" class="art-btn art-icon-only" data-action="markDown" data-id="${esc(id)}" title="${esc(this.t("ART.Card.later"))}">${icon("arrow-down")}</button></div>` : ""}

@@ -77,6 +77,28 @@ export default class HexRenderer {
     this.container.destroy({ children: true });
   }
 
+  /**
+   * Картинка карты для превью сцены: поле, зоны, линии, метки и подписи без выделения и наведения.
+   * rect — прямоугольник сцены в координатах холста; maxSide — длинная сторона картинки в пикселях.
+   * Возвращает data URL в webp.
+   */
+  async snapshot(pixiRenderer, rect, maxSide = 600) {
+    const scale = maxSide / Math.max(rect.width, rect.height);
+    const width = Math.max(1, Math.round(rect.width * scale)), height = Math.max(1, Math.round(rect.height * scale));
+    const hide = [this.ghosts, this.overlay, this.dragMark];
+    const was = hide.map(o => o.visible);
+    for ( const o of hide ) o.visible = false;
+    const rt = PIXI.RenderTexture.create({ width, height });
+    try {
+      const transform = new PIXI.Matrix(scale, 0, 0, scale, -rect.x * scale, -rect.y * scale);
+      pixiRenderer.render(this.container, { renderTexture: rt, transform, clear: true });
+      return await pixiRenderer.extract.base64(rt, "image/webp", 0.85);
+    } finally {
+      hide.forEach((o, n) => { o.visible = was[n]; });
+      rt.destroy(true);
+    }
+  }
+
   /** Пустые гексы поля и сетка. */
   drawBase(world) {
     const g = this.base;
@@ -239,7 +261,7 @@ export default class HexRenderer {
   _drawMarks(marks, types) {
     const styles = new Map(marks.map(m => [m.id, resolveStyleOf(m, types)]));
     const byId = new Map(marks.map(m => [m.id, m]));
-    const { slots, cells } = layoutMarks(marks, this.grid, m => styles.get(m.id).size);
+    const { slots, cells } = layoutMarks(marks, this.grid, m => styles.get(m.id).size, m => styles.get(m.id).cells ?? 1);
     const labelled = new Set();
     for ( const slot of slots ) {
       if ( slot.more ) { this._drawMore(slot); continue; }
@@ -399,6 +421,22 @@ export default class HexRenderer {
     if ( studio.inspected && !studio.multi ) {
       // При осмотре нескольких гексов общая граница уже есть: толстая рамка одного гекса только мешает.
       g.lineStyle({ width: 5, color: 0xffffff, alpha: 1 }).drawPolygon(flatV(grid.vertices(studio.inspected))).lineStyle(0);
+    }
+    // Выбранные метки: светлое кольцо вокруг значка.
+    if ( studio.markSel?.size ) {
+      for ( const sl of studio.markSlots().slots ) {
+        if ( !sl.id || !studio.markSel.has(sl.id) ) continue;
+        g.lineStyle({ width: 3, color: 0xfff4d6, alpha: 0.95 }).drawCircle(sl.x, sl.y, sl.d / 2 + 4);
+        g.lineStyle({ width: 1.5, color: 0x111111, alpha: 0.6 }).drawCircle(sl.x, sl.y, sl.d / 2 + 6.5);
+      }
+      g.lineStyle(0);
+    }
+    // Рамка выбора меток (Ctrl-протяжка).
+    if ( studio.box ) {
+      const b = studio.box;
+      const x = Math.min(b.start.x, b.at.x), y = Math.min(b.start.y, b.at.y);
+      g.beginFill(0xfff4d6, 0.08).lineStyle({ width: 2, color: 0xfff4d6, alpha: 0.9 })
+        .drawRect(x, y, Math.abs(b.at.x - b.start.x), Math.abs(b.at.y - b.start.y)).endFill().lineStyle(0);
     }
     if ( studio.hover && studio.tool && studio.tool !== "line" ) {
       g.beginFill(0xffffff, 0.12).lineStyle({ width: 2, color: 0xffffff, alpha: 0.6 })

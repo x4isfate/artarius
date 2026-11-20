@@ -287,14 +287,19 @@ await check("выбор значка: разделы, поиск, своя ка�
   assert(!win("settings"), "настройки не закрылись");
 });
 
-await check("крестик окна инструмента выключает инструмент", async () => {
+await check("0.5.0: крестик закрывает окно, но инструмент и слой остаются; повторный выбор открывает окно", async () => {
   const ui2 = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
   api().studio.setTool("zone", { toggle: false });
   await tick();
   await ui2.host.windows.left.close();
-  assert(api().studio.tool === null, "инструмент остался");
+  assert(api().studio.tool === "zone", "инструмент выключился, Foundry ушёл бы к токенам");
   await tick();
-  assert(!win("left"), "окно снова открылось");
+  assert(!win("left"), "окно снова открылось само");
+  api().studio.setTool("zone", { toggle: false });
+  await tick();
+  assert(win("left"), "повторный выбор инструмента не открыл окно");
+  api().studio.setTool(null, { toggle: false });
+  await tick();
 });
 
 await check("0.6.1: инструмент погас при активной группе — щелчок по соседнему гексу всё равно осматривает", async () => {
@@ -436,6 +441,16 @@ await check("генератор: местность, ресурсы, держа�
   assert(types.includes("res-iron") && types.includes("forest"), "типы ресурсов не добавлены");
   const realm = pages.find(p => p.system.typeId === "realm");
   assert(realm.name.includes("Огонь"), `держава ${realm.name}`);
+});
+
+await check("0.5.0: превью сцены — снимок слоя, а не чёрный квадрат", async () => {
+  canvas.app.renderer ??= new PIXI.Renderer({ width: 16, height: 16, backgroundAlpha: 0 });
+  await F.settle();
+  const ok = await api().backend.updateThumb();
+  assert(ok, "снимок не сделан");
+  assert(String(scene.thumb ?? "").startsWith("data:image/"), `превью: ${String(scene.thumb).slice(0, 30)}`);
+  assert(String(scene.thumb).length > 2000, "превью почти пустое");
+  window.__thumb = scene.thumb;
 });
 
 // ?shot: показать холст слоя, чтобы снять картинку сгенерированного мира.

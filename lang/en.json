@@ -212,7 +212,11 @@
       "sizeHint": "Hex width in pixels. Bigger hexes make a bigger map at the same Foundry zoom. Zones and marks move to the new field, lines are scaled.",
       "rough": "Rough coastlines",
       "roughHint": "Terrain borders are drawn wavy instead of along hex edges. Data stays per hex; realms and regions are drawn straight.",
-      "resized": "Field rebuilt: {cols} × {rows} hexes, hex {size} px."
+      "resized": "Field rebuilt: {cols} × {rows} hexes, hex {size} px.",
+      "thumb": "Update scene preview",
+      "thumbHint": "Map snapshot for the Scenes list",
+      "thumbDone": "Scene preview updated",
+      "thumbFail": "Could not update the scene preview, see the console (F12)"
     },
     "Type": {
       "new": "New type",
@@ -241,17 +245,18 @@
       "noCells": "Select hexes on the map first.",
       "noType": "Pick a zone type.",
       "nothingToDetach": "Selected hexes have no zones on this layer.",
-      "cells": "{n} hexes"
+      "cells": "{n} hexes",
+      "archive": "Archive"
     },
     "Mark": {
-      "quickDeleted": "Mark “{name}” deleted. Ctrl+Z brings it back.",
-      "restored": "Mark “{name}” restored.",
       "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
       "type": "Mark type",
       "place": "Place ({n})",
       "paint": "Place on click",
       "noCells": "Select hexes first.",
-      "noType": "Pick a mark type."
+      "noType": "Pick a mark type.",
+      "deletedOne": "Mark “{name}” deleted. Ctrl+Z brings it back.",
+      "deletedMany": "Marks deleted: {n}. Ctrl+Z brings them back."
     },
     "Line": {
       "hint": "Pick a mode below. Right-click removes the last point, Esc clears the line, Enter or double-click finishes it.",
@@ -312,7 +317,8 @@
       "removeCells": "Remove selected hexes from the zone",
       "order": "Order on the hex",
       "earlier": "Earlier",
-      "later": "Later"
+      "later": "Later",
+      "deleted": "“{name}” deleted. Ctrl+Z brings it back."
     },
     "Queue": {
       "title": "Claims",
@@ -446,7 +452,10 @@
       "zone": "Add to zone: {name}",
       "marksHere": "Marks on this hex",
       "multiHint": "Shift-click adds or removes a hex",
-      "dragOrder": "drag up or down to reorder"
+      "dragOrder": "drag up or down to reorder",
+      "markPick": "Place a mark: pick type",
+      "delete": "Delete mark (Delete)",
+      "deleteWhich": "Which mark to delete?"
     },
     "Settings": {
       "title": "Artarius settings",
@@ -482,6 +491,29 @@
       "dot": "Dotted",
       "widthStart": "Width at start",
       "widthEnd": "Width at end"
+    },
+    "Bar": {
+      "count": "Marks selected: {n}",
+      "retype": "Change type…",
+      "delete": "Delete",
+      "deleteHint": "Delete selected marks. Ctrl+Z brings them back",
+      "clear": "Clear selection (Esc)"
+    },
+    "Goto": {
+      "title": "Go to hex",
+      "ph": "27:22 or 2722",
+      "hint": "Enter to go, Esc to close",
+      "bad": "No such hex: “{text}”. Try 27:22 or 2722."
+    },
+    "Size": {
+      "cells": "Takes cells",
+      "scale": "Look scale: {n}%",
+      "hint": "Like token size: 2×2 covers two cells. Scale only changes the look. Alt + drag places a mark anywhere."
+    },
+    "Undo": {
+      "nothing": "Nothing to undo.",
+      "undo": "Undo (Ctrl+Z)",
+      "redo": "Redo (Ctrl+Shift+Z)"
     }
   }
 }
