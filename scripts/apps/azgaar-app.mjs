@@ -188,6 +188,8 @@ export async function importAzgaar(data, scene = canvas.scene, { parts = AZGAAR_
   // Слои климата и масштаб: сколько километров в ширине гекса (у Azgaar distanceScale — единиц на пиксель карты).
   const scale = Number(data.settings?.distanceScale);
   const world = { ...(scene.getFlag(MODULE_ID, "world") ?? {}) };
+  // Берега из Azgaar неровные, если мастер сам не выключал волнистые границы.
+  if ( !world.roughSet ) { world.rough = true; world.roughSet = true; }
   if ( Number.isFinite(scale) && scale > 0 && data.info?.width ) {
     world.hexKm = Math.round(scale * Math.sqrt(3) * grid.radius * (data.info.width / rect.width) * 10) / 10;
     world.distanceUnit = String(data.settings?.distanceUnit ?? "km");
