@@ -44,6 +44,18 @@ class PartWindow extends ApplicationV2 {
   }
 
   /** @override */
+  _onRender(context, options) {
+    super._onRender?.(context, options);
+    // Окно гекса подстраивается под содержимое, пока его не потянули за угол; потом держит размер пользователя.
+    this.element?.classList.toggle("art-sized", !!this.artHost.sized[this.artPart]);
+    const handle = this.element?.querySelector(".window-resize-handle");
+    if ( handle && !handle.dataset.artBound ) {
+      handle.dataset.artBound = "1";
+      handle.addEventListener("pointerdown", () => this.artHost._userSized(this.artPart), { capture: true });
+    }
+  }
+
+  /** @override */
   _onClose(options) {
     super._onClose?.(options);
     this.artHost._closed(this.artPart);
@@ -69,6 +81,13 @@ export default class FoundryHost {
     this._want = {};
     this._busy = {};
     this._saveTimer = null;
+    /** Окна, размер которых пользователь задал сам (окно гекса тогда не подстраивается под содержимое). */
+    this.sized = {};
+  }
+
+  _userSized(name) {
+    this.sized[name] = true;
+    this.windows[name]?.element?.classList.add("art-sized");
   }
 
   _saved() {
@@ -82,12 +101,15 @@ export default class FoundryHost {
     const saved = this._saved()[name] ?? {};
     const position = { width: def.width, height: def.height, ...def.at(), ...saved };
     // Ход и подробности гекса — по содержимому. Старый сохранённый размер окна гекса (до 0.6 оно было на полэкрана) не берём.
-    if ( name === "right" ) position.height = "auto";
-    if ( name === "right" ) position.width = Math.min(position.width ?? def.width, 420);
+    if ( name === "right" && !saved.sized ) {
+      position.height = "auto";
+      position.width = Math.min(position.width ?? def.width, 420);
+    }
+    if ( saved.sized ) this.sized[name] = true;
     this.windows[name] = new PartWindow(name, el, this, {
       id: `${MODULE_ID}-${name}`,
       classes: ["artarius-part", `artarius-part-${name}`],
-      window: { title: "Artarius", icon: def.icon, resizable: name !== "right" },
+      window: { title: "Artarius", icon: def.icon, resizable: true },
       position
     });
   }
@@ -115,7 +137,7 @@ export default class FoundryHost {
           this.titles[name] = want;
           w.options.window.title = want;
           await w.render({ force: true, window: { title: want } });
-        } else if ( name === "right" ) w.setPosition({ height: "auto" });
+        } else if ( name === "right" && !this.sized.right ) w.setPosition({ height: "auto" });
         if ( this._want[name] === want ) break;
       }
     } catch(err) {
@@ -139,7 +161,8 @@ export default class FoundryHost {
   /** Запомнить место окна. Пишем не чаще раза в полсекунды: при перетаскивании событий много. */
   _moved(name, position) {
     const keep = { left: position.left, top: position.top };
-    if ( name !== "right" ) Object.assign(keep, { width: position.width, height: position.height });
+    if ( name !== "right" || this.sized[name] ) Object.assign(keep, { width: position.width, height: position.height });
+    if ( this.sized[name] ) keep.sized = true;
     this._pending = { ...(this._pending ?? {}), [name]: keep };
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {

@@ -155,16 +155,46 @@ Hooks.on("canvasReady", async () => {
   studio.hudOpen = false;
   studio.markDrag = null;
   studio.line.points = [];
+  studio.markSel?.clear();
+  studio.box = null;
+  studio.hudMenu = null;
+  studio.clearHistory?.();
   syncUI();
   if ( isWorldScene() && game.user.isGM ) {
     const atlas = getAtlas(canvas.scene) ?? await ensureAtlas(canvas.scene);
     if ( await upgradeAtlas(atlas) ) await migrateAreas(atlas);
+    // Превью в списке сцен: снимаем один раз, если его ещё нет. Дальше его обновляют импорт, генератор и кнопка.
+    if ( !canvas.scene.thumb ) scheduleThumb(1500);
   }
   // Группа «Артарий» слева видна только на сцене Артария.
   try { ui.controls?.render({ reset: true }); } catch { /* панель ещё не готова */ }
   backend.emit();
 });
 
+
+// Окно инструмента закрыли крестиком, а потом снова нажали тот же инструмент в колонке Foundry.
+// Foundry повторный щелчок по активному инструменту не сообщает, поэтому слушаем кнопку сами.
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html?.[0];
+  if ( !root || root.dataset.artBound ) return;
+  root.dataset.artBound = "1";
+  root.addEventListener("click", ev => {
+    const btn = ev.target.closest?.("[data-tool]");
+    if ( !btn || ui.controls?.control?.name !== LAYER_NAME || !runtime.ui?.leftClosed ) return;
+    if ( btn.dataset.tool !== runtime.ui.leftClosed.tool ) return;
+    runtime.ui.leftClosed = null;
+    runtime.studio?.changed("ui");
+  });
+});
+
+let thumbTimer = null;
+/** Снять превью сцены чуть позже: холст должен успеть перерисоваться. */
+function scheduleThumb(delay = 1200) {
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(() => runtime.backend?.updateThumb(), delay);
+}
+Hooks.on("artarius.importAzgaar", () => scheduleThumb());
+Hooks.on("artarius.generate", () => scheduleThumb());
 
 /**
  * Области 0.2 → зоны на гексах. Свободный контур переходит в гексы под ним.

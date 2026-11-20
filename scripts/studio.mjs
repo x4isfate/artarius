@@ -18,7 +18,7 @@ import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
 import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
-import { layoutMarks, markAt, groupOrder } from "./data/mark-layout.mjs";
+import { layoutMarks, markAt, groupOrder, markFootprint } from "./data/mark-layout.mjs";
 import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
@@ -66,6 +66,15 @@ export default class Studio {
     this.hover = null;
     /** Линия под курсором: { id, name, at } или null. */
     this.hoverLine = null;
+    /** Выбранные метки (id). Действия панели внизу, Delete и корзина работают с ними. */
+    this.markSel = new Set();
+    /** Рамка выбора меток (Ctrl-протяжка): { start, at, add }. */
+    this.box = null;
+    /** Быстрое меню на панели гекса: { kind: "type" | "delete" } или null. */
+    this.hudMenu = null;
+    /** История для Ctrl+Z: записи { undo(), redo(), label }. */
+    this._history = [];
+    this._redo = [];
     this.listeners = new Set();
     this._drag = null;
     this._busy = false;
@@ -157,6 +166,8 @@ export default class Studio {
     const prev = this.tool;
     this.tool = toggle && tool === prev ? null : tool;
     if ( this.tool === prev && fromCanvas ) return;
+    // Счётчик выборов инструмента: закрытое крестиком окно снова открывается, когда инструмент выбирают заново.
+    if ( !fromCanvas || this.tool !== prev ) this.toolPicks = (this.toolPicks ?? 0) + 1;
     if ( this.tool !== "line" ) { this.line.points = []; this.line.cells = []; }
     // Панель на гексе — часть осмотра: другой инструмент её убирает.
     if ( this.tool !== "select" ) this.hudOpen = false;
@@ -202,7 +213,16 @@ export default class Studio {
       return;
     }
     if ( dragStart && (alt || this.tool === "select" || this.tool === "line") ) return;
+    if ( this.tool === "select" && ctrl ) {
+      // Ctrl-протяжка: рамка выбора меток. Shift вместе с Ctrl добавляет к уже выбранным.
+      this.box = { start: point, at: point, add: shift };
+      this.changed("overlay");
+      return "grab";
+    }
     if ( shift && this.tool === "select" && !alt ) {
+      // Shift-щелчок по метке добавляет её к выбранным или убирает; по пустому месту — гекс в осмотр.
+      const onMark = markAt(this.markSlots().slots, point);
+      if ( onMark ) { this.toggleMarkSel(onMark.id); return; }
       if ( inside ) {
         this.inspectToggle(cell);
         // Если кнопку не отпустили и повели, гексы по пути добавляются в осмотр.
@@ -211,12 +231,13 @@ export default class Studio {
       return;
     }
     if ( alt || this.tool === "select" ) {
-      // Метку под курсором можно утащить на другой гекс; щелчок без протяжки — осмотр гекса.
-      const hit = !alt && this.tool === "select" ? markAt(this.markSlots().slots, point) : null;
+      // Метку под курсором можно утащить на другой гекс, с Alt — в любую точку; щелчок без протяжки выбирает её.
+      const hit = this.tool === "select" ? markAt(this.markSlots().slots, point) : null;
       if ( hit ) {
-        this.markDrag = { id: hit.id, from: hit.cell, at: point, start: point, moved: false };
+        this.markDrag = { id: hit.id, from: hit.cell, at: point, start: point, moved: false, free: alt };
         return "grab";
       }
+      if ( this.markSel.size ) { this.markSel.clear(); this.changed("overlay"); }
       if ( inside ) {
         // Простой щелчок после осмотра нескольких гексов начинает осмотр заново, с одного гекса.
         if ( !alt && this.selection.size > 1 ) this.selection.clear();
@@ -264,6 +285,11 @@ export default class Studio {
   }
 
   pointerMove(point) {
+    if ( this.box ) {
+      this.box.at = point;
+      this.changed("overlay");
+      return;
+    }
     if ( this.markDrag ) {
       const d = this.markDrag;
       d.at = point;
@@ -296,15 +322,32 @@ export default class Studio {
   }
 
   async pointerUp() {
+    if ( this.box ) {
+      const b = this.box;
+      this.box = null;
+      const [x0, x1] = [Math.min(b.start.x, b.at.x), Math.max(b.start.x, b.at.x)];
+      const [y0, y1] = [Math.min(b.start.y, b.at.y), Math.max(b.start.y, b.at.y)];
+      if ( !b.add ) this.markSel.clear();
+      for ( const sl of this.markSlots().slots ) {
+        if ( sl.id && sl.x >= x0 && sl.x <= x1 && sl.y >= y0 && sl.y <= y1 ) this.markSel.add(sl.id);
+      }
+      this.changed("overlay");
+      this.changed("ui");
+      return;
+    }
     if ( this.markDrag ) {
       const d = this.markDrag;
       this.markDrag = null;
       if ( !d.moved ) {
-        this.inspect(d.from, { toggle: true });
+        // Щелчок по метке: гекс в осмотр и сама метка выбрана (корзина и Delete удалят её).
+        this.markSel = new Set([d.id]);
+        this.inspect(d.from, { toggle: false });
+        this.changed("overlay");
         return;
       }
       const to = this.grid.cellAt(d.at);
-      if ( this.grid.inBounds(to) && cellKey(to) !== cellKey(d.from) ) await this.moveMark(d.id, to);
+      if ( d.free ) { if ( this.grid.inBounds(to) ) await this.moveMarkFree(d.id, d.at); }
+      else if ( this.grid.inBounds(to) && cellKey(to) !== cellKey(d.from) ) await this.moveMark(d.id, to);
       this.changed("overlay");
       return;
     }
@@ -350,10 +393,9 @@ export default class Studio {
     this.changed("ui");
   }
 
-  /** Правая кнопка: убрать последнюю точку линии, удалить метку под курсором или снять выделение. */
-  rightClick(point) {
-    const hit = point && this.tool === "select" && !this.line.points.length ? markAt(this.markSlots().slots, point) : null;
-    if ( hit ) return this.quickDeleteMark(hit.id);
+  /** Правая кнопка: убрать последнюю точку линии или снять выделение. Метки она не удаляет. */
+  rightClick() {
+    if ( this.hudMenu ) { this.hudMenu = null; this.changed("ui"); return; }
     if ( this.tool === "line" && this.line.points.length ) this.undoPoint();
     else this.selection.clear();
     this.changed("ui");
@@ -362,7 +404,10 @@ export default class Studio {
 
   /** Esc: сбросить начатое. Возвращает true, если было что сбрасывать. */
   dismiss() {
+    if ( this.box ) { this.box = null; this.changed("overlay"); return true; }
     if ( this.markDrag ) { this.markDrag = null; this.changed("overlay"); return true; }
+    if ( this.hudMenu ) { this.hudMenu = null; this.changed("ui"); return true; }
+    if ( this.markSel.size ) { this.markSel.clear(); this.changed("ui"); this.changed("overlay"); return true; }
     if ( this.typeForm ) { this.typeForm = null; this.changed("ui"); return true; }
     if ( this.hudOpen ) { this.closeHud(); return true; }
     if ( this.line.points.length ) { this.clearLine(); return true; }
@@ -458,7 +503,7 @@ export default class Studio {
     const types = this.types;
     const marks = [...this.states.values()].filter(s => s.system.kind === "object"
       && (isResourceType(s.system.typeId) ? view.resources : view.marks));
-    return layoutMarks(marks, this.grid, m => resolveStyleOf(m, types).size);
+    return layoutMarks(marks, this.grid, m => resolveStyleOf(m, types).size, m => resolveStyleOf(m, types).cells ?? 1);
   }
 
   /** Перенести метку в центр другого гекса. У игрока перенос уходит в черновик, как любая правка. */
@@ -467,10 +512,110 @@ export default class Studio {
     if ( !st || st.system.kind !== "object" || !this.grid.inBounds(cell) ) return;
     const { x, y } = this.grid.center(cell);
     await this.edit(id, s => {
-      s.system.geometry = { ...(s.system.geometry ?? {}), x: Math.round(x), y: Math.round(y), cell: [...cell] };
+      s.system.geometry = { ...(s.system.geometry ?? {}), x: Math.round(x), y: Math.round(y), cell: [...cell], free: false };
     }, { now: true });
     this.changed("ui");
     this.changed("overlay");
+  }
+
+  /** Перенести метку в любую точку (Alt-протяжка): она стоит там, где отпустили, и не встаёт в группу гекса. */
+  async moveMarkFree(id, point) {
+    const st = this.stateOf(id);
+    const cell = this.grid.cellAt(point);
+    if ( !st || st.system.kind !== "object" || !this.grid.inBounds(cell) ) return;
+    await this.edit(id, s => {
+      s.system.geometry = { ...(s.system.geometry ?? {}), x: Math.round(point.x), y: Math.round(point.y), cell: [...cell], free: true };
+    }, { now: true });
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Выбор меток и действия над ними                                  */
+  /* ---------------------------------------------------------------- */
+
+  toggleMarkSel(id) {
+    if ( this.markSel.has(id) ) this.markSel.delete(id);
+    else this.markSel.add(id);
+    this.changed("overlay");
+    this.changed("ui");
+  }
+
+  clearMarkSel() {
+    this.markSel.clear();
+    this.changed("overlay");
+    this.changed("ui");
+  }
+
+  /** Выбранные метки, которые ещё существуют. */
+  selectedMarks() {
+    return [...this.markSel].map(id => this.stateOf(id)).filter(s => s?.system.kind === "object");
+  }
+
+  /** Удалить метки без вопроса: Ctrl+Z вернёт. ids по умолчанию — выбранные. */
+  async deleteMarks(ids = [...this.markSel]) {
+    const list = ids.map(id => this.stateOf(id)).filter(s => s?.system.kind === "object");
+    if ( !list.length ) return;
+    for ( const s of list ) {
+      this._pending?.delete(s.id);
+      this.markSel.delete(s.id);
+      if ( this.openId === s.id ) this.openId = null;
+    }
+    this.hudMenu = null;
+    await this._commit(list.map(s => ({ action: "delete", id: s.id, name: s.name })), { label: "delete" });
+    const name = list.length === 1 ? (list[0].name || this.t("ART.Card.unnamed")) : "";
+    this.backend.notify("info", list.length === 1 ? this.t("ART.Mark.deletedOne", { name }) : this.t("ART.Mark.deletedMany", { n: list.length }));
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Сменить тип всем выбранным меткам одной записью. */
+  async retypeMarks(typeId, ids = [...this.markSel]) {
+    if ( !this.typeById(typeId) ) return;
+    const ops = [];
+    for ( const id of ids ) {
+      const s = this.stateOf(id);
+      if ( s?.system.kind !== "object" || s.system.typeId === typeId ) continue;
+      const next = plainClone(s);
+      next.system.typeId = typeId;
+      ops.push({ action: "update", id, state: next });
+      this._pending?.delete(id);
+    }
+    await this._commit(ops);
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Корзина на панели гекса: удалить выбранные метки, одну метку гекса сразу или открыть список, что удалить. */
+  async hudDelete() {
+    const here = new Set(this.contents().marks.map(m => m.id));
+    const chosen = [...this.markSel].filter(id => here.has(id));
+    if ( chosen.length ) return this.deleteMarks(chosen);
+    if ( here.size === 1 ) return this.deleteMarks([...here]);
+    this.hudMenu = this.hudMenu?.kind === "delete" ? null : { kind: "delete" };
+    this.changed("ui");
+  }
+
+  /** Кнопка «Поставить метку»: быстрый выбор типа, недавние сверху. */
+  toggleTypeMenu() {
+    this.hudMenu = this.hudMenu?.kind === "type" ? null : { kind: "type" };
+    this.changed("ui");
+  }
+
+  /** Недавние типы меток впереди, потом остальные по порядку. */
+  markTypesForMenu() {
+    const recent = this._recentTypes ?? [];
+    const list = this.typesOf("object");
+    const rank = t => { const n = recent.indexOf(t.id); return n < 0 ? 999 : n; };
+    return list.map((t, n) => ({ t, n })).sort((a, b) => (rank(a.t) - rank(b.t)) || (a.n - b.n)).map(x => x.t);
+  }
+
+  async quickMark(typeId) {
+    if ( !this.typeById(typeId) ) return;
+    this.mark.typeId = typeId;
+    this._recentTypes = [typeId, ...(this._recentTypes ?? []).filter(id => id !== typeId)].slice(0, 5);
+    this.hudMenu = null;
+    await this.markHere();
   }
 
   /**
@@ -491,7 +636,7 @@ export default class Studio {
     ids.forEach((mid, n) => {
       const s = list.find(x => x.id === mid);
       if ( (s.system.sort ?? 0) === n + 1 ) return;
-      const next = foundry_clone(s);
+      const next = plainClone(s);
       next.system.sort = n + 1;
       ops.push({ action: "update", id: mid, state: next });
     });
@@ -535,7 +680,7 @@ export default class Studio {
       : null;
     let ops;
     if ( join ) {
-      const keep = foundry_clone(this.stateOf(join.keep.id) ?? join.keep);
+      const keep = plainClone(this.stateOf(join.keep.id) ?? join.keep);
       keep.system.geometry = { ...(keep.system.geometry ?? {}), points: join.points.map(([x, y]) => [Math.round(x), Math.round(y)]), segments: join.segments };
       ops = [{ action: "update", id: keep.id, state: keep }];
       if ( join.remove ) ops.push({ action: "delete", id: join.remove.id, name: join.remove.name });
@@ -623,7 +768,7 @@ export default class Studio {
     if ( f.id ) {
       const old = this.typeById(f.id);
       if ( !this.canEditType(old) ) return this.backend.notify("warn", this.t("ART.Type.notYours"));
-      type = foundry_clone(old);
+      type = plainClone(old);
       type.name = name;
       type.style = { ...(type.style ?? {}), color: f.color };
       if ( f.kind === "object" && f.icon ) type.style.icon = f.icon;
@@ -645,7 +790,14 @@ export default class Studio {
       // Узор задаёт штрих сам; старые dash/gap от него не мешают.
       delete type.style.dash; delete type.style.gap;
     }
+    const prevType = f.id ? plainClone(this.typeById(f.id)) : null;
     await this.backend.saveType(type);
+    const savedType = plainClone(type);
+    this._remember({
+      label: "type",
+      undo: () => prevType ? this.backend.saveType(plainClone(prevType)) : this.backend.deleteType(savedType.id),
+      redo: () => this.backend.saveType(plainClone(savedType))
+    });
     const slot = { area: "zone", object: "mark", line: "line" }[f.kind];
     this[slot].typeId = type.id;
     if ( slot === "zone" ) this.zone.target = "new";
@@ -662,7 +814,9 @@ export default class Studio {
     if ( !this.canEditType(type) ) return;
     const used = [...this.states.values()].some(s => s.system.typeId === id);
     if ( used && !(await this.backend.confirm(this.t("ART.Type.deleteUsed", { name: type.name }))) ) return;
+    const oldType = plainClone(type);
     await this.backend.deleteType(id);
+    this._remember({ label: "type", undo: () => this.backend.saveType(plainClone(oldType)), redo: () => this.backend.deleteType(oldType.id) });
     this.typeForm = null;
     if ( this.settings.back ) return this.closeSettings();
     if ( this.settings.open && this.settings.section === type.kind ) return this.settingsPick(this.typesOf(type.kind)[0]?.id ?? null);
@@ -884,6 +1038,39 @@ export default class Studio {
     await this.attach(this.inspectCells());
   }
 
+  /**
+   * Перейти к гексу по координатам: «27:22», «27 22», «27,22» или слитно «2722».
+   * Слитные цифры делятся пополам; при нечётной длине пробуются оба деления, берётся то, что внутри карты.
+   */
+  parseCoords(text) {
+    const t = String(text ?? "").trim();
+    const two = t.match(/^(\d+)\s*[:;,.\s]\s*(\d+)$/);
+    const ok = c => this.grid.inBounds(c) ? c : null;
+    if ( two ) return ok([Number(two[1]), Number(two[2])]);
+    if ( !/^\d{2,}$/.test(t) ) return null;
+    const half = Math.floor(t.length / 2);
+    const cuts = t.length % 2 ? [half, half + 1] : [half];
+    for ( const k of cuts ) {
+      const c = ok([Number(t.slice(0, k)), Number(t.slice(k))]);
+      if ( c ) return c;
+    }
+    return null;
+  }
+
+  /** Перейти к гексу: карта едет к нему, гекс открывается в осмотре. */
+  goTo(text) {
+    const cell = this.parseCoords(text);
+    if ( !cell ) {
+      this.backend.notify("warn", this.t("ART.Goto.bad", { text }));
+      return false;
+    }
+    if ( !this.tool ) this.setTool("select", { toggle: false });
+    this.selection.clear();
+    this.inspect(cell);
+    this.backend.panTo(this.grid.center(cell));
+    return true;
+  }
+
   /** Короткая сводка гекса для панели: координаты, местность, владение, хозяин. */
   summary() {
     if ( !this.inspected ) return null;
@@ -905,11 +1092,20 @@ export default class Studio {
     const cells = this.inspectCells();
     const counts = new Map();
     const out = { zones: [], marks: [], lines: [], counts };
+    // Крупные метки (2 клетки и больше) лежат на всех гексах, которые накрывают.
+    const big = [];
+    for ( const s of this.states.values() ) {
+      if ( s.system.kind !== "object" ) continue;
+      const n = resolveStyleOf(s, this.types).cells ?? 1;
+      if ( n > 1 ) big.push({ s, keys: new Set(markFootprint(s, this.grid, n).map(cellKey)) });
+    }
     for ( const cell of cells ) {
       const c = tileContents({
         states: this.states, types: this.types, layers: this.layers, cell,
         center: this.grid.center(cell), radius: this.grid.radius, cellAt: this.grid.cellAt
       });
+      const k = cellKey(cell);
+      for ( const b of big ) if ( b.keys.has(k) && !c.marks.includes(b.s) ) c.marks.push(b.s);
       for ( const key of ["zones", "marks", "lines"] ) for ( const st of c[key] ) {
         if ( !counts.has(st.id) ) out[key].push(st);
         counts.set(st.id, (counts.get(st.id) ?? 0) + 1);
@@ -933,7 +1129,7 @@ export default class Studio {
   edit(id, fn, { now = false } = {}) {
     const base = this._pending?.get(id) ?? this.states.get(id);
     if ( !base ) return;
-    const state = foundry_clone(base);
+    const state = plainClone(base);
     fn(state);
     this._pending ??= new Map();
     this._pending.set(id, state);
@@ -960,37 +1156,14 @@ export default class Studio {
   async deleteFeature(id) {
     const s = this.stateOf(id);
     if ( !s ) return;
-    if ( !(await this.backend.confirm(this.t("ART.Card.deleteConfirm", { name: s.name || this.t("ART.Card.unnamed") }))) ) return;
+    // Без вопроса «точно удалить?»: Ctrl+Z вернёт.
     this._pending?.delete(id);
+    this.markSel.delete(id);
     if ( this.openId === id ) this.openId = null;
     await this._commit([{ action: "delete", id, name: s.name }]);
-    this.changed("ui");
-  }
-
-  /** Быстрое удаление метки (ПКМ): без вопроса, но Ctrl+Z возвращает её. */
-  async quickDeleteMark(id) {
-    const s = this.stateOf(id);
-    if ( !s ) return;
-    this._pending?.delete(id);
-    if ( this.openId === id ) this.openId = null;
-    this.lastDeleted = foundry_clone(s);
-    const name = s.name || this.t("ART.Card.unnamed");
-    await this._commit([{ action: "delete", id, name: s.name }]);
-    this.backend.notify("info", this.t("ART.Mark.quickDeleted", { name }));
+    this.backend.notify("info", this.t("ART.Card.deleted", { name: s.name || this.t("ART.Card.unnamed") }));
     this.changed("ui");
     this.changed("overlay");
-  }
-
-  /** Вернуть метку, удалённую правой кнопкой. Возвращает true, если было что возвращать. */
-  async restoreDeleted() {
-    const state = this.lastDeleted;
-    if ( !state ) return false;
-    this.lastDeleted = null;
-    await this._commit([{ action: "create", id: state.id, state }]);
-    this.backend.notify("info", this.t("ART.Mark.restored", { name: state.name || this.t("ART.Card.unnamed") }));
-    this.changed("ui");
-    this.changed("overlay");
-    return true;
   }
 
   /** Кусок линии на осматриваемых гексах: [from, to] номера точек или null. */
@@ -1110,6 +1283,13 @@ export default class Studio {
         if ( s.system.kind === "area" ) s.system.layerId = this.typeById(value)?.layerId ?? s.system.layerId;
       } else if ( field === "color" ) s.system.style = { ...(s.system.style ?? {}), color: value };
       else if ( field === "shape" ) s.system.style = { ...(s.system.style ?? {}), shape: value };
+      else if ( field === "size" || field === "cells" ) {
+        const style = { ...(s.system.style ?? {}) };
+        const num = Number(value);
+        if ( value === "" || !Number.isFinite(num) ) delete style[field];
+        else style[field] = field === "cells" ? Math.max(1, Math.min(4, Math.round(num))) : Math.max(0.2, Math.min(2, num));
+        s.system.style = style;
+      }
       else {
         // statuses.N.name | aspects.N.value | aspects.N.statuses.M.max …
         const parts = field.split(".");
@@ -1122,7 +1302,7 @@ export default class Studio {
           obj[key] = Number.isFinite(num) ? num : null;
         } else obj[key] = value;
       }
-    }, { now: field === "demiurge" || field === "typeId" || field === "color" || field === "shape" });
+    }, { now: ["demiurge", "typeId", "color", "shape", "size", "cells"].includes(field) });
   }
 
   /**
@@ -1239,20 +1419,81 @@ export default class Studio {
 
   /* ---------------------------------------------------------------- */
 
-  async _commit(ops) {
+  /** Запомнить шаг для Ctrl+Z. Новый шаг стирает то, что можно было вернуть Ctrl+Shift+Z. */
+  _remember(entry) {
+    this._history.push(entry);
+    if ( this._history.length > HISTORY_LIMIT ) this._history.shift();
+    this._redo = [];
+  }
+
+  /** Новая сцена — новая история: шаги другой сцены отменять нельзя. */
+  clearHistory() {
+    this._history = [];
+    this._redo = [];
+  }
+
+  get canUndo() { return this._history.length > 0; }
+  get canRedo() { return this._redo.length > 0; }
+
+  /** Ctrl+Z: отменить последний шаг (метки, зоны, линии, типы, статусы). */
+  async undo() {
+    await this.flush();
+    const e = this._history.pop();
+    if ( !e ) { this.backend.notify("info", this.t("ART.Undo.nothing")); return false; }
+    await e.undo();
+    this._redo.push(e);
+    this.markSel.clear();
+    this.changed("ui");
+    this.changed("overlay");
+    return true;
+  }
+
+  /** Ctrl+Shift+Z или Ctrl+Y: вернуть отменённое. */
+  async redo() {
+    const e = this._redo.pop();
+    if ( !e ) return false;
+    await e.redo();
+    this._history.push(e);
+    this.changed("ui");
+    this.changed("overlay");
+    return true;
+  }
+
+  async _commit(ops, { record = true, label = "" } = {}) {
     ops = (ops ?? []).filter(Boolean);
     if ( !ops.length ) return;
+    if ( record ) {
+      // Обратные операции считаем до записи, пока прежнее состояние ещё на месте.
+      const inverse = ops.map(op => {
+        const before = this.states.get(op.id);
+        if ( op.action === "create" ) return before ? { action: "update", id: op.id, state: plainClone(before) } : { action: "delete", id: op.id, name: op.state?.name };
+        if ( !before ) return null;
+        if ( op.action === "delete" ) return { action: "create", id: op.id, state: plainClone(before) };
+        return { action: "update", id: op.id, state: plainClone(before) };
+      }).filter(Boolean).reverse();
+      const redo = ops.map(op => plainClone(op));
+      this._remember({
+        label,
+        undo: () => this._commit(inverse.map(plainClone), { record: false }),
+        redo: () => this._commit(redo.map(plainClone), { record: false })
+      });
+    }
     try {
       await this.backend.commitOps(ops);
     } catch(err) {
+      // Запись не прошла: и отменять нечего.
+      if ( record ) this._history.pop();
       console.error("artarius | commit", err);
       this.backend.notify("error", String(err?.message ?? err));
     }
   }
 }
 
+/** Сколько шагов помнит Ctrl+Z. */
+const HISTORY_LIMIT = 100;
+
 /** Глубокая копия без Foundry. */
-function foundry_clone(x) {
+function plainClone(x) {
   return x === undefined ? x : JSON.parse(JSON.stringify(x));
 }
 

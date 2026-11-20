@@ -324,6 +324,37 @@ export default class FoundryBackend {
     new FP({ type: "image", current, callback }).render({ force: true });
   }
 
+  /**
+   * Превью сцены в списке сцен: снимок слоя Артария. Без него у сцены мира нет фона, и Foundry рисует чёрный квадрат.
+   * Сервер Foundry сам сохраняет картинку из data URL в папку мира. Если не вышло, грузим файл через FilePicker.
+   */
+  async updateThumb({ quiet = true } = {}) {
+    const scene = canvas.scene;
+    const renderer = canvas[LAYER_NAME]?.renderer;
+    if ( !game.user.isGM || !scene || !renderer || !canvas.app?.renderer ) return false;
+    try {
+      const data = await renderer.snapshot(canvas.app.renderer, canvas.dimensions.sceneRect, 600);
+      try {
+        await scene.update({ thumb: data });
+      } catch(err) {
+        const FP = foundry.applications.apps.FilePicker.implementation ?? foundry.applications.apps.FilePicker;
+        const dir = `worlds/${game.world.id}/assets/artarius`;
+        await FP.createDirectory("data", dir).catch(() => null);
+        const blob = await (await fetch(data)).blob();
+        const file = new File([blob], `${scene.id}-thumb.webp`, { type: "image/webp" });
+        const res = await FP.upload("data", dir, file, {}, { notify: false });
+        if ( !res?.path ) throw err;
+        await scene.update({ thumb: `${res.path}?v=${Date.now()}` });
+      }
+      if ( !quiet ) ui.notifications.info(game.i18n.localize("ART.World.thumbDone"));
+      return true;
+    } catch(err) {
+      console.warn(`${MODULE_ID} | scene thumbnail`, err);
+      if ( !quiet ) ui.notifications.warn(game.i18n.localize("ART.World.thumbFail"));
+      return false;
+    }
+  }
+
   openGuide() { game.modules.get(MODULE_ID).api.openGuide(); }
   openWorldSettings() { game.modules.get(MODULE_ID).api.openWorldSettings(); }
   openAzgaar() { game.modules.get(MODULE_ID).api.openAzgaar(); }
