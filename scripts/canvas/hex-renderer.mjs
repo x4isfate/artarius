@@ -11,7 +11,8 @@ import { isResourceType } from "../data/view.mjs";
 import { isHidden } from "../data/access.mjs";
 import { FIELD_IDS, RAMPS, ICE_TEMP, fieldAt, fieldsFit, rampColor } from "../data/fields.mjs";
 import { layoutMarks, counterAt } from "../data/mark-layout.mjs";
-import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon } from "../geometry/geometry.mjs";
+import { catmullRom, meander, ribbon, dashPolyline, midpoint, roughPolygon, roughEdge } from "../geometry/geometry.mjs";
+import { ATLAS_PAPER, ATLAS_INK, paperColor, paperTone, shadeColor, waterDistance, waterColor, glyphsFor, coastPairs, sharedEdge } from "./atlas.mjs";
 import { lineCurve, lineDash } from "./style.mjs";
 
 const color = c => {
@@ -112,13 +113,16 @@ export default class HexRenderer {
     const g = this.base;
     g.clear();
     const cells = this.grid.allCells();
-    g.beginFill(color(world.baseColor), 1);
+    const atlas = world.style !== "flat";
+    g.beginFill(color(atlas ? ATLAS_PAPER.deep : world.baseColor), 1);
     for ( const c of cells ) g.drawPolygon(flatV(this.grid.vertices(c)));
     g.endFill();
     const lines = this.gridLines;
     lines.clear();
     if ( world.gridAlpha > 0 ) {
-      lines.lineStyle({ width: 1.5, color: color(world.gridColor), alpha: world.gridAlpha });
+      // В атласе сетка тонкая, тушью поверх бумаги.
+      if ( atlas ) lines.lineStyle({ width: 1, color: color(ATLAS_INK), alpha: Math.min(1, world.gridAlpha * 1.5) });
+      else lines.lineStyle({ width: 1.5, color: color(world.gridColor), alpha: world.gridAlpha });
       for ( const c of cells ) lines.drawPolygon(flatV(this.grid.vertices(c)));
     }
   }
@@ -141,9 +145,21 @@ export default class HexRenderer {
         || ((a.system.sort ?? 0) - (b.system.sort ?? 0)));
     const vis = visibleZoneCells(zones, types, layers);
     const inside = c => this.grid.inBounds(c);
+    this.atlas = world.style !== "flat";
+    if ( this.atlas && !hidden.has("terrain") ) {
+      const land = zones.filter(z => layerIdOf(z, types) === "terrain");
+      this._drawAtlasTerrain(land, vis, types);
+      for ( const z of land ) {
+        const style = resolveStyleOf(z, types);
+        const cells = (vis.get(z.id) ?? []).filter(inside);
+        if ( cells.length && style.labelSize > 0 && z.name ) this._drawZoneLabel(z, style, cells, "terrain");
+      }
+    }
     for ( const z of zones ) {
+      const layerId = layerIdOf(z, types);
+      if ( this.atlas && layerId === "terrain" ) continue;
       const cells = (vis.get(z.id) ?? []).filter(inside);
-      this._drawZone(z, cells, resolveStyleOf(z, types), layerIdOf(z, types));
+      this._drawZone(z, cells, resolveStyleOf(z, types), layerId);
     }
     this._drawFields(fields, show);
     for ( const l of all.filter(s => s.system.kind === "line") ) {
@@ -263,6 +279,149 @@ export default class HexRenderer {
     const t = makeLabel(text, Math.round(this.grid.radius * 0.42), "#f6efe2");
     t.position.set(x + (len / 2), y - (this.grid.radius * 0.35));
     this.decor.addChild(t);
+  }
+
+  /**
+   * Местность в виде «Атлас»: бумажные цвета с неровным тоном, вода светлее у берега,
+   * обводка берега тушью и значки рельефа. Всё в двух Graphics внизу слоя зон.
+   */
+  _drawAtlasTerrain(zones, vis, types) {
+    const grid = this.grid, r = grid.radius;
+    const key = c => `${c[0]},${c[1]}`;
+    const typeOf = new Map(), ownColor = new Map();
+    for ( const z of zones ) {
+      const t = z.system.typeId;
+      ownColor.set(t, resolveStyleOf(z, types).color);
+      for ( const c of vis.get(z.id) ?? [] ) typeOf.set(key(c), t);
+    }
+    const terrainOf = k => typeOf.get(k);
+    const inBounds = c => grid.inBounds(c);
+    const cells = grid.allCells();
+    const near = c => grid.neighbors(c);
+    const dist = waterDistance(cells, near, terrainOf, { inBounds });
+    const isWater = t => !t || t === "water";
+    const amp = r * 0.3;
+    const poly = c => (this.rough ? roughPolygon(grid.vertices(c), amp) : flatV(grid.vertices(c)));
+    // Заливки по цвету: вода раньше суши, чтобы волнистый берег суши ложился поверх.
+    const water = new Map(), land = new Map();
+    for ( const c of cells ) {
+      const k = key(c), t = typeOf.get(k), p = grid.center(c);
+      const tone = paperTone(p.x, p.y, r);
+      const wet = isWater(t);
+      const col = wet ? shadeColor(waterColor(dist.get(k) ?? 9), 0.97 + ((tone - 0.96) * 0.5))
+        : shadeColor(paperColor(t, ownColor.get(t)), tone);
+      const bucket = wet ? water : land;
+      if ( !bucket.has(col) ) bucket.set(col, []);
+      bucket.get(col).push(c);
+    }
+    const g = new PIXI.Graphics();
+    for ( const bucket of [water, land] ) {
+      for ( const [col, list] of bucket ) {
+        g.beginFill(color(col), 1);
+        for ( const c of list ) g.drawPolygon(poly(c));
+        g.endFill();
+      }
+    }
+    // Берег: ребро между сушей и водой, той же волной, что и заливка.
+    g.lineStyle({ width: Math.max(1.5, r * 0.05), color: color(ATLAS_INK), alpha: 0.85, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
+    for ( const [a, b] of coastPairs(cells, near, terrainOf, inBounds) ) {
+      const e = sharedEdge(grid.vertices(a), grid.vertices(b));
+      if ( !e ) continue;
+      const pts = this.rough ? [[e[0].x, e[0].y], ...roughEdge(e[0], e[1], amp), [e[1].x, e[1].y]] : [[e[0].x, e[0].y], [e[1].x, e[1].y]];
+      g.moveTo(pts[0][0], pts[0][1]);
+      for ( const [x, y] of pts.slice(1) ) g.lineTo(x, y);
+    }
+    // Волнистые края крайних гексов не вылезают за поле.
+    if ( this.rough ) {
+      const mask = new PIXI.Graphics();
+      mask.beginFill(0xffffff, 1);
+      for ( const c of cells ) mask.drawPolygon(flatV(grid.vertices(c)));
+      mask.endFill();
+      g.addChild(mask);
+      g.mask = mask;
+    }
+    this.zones.addChild(g);
+    const glyphs = new PIXI.Graphics();
+    for ( const c of cells ) {
+      const k = key(c), t = typeOf.get(k);
+      const deep = isWater(t) && (dist.get(k) ?? 9) >= 3;
+      for ( const gl of glyphsFor(t, grid.center(c), r, k, { deep }) ) this._drawGlyph(glyphs, gl, r);
+    }
+    this.zones.addChild(glyphs);
+  }
+
+  /** Один значок атласа. Формы — как в макете варианта «Атлас». */
+  _drawGlyph(g, { kind, x, y, s }, r) {
+    const ink = color(ATLAS_INK), lw = Math.max(1, r * 0.035);
+    const line = (alpha = 0.85, w = lw) => g.lineStyle({ width: w, color: ink, alpha, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
+    const none = () => g.lineStyle(0);
+    switch ( kind ) {
+      case "mountain": {
+        const L = [x - s, y + (s * 0.55)], T = [x, y - (s * 0.75)], R = [x + s, y + (s * 0.55)];
+        none();
+        g.beginFill(0xffffff, 0.35); g.drawPolygon([...L, ...T, ...R]); g.endFill();
+        g.beginFill(0x8a7552, 0.55); g.drawPolygon([...T, ...R, x + (s * 0.15), y + (s * 0.55)]); g.endFill();
+        line(0.9, lw * 1.2);
+        g.moveTo(...L); g.lineTo(...T); g.lineTo(...R);
+        // Штрихи склона в тени.
+        line(0.5, lw * 0.7);
+        for ( const t of [0.35, 0.6] ) {
+          const px = x + (s * t * 0.8), py = y - (s * 0.75) + (s * 1.3 * t);
+          g.moveTo(px, py); g.lineTo(px - (s * 0.12), py + (s * 0.22));
+        }
+        break;
+      }
+      case "hill": {
+        const R0 = s * 0.7, cy = y + (s * 0.4), a0 = Math.PI * 1.1, a1 = Math.PI * 1.9;
+        line(0.85, lw * 1.1);
+        g.moveTo(x + (Math.cos(a0) * R0), cy + (Math.sin(a0) * R0));
+        g.arc(x, cy, R0, a0, a1);
+        break;
+      }
+      case "tree": case "palm": {
+        line(0.8);
+        g.moveTo(x, y + (s * 0.3)); g.lineTo(x, y + (s * 0.9));
+        g.beginFill(kind === "palm" ? 0x6c9061 : 0x7f9a5e, 1);
+        g.drawCircle(x, y, s * 0.55);
+        g.endFill();
+        break;
+      }
+      case "conifer": {
+        line(0.8);
+        g.moveTo(x, y + (s * 0.5)); g.lineTo(x, y + (s * 0.9));
+        g.beginFill(0x6f8a6a, 1);
+        g.drawPolygon([x - (s * 0.4), y + (s * 0.5), x, y - (s * 0.7), x + (s * 0.4), y + (s * 0.5)]);
+        g.endFill();
+        break;
+      }
+      case "tuft": case "snow": {
+        const k = s / 5;
+        line(kind === "snow" ? 0.35 : 0.7);
+        g.moveTo(x - (3 * k), y); g.lineTo(x - k, y - (4 * k));
+        g.moveTo(x, y); g.lineTo(x, y - (5 * k));
+        g.moveTo(x + (3 * k), y); g.lineTo(x + k, y - (4 * k));
+        break;
+      }
+      case "dune": {
+        line(0.7);
+        g.moveTo(x - s, y); g.quadraticCurveTo(x, y - (s * 0.6), x + s, y);
+        g.moveTo(x - (s * 0.5), y + (s * 0.35)); g.quadraticCurveTo(x, y + (s * 0.05), x + (s * 0.5), y + (s * 0.35));
+        break;
+      }
+      case "reed": {
+        line(0.7);
+        for ( const dx of [-0.3, 0, 0.3] ) { g.moveTo(x + (dx * s), y); g.lineTo(x + (dx * s * 1.4), y - (s * (dx ? 0.7 : 0.9))); }
+        g.moveTo(x - (s * 0.6), y + (s * 0.15)); g.lineTo(x + (s * 0.6), y + (s * 0.15));
+        break;
+      }
+      case "wave": {
+        g.lineStyle({ width: lw, color: 0x3c5a6e, alpha: 0.55, cap: PIXI.LINE_CAP.ROUND });
+        g.moveTo(x - s, y);
+        g.quadraticCurveTo(x - (s / 2), y - (s / 2), x, y);
+        g.quadraticCurveTo(x + (s / 2), y + (s / 2), x + s, y);
+        break;
+      }
+    }
   }
 
   _drawZone(state, cells, style, layerId) {

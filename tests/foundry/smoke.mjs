@@ -460,6 +460,23 @@ await check("генератор: местность, ресурсы, держа�
   assert(realm.name.includes("Огонь"), `держава ${realm.name}`);
 });
 
+await check("0.9.0: вид «Атлас» по умолчанию, переключатель возвращает простой вид", async () => {
+  const rd = layer.renderer;
+  assert(rd.atlas === true, "атлас не включён по умолчанию");
+  const zonesAtlas = rd.zones.children.length;
+  await scene.update({ "flags.artarius.world": { ...scene.getFlag("artarius", "world"), style: "flat" } });
+  await F.settle();
+  layer.refresh?.(true);
+  await F.settle();
+  assert(layer.renderer.atlas === false, "простой вид не включился");
+  assert(layer.renderer.zones.children.length !== zonesAtlas, "зоны нарисованы так же");
+  await scene.update({ "flags.artarius.world": { ...scene.getFlag("artarius", "world"), style: "atlas" } });
+  await F.settle();
+  layer.refresh?.(true);
+  await F.settle();
+  assert(layer.renderer.atlas === true, "атлас не вернулся");
+});
+
 await check("0.5.0: превью сцены — снимок слоя, а не чёрный квадрат", async () => {
   canvas.app.renderer ??= new PIXI.Renderer({ width: 16, height: 16, backgroundAlpha: 0 });
   await F.settle();

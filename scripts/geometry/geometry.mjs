@@ -324,32 +324,40 @@ export const roundPoints = points => points.map(p => [Math.round(p[0]), Math.rou
  * vertices — [{x, y}], amp — наибольший сдвиг в пикселях. Возвращает плоский массив [x, y, …].
  */
 export function roughPolygon(vertices, amp, steps = 8) {
-  const key = p => `${Math.round(p.x * 2)},${Math.round(p.y * 2)}`;
   const out = [];
   const n = vertices.length;
   for ( let e = 0; e < n; e++ ) {
     const a = vertices[e], b = vertices[(e + 1) % n];
-    const ka = key(a), kb = key(b);
-    // Ребро считаем в одном направлении для обоих соседей: от меньшего ключа к большему.
-    const flip = ka > kb;
-    const [p, q] = flip ? [b, a] : [a, b];
-    const rnd = seededRandom(flip ? `${kb}|${ka}` : `${ka}|${kb}`);
-    // Плавная волна из двух гармоник: изгиб, а не зубцы. На концах ребра сдвиг нулевой.
-    const w1 = (rnd() * 2) - 1, w2 = (rnd() * 2) - 1;
-    const dx = q.x - p.x, dy = q.y - p.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len, ny = dx / len;
-    const pts = [];
-    for ( let s = 1; s < steps; s++ ) {
-      const t = s / steps;
-      const d = amp * ((w1 * Math.sin(Math.PI * t)) + (0.55 * w2 * Math.sin(2 * Math.PI * t)));
-      pts.push([p.x + (dx * t) + (nx * d), p.y + (dy * t) + (ny * d)]);
-    }
-    if ( flip ) pts.reverse();
     out.push(a.x, a.y);
-    for ( const [x, y] of pts ) out.push(x, y);
+    for ( const [x, y] of roughEdge(a, b, amp, steps) ) out.push(x, y);
   }
   return out;
+}
+
+/**
+ * Внутренние точки волнистого ребра от a к b. Волна зависит только от самого ребра,
+ * поэтому у двух соседних гексов и у обводки берега она одна и та же.
+ */
+export function roughEdge(a, b, amp, steps = 8) {
+  const key = p => `${Math.round(p.x * 2)},${Math.round(p.y * 2)}`;
+  const ka = key(a), kb = key(b);
+  // Ребро считаем в одном направлении для обоих соседей: от меньшего ключа к большему.
+  const flip = ka > kb;
+  const [p, q] = flip ? [b, a] : [a, b];
+  const rnd = seededRandom(flip ? `${kb}|${ka}` : `${ka}|${kb}`);
+  // Плавная волна из двух гармоник: изгиб, а не зубцы. На концах ребра сдвиг нулевой.
+  const w1 = (rnd() * 2) - 1, w2 = (rnd() * 2) - 1;
+  const dx = q.x - p.x, dy = q.y - p.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  const pts = [];
+  for ( let s = 1; s < steps; s++ ) {
+    const t = s / steps;
+    const d = amp * ((w1 * Math.sin(Math.PI * t)) + (0.55 * w2 * Math.sin(2 * Math.PI * t)));
+    pts.push([p.x + (dx * t) + (nx * d), p.y + (dy * t) + (ny * d)]);
+  }
+  if ( flip ) pts.reverse();
+  return pts;
 }
 
 /**
