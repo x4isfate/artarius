@@ -327,7 +327,8 @@
       "statusesAspects": "Statuses and aspects",
       "editStatuses": "Edit",
       "doneStatuses": "Done",
-      "noStatusesYet": "No statuses or aspects yet."
+      "noStatusesYet": "No statuses or aspects yet.",
+      "addOwnStatus": "Custom status"
     },
     "Queue": {
       "title": "Claims",
@@ -351,7 +352,12 @@
       "preview": "Show on map",
       "checkHint": "Request a Vitruvium check",
       "rejectReason": "Why rejected (the player will see it):",
-      "partial": "partial"
+      "partial": "partial",
+      "highlight": "Highlight",
+      "goTo": "Go to",
+      "diff": "Before and after",
+      "was": "Before",
+      "now": "After"
     },
     "Op": {
       "create": "{what} “{name}”: new",
@@ -371,7 +377,11 @@
       "geometry": "place",
       "style": "look",
       "layer": "layer",
-      "links": "links"
+      "links": "links",
+      "visibility": "visibility",
+      "cells": "{n} hexes",
+      "points": "{n} points",
+      "linksN": "{n} links"
     },
     "Scene": {
       "enabled": "Artarius scene",
@@ -492,7 +502,8 @@
         "area": "Zones",
         "object": "Marks",
         "line": "Lines",
-        "world": "World"
+        "world": "World",
+        "rights": "Rights"
       }
     },
     "Shape": {
@@ -549,6 +560,38 @@
       "undo": "undo, Ctrl+Shift+Z to redo",
       "goto": "go to hex",
       "esc": "clear selection"
+    },
+    "Perm": {
+      "place": "Place marks",
+      "draw": "Draw zones and lines",
+      "editOthers": "Edit others' things",
+      "statuses": "Statuses and aspects",
+      "denied": "Not allowed: {what}. This edit was not saved.",
+      "player": "Player",
+      "trusted": "Trusted player",
+      "asRole": "as role",
+      "yes": "allowed",
+      "no": "denied",
+      "hint": "GM and assistant GM can do everything. A player's own setting beats the role. Others' things are those this player did not create.",
+      "players": "Individual players",
+      "noPlayers": "No players yet."
+    },
+    "Vis": {
+      "title": "Who sees it",
+      "all": "Everyone",
+      "gm": "Only GM and me",
+      "some": "GM, me and chosen",
+      "onlyAuthor": "Only the GM or the mark's author can change visibility."
+    },
+    "Chat": {
+      "setting": "Map changes in chat",
+      "settingHint": "Approved claims and GM edits are posted to chat as separate messages. Delete them like any message.",
+      "claimNew": "New claim",
+      "claimFrom": "{name} sent claim “{title}”: {n} edits.",
+      "applied": "Claim approved",
+      "appliedFrom": "“{title}” by {name}",
+      "changes": "Map changes",
+      "more": "and {n} more"
     }
   }
 }

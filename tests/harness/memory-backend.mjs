@@ -7,6 +7,7 @@ import { STARTER_TYPES, STARTER_LAYERS, CLAIM_STATUS } from "../../scripts/const
 import { addToDraft, draftOps, applyOps, buildApplyPlan, conflictOf, randomId } from "../../scripts/review/ops.mjs";
 import { mergeTypes, personalTypesUsed } from "../../scripts/data/world.mjs";
 import HexMath from "../../scripts/hex/hexmath.mjs";
+import { visibleStates, permsFor } from "../../scripts/data/access.mjs";
 
 const clone = x => JSON.parse(JSON.stringify(x));
 
@@ -75,8 +76,13 @@ export default class MemoryBackend {
     if ( this.isGM ) return base;
     const f = this.flags[this.me];
     const open = f.claims.filter(c => ["pending", "check", "rolled"].includes(c.status)).flatMap(c => c.ops);
-    return applyOps(applyOps(base, open), draftOps(f.draft));
+    return visibleStates(applyOps(applyOps(base, open), draftOps(f.draft)), this.me, false);
   }
+
+  permissions() { return permsFor(this.permConfig ?? {}, { id: this.me, role: this.isGM ? 4 : 1, isGM: this.isGM }); }
+  permissionConfig() { return clone(this.permConfig ?? {}); }
+  setPermissionConfig(config) { this.permConfig = clone(config); this.emit(); }
+  roster() { return this.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, role: 1 })); }
 
   types() {
     const personal = this.users.map(u => ({ userId: u.id, types: this.flags[u.id].types })).filter(p => p.types.length);

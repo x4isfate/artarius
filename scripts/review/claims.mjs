@@ -5,6 +5,7 @@ import {
 } from "../data/store.mjs";
 import { personalTypesUsed } from "../data/world.mjs";
 import { addToDraft, draftOps, buildApplyPlan, conflictOf, randomId } from "./ops.mjs";
+import { postClaimSubmitted } from "./chat.mjs";
 
 /**
  * Заявки. Игрок собирает правки в черновик и отправляет их одной заявкой с названием
@@ -67,6 +68,7 @@ export async function submitDraft({ title = "", note = "" } = {}, scene = canvas
     [`flags.${MODULE_ID}.drafts.${scene.id}`]: []
   });
   notifyGM("submitted", { userId: game.user.id, claimId: claim.id });
+  try { await postClaimSubmitted(claim, scene); } catch(err) { console.warn("Artarius | claim chat message", err); }
   return claim;
 }
 
@@ -138,6 +140,7 @@ export function planFor(entries, atlas, { force = false } = {}) {
  */
 export async function applyClaims(entries, { ask = true } = {}) {
   if ( !game.user.isGM || !entries.length ) return;
+  const bases = new Map();
   const bySceneId = Map.groupBy?.(entries, e => e.claim.sceneId) ?? groupBy(entries, e => e.claim.sceneId);
   for ( const [sceneId, list] of bySceneId ) {
     const scene = game.scenes.get(sceneId);
@@ -161,13 +164,14 @@ export async function applyClaims(entries, { ask = true } = {}) {
     // Личные типы игроков, которыми пользуются правки, становятся общими.
     const used = personalTypesUsed(list.flatMap(e => e.claim.ops ?? []), getTypes(atlas));
     if ( used.length ) await setTypes(atlas, [...getAtlasTypes(atlas), ...used]);
+    bases.set(sceneId, atlasStates(atlas));
     await applyPlan(atlas, plan);
   }
   for ( const { user, claim } of entries ) {
     await patchClaim(user, claim.id, { status: CLAIM_STATUS.applied, decidedAt: Date.now() });
   }
   ui.notifications.info(game.i18n.format("VMAP.Claims.appliedN", { n: entries.length }));
-  Hooks.callAll("artarius.claimsApplied", entries);
+  Hooks.callAll("artarius.claimsApplied", entries, bases);
 }
 
 /** Отклонить заявки с пояснением. */

@@ -4,6 +4,7 @@
  */
 import { MODULE_ID, WORLD_DEFAULTS, CLAIM_STATUS } from "./constants.mjs";
 import * as store from "./data/store.mjs";
+import { visibleStates, permsFor } from "./data/access.mjs";
 import {
   submitDraft, returnToDraft, dropClaim, allClaims, claimConflicts, applyClaims, rejectClaims,
   requestClaimCheck, ghostsFor
@@ -154,7 +155,18 @@ export default class FoundryBackend {
 
   get atlas() { return store.getAtlas(canvas?.scene); }
 
-  states() { return store.effectiveStates(canvas?.scene); }
+  /** Что видит этот пользователь: скрытые метки других игроков прячутся, мастер видит всё. */
+  states() { return visibleStates(store.effectiveStates(canvas?.scene), game.user.id, game.user.isGM); }
+  /** Права этого пользователя: place, draw, editOthers, statuses. */
+  permissions() { return permsFor(game.settings.get(MODULE_ID, "permissions"), { id: game.user.id, role: game.user.role, isGM: game.user.isGM }); }
+  permissionConfig() { return foundry.utils.deepClone(game.settings.get(MODULE_ID, "permissions") ?? {}); }
+  async setPermissionConfig(config) {
+    if ( !game.user.isGM ) return;
+    await game.settings.set(MODULE_ID, "permissions", config);
+    this.emit();
+  }
+  /** Пользователи для настройки прав: игроки с ролью. */
+  roster() { return game.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, role: u.role })); }
   atlasStates() { return store.atlasStates(this.atlas); }
   types() { return store.getTypes(this.atlas); }
 
