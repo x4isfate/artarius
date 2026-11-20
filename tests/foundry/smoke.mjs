@@ -356,6 +356,10 @@ await check("игрок: правка уходит в черновик, заяв
   await F.settle();
   const claims = p1.getFlag("artarius", "claims");
   assert(claims?.length === 1 && claims[0].status === "pending", "заявка не подана");
+  const notice = F.created.messages.at(-1);
+  assert(notice?.flags?.artarius?.claimNotice, "нет сообщения о заявке");
+  assert(JSON.stringify(notice.whisper) === JSON.stringify([gm.id]), `заявка ушла не мастеру: ${JSON.stringify(notice.whisper)}`);
+  assert(notice.content.includes("Огонь берёт долину"), "в сообщении нет названия заявки");
   game.user = gm;
 });
 
@@ -366,6 +370,17 @@ await check("мастер принимает заявку", async () => {
   await F.settle();
   assert(api().getAtlas(scene).pages.size === 4, "заявка не применена");
   assert(p1.getFlag("artarius", "claims")[0].status === "applied", "статус не applied");
+  const msg = F.created.messages.at(-1);
+  assert(msg && !msg.whisper?.length && msg.content.includes("Огонь берёт долину"), "принятая заявка не попала в чат");
+  // Прямые правки мастера уходят одним сообщением.
+  const chat = await import("../../scripts/review/chat.mjs");
+  const n = F.created.messages.length;
+  s.setTool("mark", { toggle: false });
+  press(hexAt([3, 8]));
+  await F.settle();
+  await chat.flushDirect();
+  assert(F.created.messages.length === n + 1, `сообщений о правках ${F.created.messages.length - n}`);
+  s.setTool("select", { toggle: false });
 });
 
 await check("настройки сцены: галочка режима", async () => {
