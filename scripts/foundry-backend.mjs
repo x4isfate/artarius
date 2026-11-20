@@ -166,6 +166,8 @@ export default class FoundryBackend {
     this.emit();
   }
   /** Пользователи для настройки прав: игроки с ролью. */
+  /** Шрифты Foundry и подключённые модулями: для подписей типов. */
+  fonts() { return Object.keys(CONFIG.fontDefinitions ?? {}).sort((a, b) => a.localeCompare(b)); }
   roster() { return game.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, role: u.role })); }
   atlasStates() { return store.atlasStates(this.atlas); }
   types() { return store.getTypes(this.atlas); }

@@ -694,3 +694,11 @@
 .artarius .art-rights th:first-child { text-align: left; }
 .artarius .art-rights thead th { font-weight: 500; color: var(--art-muted); font-size: 12px; }
 .artarius .art-rights select { width: auto; }
+
+/* 0.8: папки типов, эмодзи */
+.artarius .art-folder { margin: 2px 0; }
+.artarius .art-folder > summary { cursor: pointer; list-style: none; padding: 4px 6px; font-size: 12px; font-weight: 600; opacity: .85; display: flex; gap: 6px; align-items: center; }
+.artarius .art-folder > summary::-webkit-details-marker { display: none; }
+.artarius .art-folder > :not(summary) { margin-left: 10px; }
+.artarius .art-emoji { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; }
+.artarius .art-emoji-input { font-size: 18px; }

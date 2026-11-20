@@ -747,14 +747,18 @@ export default class Studio {
         tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon),
         shape: existing.kind === "line" ? "circle" : (existing.style?.shape ?? "circle"),
         lineShape: existing.style?.shape ?? "curved", bend: existing.style?.bend ?? 0.5, linePattern: existing.style?.pattern ?? "solid",
-        widthStart: existing.style?.widthStart ?? 3, widthEnd: existing.style?.widthEnd ?? 3
+        widthStart: existing.style?.widthStart ?? 3, widthEnd: existing.style?.widthEnd ?? 3,
+        emoji: existing.style?.emoji ?? "", labelFont: existing.style?.labelFont ?? "", folder: existing.folder ?? "",
+        labelMode: existing.style?.labelMode ?? "", labelScale: existing.style?.labelScale ?? 1
       };
     } else {
       const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
       this.typeForm = {
         kind, id: null, name: "", color: nextZoneColor(this.states), icon: kind === "object" ? iconPath("castle") : "", layerId,
         pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements", shape: "circle",
-        lineShape: "curved", bend: 0.5, linePattern: "solid", widthStart: 3, widthEnd: 3
+        lineShape: "curved", bend: 0.5, linePattern: "solid", widthStart: 3, widthEnd: 3,
+        emoji: "", labelFont: "", folder: kind === "object" ? (this.typeById(this.mark.typeId)?.folder ?? "") : "",
+        labelMode: "", labelScale: 1
       };
     }
     this.changed("ui");
@@ -766,6 +770,11 @@ export default class Studio {
     this.typeForm.icon = path;
     this.typeForm.tint = isLibraryIcon(path);
     this.changed("ui");
+  }
+
+  /** Папки типов меток по порядку: без папки первыми. */
+  typeFolders(kind = "object") {
+    return [...new Set(this.typesOf(kind).map(t => t.folder ?? ""))].sort((a, b) => (a !== "") - (b !== "") || a.localeCompare(b));
   }
 
   canEditType(type) {
@@ -791,9 +800,20 @@ export default class Studio {
     }
     if ( f.kind === "area" ) {
       type.style = { ...(type.style ?? {}), pattern: f.pattern || "none", patternColor: f.patternColor || "#1a1a1a" };
+      if ( f.labelMode ) type.style.labelMode = f.labelMode; else delete type.style.labelMode;
+      const sc = Number(f.labelScale);
+      if ( Number.isFinite(sc) && sc > 0 && sc !== 1 ) type.style.labelScale = Math.max(0.4, Math.min(3, sc)); else delete type.style.labelScale;
     }
     // Свою цветную картинку можно не красить цветом типа.
-    if ( f.kind === "object" ) type.style = { ...(type.style ?? {}), tint: f.tint !== false, shape: f.shape || "circle" };
+    if ( f.kind === "object" ) {
+      type.style = { ...(type.style ?? {}), tint: f.tint !== false, shape: f.shape || "circle" };
+      const emoji = String(f.emoji ?? "").trim().slice(0, 8);
+      if ( emoji ) type.style.emoji = emoji; else delete type.style.emoji;
+      const folder = String(f.folder ?? "").trim().slice(0, 40);
+      if ( folder ) type.folder = folder; else delete type.folder;
+    }
+    if ( f.labelFont ) type.style = { ...(type.style ?? {}), labelFont: f.labelFont };
+    else if ( type.style ) delete type.style.labelFont;
     if ( f.kind === "line" ) {
       const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(40, n) : d; };
       type.style = {
@@ -1318,6 +1338,12 @@ export default class Studio {
         if ( s.system.kind === "area" ) s.system.layerId = this.typeById(value)?.layerId ?? s.system.layerId;
       } else if ( field === "color" ) s.system.style = { ...(s.system.style ?? {}), color: value };
       else if ( field === "shape" ) s.system.style = { ...(s.system.style ?? {}), shape: value };
+      else if ( field === "labelMode" || field === "labelScale" ) {
+        const style = { ...(s.system.style ?? {}) };
+        if ( value === "" || value === null ) delete style[field];
+        else style[field] = field === "labelScale" ? Math.max(0.4, Math.min(3, Number(value) || 1)) : value;
+        s.system.style = style;
+      }
       else if ( field === "size" || field === "cells" ) {
         const style = { ...(s.system.style ?? {}) };
         const num = Number(value);
@@ -1337,7 +1363,7 @@ export default class Studio {
           obj[key] = Number.isFinite(num) ? num : null;
         } else obj[key] = value;
       }
-    }, { now: ["demiurge", "typeId", "color", "shape", "size", "cells"].includes(field) });
+    }, { now: ["demiurge", "typeId", "color", "shape", "size", "cells", "labelMode", "labelScale"].includes(field) });
   }
 
   /**
