@@ -256,6 +256,13 @@ export default class MemoryBackend {
   openWorldSettings() { this.log.push(["worldSettings", ""]); }
   openAzgaar() { this.log.push(["azgaar", ""]); }
   openGenerator() { this.log.push(["generator", ""]); }
+  openAzgaarGenerator() { this.log.push(["azgaarGenerator", ""]); }
+  worldInfo() {
+    return { dims: { cols: this.grid.cols, rows: this.grid.rows, size: 60 }, world: { baseColor: "#1f3b57", gridColor: "#000000", gridAlpha: 0.15, rough: false }, roughDefault: true, players: 2 };
+  }
+  applyWorldSettings(values) { this.log.push(["applyWorldSettings", JSON.stringify(values)]); }
+  importAzgaarText(text, name, options) { this.log.push(["importAzgaar", JSON.stringify({ name, size: text.length, options })]); return true; }
+  generateWorld(options) { this.log.push(["generateWorld", JSON.stringify(options)]); return { stats: {} }; }
   pickFile(cur, cb) { cb("icons/svg/tower.svg"); }
 }
 

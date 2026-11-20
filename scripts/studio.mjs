@@ -16,7 +16,7 @@ import {
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
-import { viewOf, activePreset, BUILTIN_PRESETS } from "./data/view.mjs";
+import { viewOf, activePreset, BUILTIN_PRESETS, VIEW_PARTS } from "./data/view.mjs";
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
 import { layoutMarks, markAt, groupOrder, markFootprint } from "./data/mark-layout.mjs";
 import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
@@ -94,6 +94,8 @@ export default class Studio {
   }
 
   changed(what = "ui") {
+    // Места меток пересчитываются, только когда могли поменяться данные или вид, а не на каждое движение мыши.
+    if ( what === "data" || what === "ui" ) this._slotsCache = null;
     for ( const fn of this.listeners ) {
       try { fn(what); }
       catch(err) { console.error("artarius | studio listener", err); }
@@ -119,7 +121,7 @@ export default class Studio {
     const custom = (this.backend.customPresets?.() ?? []).map(p => ({ ...p, custom: true }));
     return [...BUILTIN_PRESETS.map(p => ({ ...p, name: this.t(`ART.Preset.${p.id}`) })), ...custom];
   }
-  activePreset() { return activePreset(this.hidden(), this.presets()); }
+  activePreset() { return activePreset(this.hidden(), this.presets(), new Set([...this.layers.map(l => l.id), ...VIEW_PARTS])); }
 
   async applyPreset(id) {
     const p = this.presets().find(x => x.id === id);
@@ -371,10 +373,13 @@ export default class Studio {
   /** Линия под курсором: её название (или название участка) всплывает подсказкой. */
   _hoverLine(point) {
     const view = this.view();
-    const hit = !this._drag && view.lines !== false
+    // Сначала метка под курсором (карточка с хозяином и статусами), потом линия.
+    const mark = !this._drag && !this.box ? markAt(this.markSlots().slots, point) : null;
+    const hit = !mark && !this._drag && (view.lines !== false || view.rivers !== false)
       ? lineAt(this.states, [point.x, point.y], Math.max(6, this.grid.radius * 0.18))
       : null;
-    const next = hit?.name ? { id: hit.state.id, name: hit.name, at: point } : null;
+    const next = mark ? { id: mark.id, name: this.stateOf(mark.id)?.name ?? "", at: { x: mark.x, y: mark.y - (mark.d / 2) }, mark: true }
+      : hit ? { id: hit.state.id, name: hit.name ?? "", at: point } : null;
     const prev = this.hoverLine;
     this.hoverLine = next;
     if ( (prev?.id ?? null) !== (next?.id ?? null) || prev?.name !== next?.name || next ) this.changed("hover");
@@ -499,6 +504,12 @@ export default class Studio {
 
   /** Видимые метки и их места на карте (группы в гексах, как в Civ 5). */
   markSlots() {
+    if ( this._slotsCache ) return this._slotsCache;
+    this._slotsCache = this._layoutSlots();
+    return this._slotsCache;
+  }
+
+  _layoutSlots() {
     const view = this.view();
     const types = this.types;
     const marks = [...this.states.values()].filter(s => s.system.kind === "object"

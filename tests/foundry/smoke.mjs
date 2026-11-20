@@ -90,13 +90,14 @@ await check("группа инструментов слева", async () => {
   c.onToolChange(new Event("x"), c.tools.select, true);
   await tick();
   assert(api().studio.tool === "select" && !win("left"), "окно «Осмотра» всплыло само");
+  const uiL = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
+  // 0.6: кнопка «Слои» открывает панель слоёв у названия сцены, как в Azgaar.
   c.tools.layers.onChange(new Event("x"), true);
   await tick();
-  assert(win("left")?.textContent.includes("Слои"), "кнопка «Слои» не открыла окно");
-  const uiL = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
-  await uiL.host.windows.left.close();
+  assert(document.querySelector("#artarius-layerbar .art-lb-panel [data-id='terrain']"), "кнопка «Слои» не открыла панель слоёв");
+  c.tools.layers.onChange(new Event("x"), true);
   await tick();
-  assert(api().studio.tool === "select" && !win("left"), "крестик окна слоёв выключил инструмент или окно осталось");
+  assert(!document.querySelector("#artarius-layerbar .art-lb-panel") && api().studio.tool === "select", "панель слоёв не закрылась");
   assert(c.tools.queue.button && c.tools.generator.visible, "кнопки не кнопки или генератор скрыт от мастера");
   // 0.7.0: кнопка «Настройки» открывает и закрывает окно настроек, крестик окна тоже закрывает.
   assert(c.tools.settings?.button, "нет кнопки настроек");
@@ -464,6 +465,12 @@ if ( location.search.includes("shot") ) {
   if ( realm ) await api().backend.saveType({ ...realm, style: { ...realm.style, pattern: "hatch" } });
   await F.settle();
   app.stage.addChild(layer);
+  // ?shot=layers-<id>,<id>: показать слои климата и украшения (0.6).
+  const m = location.search.match(/shot=layers-([^&]+)/);
+  if ( m ) {
+    for ( const id of m[1].split(",") ) await api().backend.toggleLayer(`@${id}`);
+    await F.settle();
+  }
   layer.refresh(true);
   if ( location.search.includes("shot=civ") ) {
     // Метки как в Civ 5 и панель на гексе: настоящие значки, камера совпадает с холстом.
