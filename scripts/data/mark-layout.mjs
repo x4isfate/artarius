@@ -33,10 +33,14 @@ export function groupOrder(a, b) {
  *  slots — [{ id, x, y, d, cell, key, n, count, more }] (more > 0 у плашки «+N», id у неё null);
  *  cells — Map ключ гекса → { cell, ids, count, x, y } для счётчика.
  */
-export function layoutMarks(marks, grid, sizeOf = () => 0.6) {
+export function layoutMarks(marks, grid, sizeOf = () => 0.6, cellsOf = () => 1) {
   const r = grid.radius;
   const groups = new Map();
+  const solo = [];
   for ( const m of marks ) {
+    // Метка, поставленная в свою точку (Alt), или крупная (2 клетки и больше) стоит отдельно, не в группе гекса.
+    const n = cellsOf(m) ?? 1;
+    if ( m.system.geometry?.free || n > 1 ) { solo.push(m); continue; }
     const cell = markCell(m, grid.cellAt);
     const key = cellKey(cell);
     if ( !groups.has(key) ) groups.set(key, { cell, list: [] });
@@ -67,7 +71,40 @@ export function layoutMarks(marks, grid, sizeOf = () => 0.6) {
       else slots.push({ ...base, id: null, more: count - shown });
     }
   }
+  for ( const m of solo ) {
+    const cell = markCell(m, grid.cellAt);
+    const c = grid.center(cell);
+    const g = m.system.geometry ?? {};
+    const x = g.free ? (g.x ?? c.x) : c.x, y = g.free ? (g.y ?? c.y) : c.y;
+    slots.push({ id: m.id, x, y, d: markDiameter(r, sizeOf(m), cellsOf(m)), cell, key: cellKey(cell), n: 0, count: 1, more: 0, solo: true });
+  }
   return { slots, cells };
+}
+
+/**
+ * Диаметр значка метки. size — масштаб вида (доля гекса, 0.6 по умолчанию), cells — сколько клеток метка
+ * занимает в поперечнике, как размер токена 1×1, 2×2: при 2 значок примерно на две ширины гекса.
+ */
+export function markDiameter(radius, size = 0.6, cells = 1) {
+  const k = (cells ?? 1) > 1 ? cells * 1.45 : 1;
+  return radius * 2 * (size ?? 0.6) * k;
+}
+
+/** Гексы, которые занимает крупная метка: центр гекса внутри её круга. Для 1 клетки — только свой гекс. */
+export function markFootprint(mark, grid, cells = 1) {
+  const home = markCell(mark, grid.cellAt);
+  if ( (cells ?? 1) <= 1 ) return [home];
+  const c = grid.center(home);
+  const reach = grid.radius * 2 * 0.6 * cells * 1.45 / 2;
+  const out = [];
+  const span = cells + 1;
+  for ( let di = -span; di <= span; di++ ) for ( let dj = -span; dj <= span; dj++ ) {
+    const cell = [home[0] + di, home[1] + dj];
+    if ( grid.inBounds && !grid.inBounds(cell) ) continue;
+    const p = grid.center(cell);
+    if ( Math.hypot(p.x - c.x, p.y - c.y) <= reach ) out.push(cell);
+  }
+  return out;
 }
 
 /** Где на гексе рисовать счётчик меток: сверху по центру, внутри клетки. */

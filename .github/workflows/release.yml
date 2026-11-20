@@ -30,6 +30,16 @@ jobs:
           VERSION=$(node -p "require('./module.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          # 20.11.2026 номера версий пересчитаны: прежние 0.5.0–0.9.1 стали 0.3.0–0.4.3, а новые 0.5–0.9 пошли заново.
+          # Старые релизы с номером не меньше текущего удаляются вместе с тегом, иначе сборка приняла бы их за уже выпущенные.
+          gh release list --limit 100 --json tagName,publishedAt --jq '.[] | select(.publishedAt < "2026-11-20T12:00:00Z") | .tagName' |
+          while read -r OLD; do
+            V=${OLD#v}
+            if [ "$(printf '%s\n%s\n' "$VERSION" "$V" | sort -V | head -n1)" = "$VERSION" ]; then
+              echo "Удаляю старый релиз $OLD"
+              gh release delete "$OLD" --cleanup-tag --yes
+            fi
+          done
           if gh release view "v$VERSION" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^artarius.zip$'; then
             echo "Релиз v$VERSION уже есть"
             echo "skip=true" >> "$GITHUB_OUTPUT"

@@ -85,8 +85,8 @@ export function attachOps({ states, types, layers, cells, target = null, newZone
       if ( other.id === zone.id || layerIdOf(other, types) !== layerId ) continue;
       const left = zoneCells(other).filter(c => !adding.has(cellKey(c)));
       if ( left.length === zoneCells(other).length ) continue;
-      if ( left.length ) ops.push({ action: "update", id: other.id, state: withCells(other, left) });
-      else ops.push({ action: "delete", id: other.id, name: other.name });
+      // Зона без гексов не удаляется: она уходит в «Архив» и её можно снова красить.
+      ops.push({ action: "update", id: other.id, state: withCells(other, left) });
     }
   }
   const changed = !target || merged.length !== have.size;
@@ -107,8 +107,7 @@ export function detachOps({ states, types, cells, zoneId = null, layerId = null 
     const all = zoneCells(z);
     const left = all.filter(c => !removing.has(cellKey(c)));
     if ( left.length === all.length ) continue;
-    if ( left.length ) ops.push({ action: "update", id: z.id, state: withCells(z, left) });
-    else ops.push({ action: "delete", id: z.id, name: z.name });
+    ops.push({ action: "update", id: z.id, state: withCells(z, left) });
   }
   return ops;
 }

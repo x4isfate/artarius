@@ -267,8 +267,15 @@ async function shot(page, name) {
   const marksAt = async cell => ev(([i, j]) => window.art.studio.markSlots().cells.get(`${i},${j}`)?.count ?? 0, cell);
   const before6 = await marksAt([6, 6]);
   await hud("hudMark");
+  check(await page.locator("#artarius-hud .art-hud-menu").isVisible(), "кнопка метки на панели открывает выбор типа");
+  const secondType = await ev(() => window.art.studio.typesOf("object")[1].id);
+  await hud("quickMark", `[data-id="${secondType}"]`);
+  check(!(await page.locator("#artarius-hud .art-hud-menu").count()), "после выбора типа меню закрывается");
+  check((await ev(() => window.art.studio.markTypesForMenu()[0].id)) === secondType, "недавний тип встаёт первым в меню");
   await hud("hudMark");
+  await hud("quickMark");
   await hud("hudMark");
+  await hud("quickMark");
   check((await marksAt([6, 6])) === before6 + 3, "кнопка метки на панели ставит метку на этот гекс");
   check(await page.locator('#map [data-count="6,6"]').count() === 1, "на гексе со многими метками виден счётчик");
   {
@@ -306,7 +313,11 @@ async function shot(page, name) {
   await hud("hudZone");
   check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
   await hud("hudPan");
-  await click([6, 6]);
+  {
+    // Щелчок по метке выбирает её и панель не трогает, поэтому щёлкаем по краю гекса, мимо меток.
+    const edge = await ev(() => { const { backend, view } = window.art; const c = backend.grid.center([6, 6]); return view.project({ x: c.x, y: c.y + backend.grid.radius * 0.82 }); });
+    await page.mouse.click(edge.x, edge.y);
+  }
   check(!(await page.locator("#artarius-hud .art-hud-left").isVisible()), "повторный щелчок по гексу убирает панель");
   await click([6, 6]);
   await hud("hudClose");
@@ -512,7 +523,7 @@ async function shot(page, name) {
   check((await ev(() => window.art.backend.atlasTypes.find(t => t.id === "road").style.shape)) === "rounded", "вид типа линии сохранён");
   check((await page.locator('#map [data-line][data-shape="rounded"]').count()) >= 1, "линия на карте перерисована по новому виду");
 
-  // 0.9.1: правая кнопка удаляет метку, Ctrl+Z возвращает; значки в выборе видны под кнопками Foundry.
+  // 0.5.0: щелчок выбирает метку, Delete удаляет, Ctrl+Z возвращает, Ctrl+Shift+Z снова удаляет. Правая кнопка не удаляет.
   await act("closeRight").catch(() => {});
   await ev(() => { const s = window.art.studio; s.setTool("mark", { toggle: false }); s.mark.typeId = s.typesOf("object")[0].id; return s.placeMarks([[9, 9]]); });
   await ev(() => window.art.studio.setTool("select", { toggle: false }));
@@ -522,10 +533,29 @@ async function shot(page, name) {
   const scr = await ev(p => { const svg = document.querySelector("#map svg") ?? document.querySelector("svg"); const q = svg.createSVGPoint(); q.x = p.x; q.y = p.y; const r = q.matrixTransform(svg.getScreenCTM()); return { x: r.x, y: r.y }; }, mk);
   await page.mouse.click(scr.x, scr.y, { button: "right" });
   await page.waitForTimeout(100);
-  check((await marksN()) === marksBefore - 1, "правая кнопка по метке удаляет её");
-  await page.keyboard.press("Control+z");
+  check((await marksN()) === marksBefore, "правая кнопка метку не удаляет");
+  await page.mouse.click(scr.x, scr.y);
   await page.waitForTimeout(100);
+  check((await ev(() => window.art.studio.markSel.size)) === 1, "щелчок по метке выбирает её");
+  check(await page.locator("#artarius-bar:not([hidden]) .art-bar-count").isVisible(), "внизу видна панель выбранных меток");
+  await page.keyboard.press("Delete");
+  await page.waitForTimeout(100);
+  check((await marksN()) === marksBefore - 1, "Delete удаляет выбранную метку");
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(150);
   check((await marksN()) === marksBefore, "Ctrl+Z возвращает удалённую метку");
+  await page.keyboard.press("Control+Shift+z");
+  await page.waitForTimeout(150);
+  check((await marksN()) === marksBefore - 1, "Ctrl+Shift+Z снова удаляет");
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Shift+Space");
+  await page.waitForTimeout(100);
+  check(await page.locator("#art-goto-field").isVisible(), "Shift+Пробел открывает «Перейти к гексу»");
+  await page.fill("#art-goto-field", "9 9");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(100);
+  check((await ev(() => window.art.studio.inspected?.join(":"))) === "9:9", "переход по «9 9» открывает гекс 9:9");
   await ev(() => {
     const st = document.createElement("style");
     st.textContent = "#artarius-ui button{display:flex;align-items:center;justify-content:center;flex:1 1 auto}";
