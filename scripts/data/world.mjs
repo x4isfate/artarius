@@ -43,11 +43,12 @@ export function nextZoneColor(states) {
 }
 
 /** Пустое состояние нового элемента. */
-export function blankState({ id, kind, name = "", typeId = "", layerId = "", geometry = {}, style = {}, demiurge = "" }) {
+export function blankState({ id, kind, name = "", typeId = "", layerId = "", geometry = {}, style = {}, demiurge = "", demiurges = null }) {
+  const list = [...new Set((demiurges ?? (demiurge ? [demiurge] : [])).filter(Boolean))];
   return {
     id, name, text: "",
     system: {
-      kind, typeId, demiurge, statuses: [], aspects: [], style, geometry,
+      kind, typeId, demiurge: list[0] ?? "", demiurges: list, statuses: [], aspects: [], style, geometry,
       layerId, blend: "replace", sort: 0, links: [], ext: {}, rev: 0
     }
   };
@@ -55,7 +56,7 @@ export function blankState({ id, kind, name = "", typeId = "", layerId = "", geo
 
 /**
  * Прикрепить гексы к зоне.
- * target — id существующей зоны, или newZone — { id, typeId, name, color?, demiurge? }.
+ * target — id существующей зоны, или newZone — { id, typeId, name, color?, demiurges? }.
  * В исключающем слое гексы уходят из других зон этого слоя; зона без гексов удаляется.
  * Возвращает список операций { action, id, state? , name? } без baseRev.
  */
@@ -72,7 +73,7 @@ export function attachOps({ states, types, layers, cells, target = null, newZone
       id: newZone.id, kind: "area", name: newZone.name || type?.name || "",
       typeId: newZone.typeId, layerId: type?.layerId ?? "overlay",
       style: newZone.color ? { color: newZone.color } : {},
-      demiurge: newZone.demiurge ?? ""
+      demiurge: newZone.demiurge ?? "", demiurges: newZone.demiurges ?? null
     });
   } else return [];
 

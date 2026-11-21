@@ -22,9 +22,9 @@ export default class MemoryBackend {
     this.hex = grid;
     this.users = [
       { id: "gm", name: "Мастер", color: "#ffffff", isGM: true },
-      { id: "fire", name: "Огонь", color: "#e0604f", isGM: false },
-      { id: "ice", name: "Лёд", color: "#5bb8d6", isGM: false },
-      { id: "sun", name: "Солнце", color: "#e8c27a", isGM: false }
+      { id: "fire", name: "Огонь", color: "#e0604f", isGM: false, character: "a-fire" },
+      { id: "ice", name: "Лёд", color: "#5bb8d6", isGM: false, character: "a-ice" },
+      { id: "sun", name: "Солнце", color: "#e8c27a", isGM: false, character: "a-sun" }
     ];
     this.actorsList = [
       { id: "a-fire", name: "Демиург Огня" }, { id: "a-ice", name: "Демиург Льда" }, { id: "a-sun", name: "Демиург Солнца" }
@@ -63,9 +63,17 @@ export default class MemoryBackend {
   panTo(pt) { this.log.push(["pan", `${Math.round(pt.x)},${Math.round(pt.y)}`]); }
 
   players() {
-    return this.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, color: u.color, active: true }));
+    return this.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, color: u.color, active: true, actorIds: this.actorIdsOf(u.id) }));
   }
   actors() { return this.actorsList; }
+  /** Персонажи пользователя: закреплённый и те, где он владелец (owners). */
+  actorIdsOf(userId) {
+    const u = this.users.find(x => x.id === userId);
+    if ( !u || u.isGM ) return [];
+    return [...new Set([u.character, ...this.actorsList.filter(a => a.owners?.includes(userId)).map(a => a.id)].filter(Boolean))];
+  }
+  myActorIds() { return new Set(this.actorIdsOf(this.me)); }
+  characterId() { return this.isGM ? "" : (this.user.character ?? ""); }
 
   /* Данные ----------------------------------------------------------- */
 
@@ -76,7 +84,7 @@ export default class MemoryBackend {
     if ( this.isGM ) return base;
     const f = this.flags[this.me];
     const open = f.claims.filter(c => ["pending", "check", "rolled"].includes(c.status)).flatMap(c => c.ops);
-    return visibleStates(applyOps(applyOps(base, open), draftOps(f.draft)), this.me, false);
+    return visibleStates(applyOps(applyOps(base, open), draftOps(f.draft)), this.me, false, this.myActorIds());
   }
 
   permissions() { return permsFor(this.permConfig ?? {}, { id: this.me, role: this.isGM ? 4 : 1, isGM: this.isGM }); }

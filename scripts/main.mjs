@@ -267,6 +267,8 @@ for ( const hook of ["createJournalEntryPage", "updateJournalEntryPage", "delete
 Hooks.on("updateJournalEntry", journal => { if ( isCurrentAtlas(journal) ) emit(); });
 Hooks.on("createJournalEntry", () => emit());
 Hooks.on("updateActor", () => emit());
+Hooks.on("createActor", () => emit());
+Hooks.on("deleteActor", () => emit());
 
 Hooks.on("updateScene", (scene, changes) => {
   if ( scene !== canvas?.scene ) return;
@@ -279,6 +281,8 @@ Hooks.on("updateScene", (scene, changes) => {
 });
 
 Hooks.on("updateUser", (user, changes) => {
+  // Закреплённый персонаж решает, демиург ли игрок, и кто видит скрытое.
+  if ( "character" in changes ) emit();
   if ( !foundry.utils.hasProperty(changes, `flags.${MODULE_ID}`) ) return;
   emit();
   if ( user.isSelf ) announceDecisions(user);
