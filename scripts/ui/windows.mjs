@@ -135,7 +135,11 @@ export default class FoundryHost {
     // Стили панелей висят на .artarius: класс на самой части, а не на окне, чтобы не задеть рамку окна.
     el.classList.add("artarius");
     const saved = this._saved()[name] ?? {};
-    const position = { width: def.width, height: def.height, ...def.at(), ...saved };
+    // В ApplicationV2 объект position запечатан: лишние ключи (sized, docked) роняют конструктор окна.
+    // Из сохранённого берём только место и размер.
+    const pos = {};
+    for ( const k of ["left", "top", "width", "height"] ) if ( saved[k] !== undefined && saved[k] !== null ) pos[k] = saved[k];
+    const position = { width: def.width, height: def.height, ...def.at(), ...pos };
     // Ход и подробности гекса — по содержимому. Старый сохранённый размер окна гекса (до 0.6 оно было на полэкрана) не берём.
     if ( name === "right" && !saved.sized ) {
       position.height = "auto";
