@@ -89,15 +89,19 @@ export default class Studio {
   /*  Подписка                                                          */
   /* ---------------------------------------------------------------- */
 
-  /** fn(what): what — "data" | "ui" | "overlay" | "hover" (только подсказка линии). */
+  /**
+   * fn(what): what — "data" (данные карты), "ui" (окна), "overlay" (выделение и курсор на карте),
+   * "stroke" (идёт мазок кистью: только накладка, окна ждут конца мазка), "cursor" (гекс под курсором),
+   * "hover" (подсказка у курсора).
+   */
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
   changed(what = "ui") {
-    // Места меток пересчитываются, только когда могли поменяться данные или вид, а не на каждое движение мыши.
-    if ( what === "data" || what === "ui" ) this._slotsCache = null;
+    // Места меток пересчитываются, только когда поменялись данные (вид слоёв — тоже данные).
+    if ( what === "data" ) this._slotsCache = null;
     for ( const fn of this.listeners ) {
       try { fn(what); }
       catch(err) { console.error("artarius | studio listener", err); }
@@ -322,7 +326,7 @@ export default class Studio {
       }
       this._drag.last = cell;
     }
-    if ( hoverChanged || this.tool === "line" ) this.changed("overlay");
+    if ( hoverChanged ) this.changed("cursor");
   }
 
   async pointerUp() {
@@ -396,8 +400,8 @@ export default class Studio {
       this._drag.added.set(k, cell);
       if ( this._drag.inspect ) { this.inspected = cell; this.hudOpen = true; }
     }
-    this.changed("overlay");
-    this.changed("ui");
+    // Во время мазка перерисовывается только выделение на карте; окна обновятся, когда кнопку отпустят.
+    this.changed("stroke");
   }
 
   /** Правая кнопка: убрать последнюю точку линии или снять выделение. Метки она не удаляет. */

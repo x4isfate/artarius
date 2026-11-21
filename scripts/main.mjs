@@ -53,9 +53,10 @@ Hooks.once("init", () => {
   S("layerPresets", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("windows", { scope: "client", config: false, type: Object, default: {} });
   S("permissions", { scope: "world", config: false, type: Object, default: {}, onChange: () => runtime.backend?.emit() });
+  // Сообщения об изменениях карты выключены по умолчанию: их рисует у себя каждый игрок.
   S("chatChanges", {
     name: "ART.Chat.setting", hint: "ART.Chat.settingHint",
-    scope: "world", config: true, type: Boolean, default: true
+    scope: "world", config: true, type: Boolean, default: false
   });
 
   const backend = new FoundryBackend();
@@ -66,7 +67,6 @@ Hooks.once("init", () => {
   // Кнопки в колонке инструментов (группа Артария слева).
   runtime.buttons = {
     queue: () => studio.openQueue(),
-    layers: () => runtime.ui?.toggleLayerPanel(),
     settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()

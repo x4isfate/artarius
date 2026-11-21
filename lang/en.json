@@ -209,6 +209,8 @@
       "deleteAsk": "Delete layer “{name}”? Its types ({n}) and zones move to “{to}”.",
       "terrainHint": "Terrain cannot be deleted: hex colours and the generator rely on it.",
       "barTitle": "Map layers and presets",
+      "zones": "Zones",
+      "parts": "Data layers",
       "barHint": "Click toggles a layer. Only you see the change."
     },
     "World": {
@@ -607,7 +609,7 @@
     },
     "Chat": {
       "setting": "Map changes in chat",
-      "settingHint": "Approved claims and GM edits are posted to chat as separate messages. Delete them like any message.",
+      "settingHint": "Approved claims and GM edits are posted to chat as separate messages. Delete them like any message. Off by default: with messages, painting is slower.",
       "claimNew": "New claim",
       "claimFrom": "{name} sent claim “{title}”: {n} edits.",
       "applied": "Claim approved",

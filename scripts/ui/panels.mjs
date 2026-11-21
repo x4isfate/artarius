@@ -81,7 +81,8 @@ export default class ArtariusUI {
    * host: { wheel: bool, attach(name, el), show(name, on, { title }), setHidden(bool) }.
    * project(point) — точка сцены → { x, y } в пикселях окна браузера; без неё панели на гексе нет.
    */
-  constructor(studio, backend, { mount = document.body, host = null, project = null } = {}) {
+  constructor(studio, backend, { mount = document.body, host = null, project = null, syncRender = false } = {}) {
+    this.syncRender = syncRender;
     this.studio = studio;
     this.backend = backend;
     this.host = host;
@@ -93,9 +94,10 @@ export default class ArtariusUI {
       <section class="art-panel art-left" data-part="left" hidden></section>
       <section class="art-panel art-right" data-part="right" hidden></section>
       <section class="art-panel art-settings" data-part="settings" hidden></section>
+      <section class="art-panel art-layerwin" data-part="layers" hidden></section>
       <nav class="art-wheel" data-part="wheel"></nav>`;
     this.parts = Object.fromEntries([...this.root.querySelectorAll("[data-part]")].map(el => [el.dataset.part, el]));
-    /** Окно слоёв для «Осмотра» в Foundry открывается только кнопкой, само не всплывает. */
+    /** Окно слоёв: открывает плашка «Слои» у названия сцены. Его можно двигать и растягивать. */
     this.layersPanel = false;
     for ( const el of Object.values(this.parts) ) this._bind(el);
     if ( host ) {
@@ -144,9 +146,10 @@ export default class ArtariusUI {
     this._bind(this.bar);
     this._bind(this.layerbar);
     this._bindMarkDrag(this.hud);
+    // Окна перерисовываются не чаще раза в кадр и не во время мазка кистью (он трогает только карту).
     this._unsub = studio.subscribe(what => {
       if ( what === "hover" ) return this.renderTip();
-      if ( what !== "overlay" ) this.render();
+      if ( what === "data" || what === "ui" ) this.scheduleRender();
     });
     this.render();
   }
@@ -162,6 +165,7 @@ export default class ArtariusUI {
     window.removeEventListener("resize", this._onResize);
     document.removeEventListener("keydown", this._onKey);
     if ( this._hudFrame ) cancelAnimationFrame(this._hudFrame);
+    if ( this._renderFrame ) (globalThis.cancelAnimationFrame ?? clearTimeout)(this._renderFrame);
   }
 
   set hidden(v) {
@@ -183,6 +187,7 @@ export default class ArtariusUI {
     if ( name === "left" && s.tool ) s.setTool(null, { toggle: false });
     else if ( name === "right" && s.rightOpen ) s.closeRight();
     else if ( name === "settings" && s.settings.open ) s.closeSettings();
+    else if ( name === "layers" && this.layersPanel ) { this.layersPanel = false; this.renderLayerbar(); }
   }
 
   _show(name, on, title) {
@@ -482,8 +487,23 @@ export default class ArtariusUI {
   /*  Отрисовка                                                         */
   /* ---------------------------------------------------------------- */
 
+  /** Перерисовать окна в следующем кадре; вызовы в одном кадре склеиваются. */
+  scheduleRender() {
+    if ( this.syncRender ) return this.render();
+    if ( this._renderFrame ) return;
+    const raf = globalThis.requestAnimationFrame ?? (fn => setTimeout(fn, 16));
+    this._renderFrame = raf(() => {
+      this._renderFrame = null;
+      this.render();
+    });
+  }
+
   render() {
     const s = this.studio;
+    if ( this._renderFrame ) {
+      (globalThis.cancelAnimationFrame ?? clearTimeout)(this._renderFrame);
+      this._renderFrame = null;
+    }
     try {
       if ( this.parts.wheel ) patch(this.parts.wheel, this.renderWheel());
       const leftOn = this._leftVisible();
@@ -1071,48 +1091,63 @@ export default class ArtariusUI {
     </div>`);
   }
 
-  /** Слои у названия сцены: набор слоёв и выключатель у каждого слоя, как панель «Слои» в Azgaar. */
+  /**
+   * Плашка «Слои · набор» у названия сцены. Щелчок открывает окно слоёв:
+   * набор слоёв и выключатель у каждого слоя, как панель «Слои» в Azgaar.
+   */
   renderLayerbar() {
     const s = this.studio;
     const el = this.layerbar;
     el.hidden = !!this._hidden || (this.backend.isWorld && !this.backend.isWorld());
+    const open = !!this.layersPanel && !el.hidden;
+    if ( this.parts.layers ) {
+      if ( open ) patch(this.parts.layers, this.renderLayers());
+      this._show("layers", open, this.t("ART.Layer.title"));
+    }
     if ( el.hidden ) return;
-    const hidden = s.hidden();
     const presets = s.presets();
     const active = s.activePreset();
     const current = presets.find(p => p.id === active)?.name ?? this.t("ART.Preset.manual");
-    const open = !!this.layersPanel;
-    let panel = "";
-    if ( open ) {
-      const options = [`<option value=""${active ? "" : " selected"}>${esc(this.t("ART.Preset.manual"))}</option>`,
-        ...presets.map(p => `<option value="${esc(p.id)}"${p.id === active ? " selected" : ""}>${esc(p.name)}</option>`)].join("");
-      const custom = presets.find(p => p.id === active && p.custom);
-      const fields = this.backend.fields?.();
-      const btn = (id, name, { disabled = false, hint = "" } = {}) => {
-        const on = isShown(id, hidden);
-        return `<button type="button" class="art-lb-btn${on ? " on" : ""}" data-action="toggleLayer" data-id="${esc(id)}"
-          aria-pressed="${on}" ${disabled ? "disabled" : ""} title="${esc(hint || this.t(on ? "ART.Layer.hide" : "ART.Layer.show"))}">${esc(name)}</button>`;
-      };
-      const zoneBtns = s.layers.map(l => btn(l.id, l.name));
-      const FIELD = { "@heights": "height", "@temp": "temp", "@prec": "prec", "@pop": "pop", "@ice": "temp" };
-      const partBtns = VIEW_PART_DEFS.map(d => {
-        const f = FIELD[d.id];
-        const empty = f && !hasField(fields, f);
-        return btn(d.id, this.t(`ART.View.${d.id.slice(1)}`), empty ? { disabled: true, hint: this.t("ART.View.noData") } : {});
-      });
-      panel = `<div class="art-lb-panel" role="dialog" aria-label="${esc(this.t("ART.Layer.title"))}">
+    patch(el, `<button type="button" class="art-lb-toggle${open ? " active" : ""}" data-action="toggleLayerPanel" aria-expanded="${open}"
+        title="${esc(this.t("ART.Layer.barTitle"))}">${icon("layer-group")} <span>${esc(this.t("ART.Layer.title"))}</span> <b>${esc(current)}</b> ${icon(open ? "chevron-up" : "chevron-down")}</button>`);
+    this._placeLayerbar();
+  }
+
+  /** Окно слоёв: набор слоёв сверху, под ним выключатели слоёв зон и слоёв данных. */
+  renderLayers() {
+    const s = this.studio;
+    const hidden = s.hidden();
+    const presets = s.presets();
+    const active = s.activePreset();
+    const options = [`<option value=""${active ? "" : " selected"}>${esc(this.t("ART.Preset.manual"))}</option>`,
+      ...presets.map(p => `<option value="${esc(p.id)}"${p.id === active ? " selected" : ""}>${esc(p.name)}</option>`)].join("");
+    const custom = presets.find(p => p.id === active && p.custom);
+    const fields = this.backend.fields?.();
+    const btn = (id, name, { disabled = false, hint = "" } = {}) => {
+      const on = isShown(id, hidden);
+      return `<button type="button" class="art-lb-btn${on ? " on" : ""}" data-action="toggleLayer" data-id="${esc(id)}"
+        aria-pressed="${on}" ${disabled ? "disabled" : ""} title="${esc(hint || this.t(on ? "ART.Layer.hide" : "ART.Layer.show"))}">${icon(on ? "eye" : "eye-slash")} ${esc(name)}</button>`;
+    };
+    const zoneBtns = s.layers.map(l => btn(l.id, l.name));
+    const FIELD = { "@heights": "height", "@temp": "temp", "@prec": "prec", "@pop": "pop", "@ice": "temp" };
+    const partBtns = VIEW_PART_DEFS.map(d => {
+      const f = FIELD[d.id];
+      const empty = f && !hasField(fields, f);
+      return btn(d.id, this.t(`ART.View.${d.id.slice(1)}`), empty ? { disabled: true, hint: this.t("ART.View.noData") } : {});
+    });
+    const head = this.host ? "" : `<header class="art-head">${icon("layer-group")}<h3>${esc(this.t("ART.Layer.title"))}</h3>
+      <button type="button" class="art-icon-btn" data-action="toggleLayerPanel" title="${esc(this.t("ART.Close"))}">${icon("xmark")}</button></header>`;
+    return `${head}<div class="art-body art-lb-panel" data-scroll="layers">
         <div class="art-row"><label class="art-lb-label">${esc(this.t("ART.Preset.title"))}</label>
           <select data-change="applyPreset">${options}</select>
           <button type="button" class="art-icon-btn" data-action="savePreset" title="${esc(this.t("ART.Preset.save"))}">${icon("floppy-disk")}</button>
           ${custom ? `<button type="button" class="art-icon-btn" data-action="deletePreset" data-id="${esc(custom.id)}" title="${esc(this.t("ART.Preset.delete"))}">${icon("trash")}</button>` : ""}</div>
-        <div class="art-lb-grid">${[...zoneBtns, ...partBtns].join("")}</div>
+        <span class="art-eyebrow">${esc(this.t("ART.Layer.zones"))}</span>
+        <div class="art-lb-grid">${zoneBtns.join("")}</div>
+        <span class="art-eyebrow">${esc(this.t("ART.Layer.parts"))}</span>
+        <div class="art-lb-grid">${partBtns.join("")}</div>
         <p class="art-hint">${esc(this.t("ART.Layer.barHint"))}</p>
       </div>`;
-    }
-    patch(el, `<button type="button" class="art-lb-toggle${open ? " active" : ""}" data-action="toggleLayerPanel" aria-expanded="${open}"
-        title="${esc(this.t("ART.Layer.barTitle"))}">${icon("layer-group")} <span>${esc(this.t("ART.Layer.title"))}</span> <b>${esc(current)}</b> ${icon(open ? "chevron-up" : "chevron-down")}</button>
-      ${panel}`);
-    this._placeLayerbar();
   }
 
   /** Встать под названием сцены в верхней панели Foundry; без неё — в левый верхний угол. */
