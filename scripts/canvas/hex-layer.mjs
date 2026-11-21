@@ -4,6 +4,7 @@
  */
 import { MODULE_ID } from "../constants.mjs";
 import HexRenderer from "./hex-renderer.mjs";
+import { MODES } from "../studio.mjs";
 
 const { InteractionLayer } = foundry.canvas.layers;
 
@@ -58,7 +59,8 @@ export default class HexLayer extends InteractionLayer {
 
   /**
    * Группа в колонке инструментов слева. Видна только на сцене Артария.
-   * Четыре инструмента и кнопки: слои, заявки, настройки, генератор (мастер), справка, кнопки расширений.
+   * Четыре инструмента и кнопки: заявки, настройки, генератор (мастер), справка, кнопки расширений.
+   * Слои открываются плашкой «Слои» у названия сцены, отдельной кнопки в колонке нет.
    */
   static prepareSceneControls() {
     const tools = {};
@@ -72,7 +74,6 @@ export default class HexLayer extends InteractionLayer {
         onChange: () => runtime.buttons?.[name]?.()
       };
     };
-    button("layers", "fa-solid fa-layer-group", "ART.Layer.title", 9);
     button("queue", "fa-solid fa-scroll", "ART.Queue.title", 10);
     button("generator", "fa-solid fa-mountain-sun", "ART.Gen.title", 12, gm);
     button("settings", "fa-solid fa-gear", "ART.Settings.title", 11);
@@ -119,10 +120,13 @@ export default class HexLayer extends InteractionLayer {
     runtime.backend.grid.reset();
     this.renderer = new HexRenderer(runtime.backend.grid);
     this.addChild(this.renderer.container);
+    // Данные карты перерисовываются только когда поменялись данные. Окна, выделение и мазок кистью
+    // трогают одну накладку: так кисть не перерисовывает всю карту на каждый гекс.
     this._unsub = runtime.studio.subscribe(what => {
       if ( what === "hover" ) return;
-      if ( what === "overlay" ) this.refreshOverlay();
-      else this.refresh();
+      if ( what === "data" ) this.refresh();
+      else if ( what === "cursor" ) { if ( this.renderer && !this._frame ) this.renderer.drawCursor(runtime.studio); }
+      else this.refreshOverlay();
     });
     this._listen();
     this.refresh(true);
@@ -134,7 +138,9 @@ export default class HexLayer extends InteractionLayer {
     this._unsub?.();
     this._unsub = null;
     if ( this._frame ) cancelAnimationFrame(this._frame);
-    this._frame = null;
+    if ( this._overlayFrame ) cancelAnimationFrame(this._overlayFrame);
+    if ( this._moveFrame ) cancelAnimationFrame(this._moveFrame);
+    this._frame = this._overlayFrame = this._moveFrame = null;
     if ( this.renderer ) {
       this.removeChild(this.renderer.container);
       this.renderer.destroy();
@@ -147,6 +153,8 @@ export default class HexLayer extends InteractionLayer {
   refresh(base = false) {
     this._needBase ||= base;
     if ( this._frame ) return;
+    if ( this._overlayFrame ) cancelAnimationFrame(this._overlayFrame);
+    this._overlayFrame = null;
     this._frame = requestAnimationFrame(() => {
       this._frame = null;
       if ( !this.renderer || !runtime.studio ) return;
@@ -162,10 +170,15 @@ export default class HexLayer extends InteractionLayer {
     });
   }
 
+  /** Перерисовать накладку в следующем кадре (если полная перерисовка уже ждёт, она нарисует и накладку). */
   refreshOverlay() {
-    if ( !this.renderer || !runtime.studio ) return;
-    try { this.renderer.drawOverlay(runtime.studio); }
-    catch(err) { console.error(`${MODULE_ID} | overlay`, err); }
+    if ( this._frame || this._overlayFrame ) return;
+    this._overlayFrame = requestAnimationFrame(() => {
+      this._overlayFrame = null;
+      if ( !this.renderer || !runtime.studio ) return;
+      try { this.renderer.drawOverlay(runtime.studio); }
+      catch(err) { console.error(`${MODULE_ID} | overlay`, err); }
+    });
   }
 
   /* ------------------------------------------------------------ */
@@ -207,6 +220,7 @@ export default class HexLayer extends InteractionLayer {
         }
         return;
       }
+      flushMove();
       const p = scenePoint(ev, el);
       if ( ev.button === 2 ) { down = { right: true, x: ev.clientX, y: ev.clientY }; return; }
       if ( ev.button !== 0 ) return;
@@ -229,16 +243,29 @@ export default class HexLayer extends InteractionLayer {
       }
     });
 
+    // Движения мыши копятся и обрабатываются раз в кадр: мышь шлёт их чаще, чем экран успевает рисовать.
+    let moveAt = null;
+    const flushMove = () => {
+      if ( this._moveFrame ) cancelAnimationFrame(this._moveFrame);
+      this._moveFrame = null;
+      const p = moveAt;
+      moveAt = null;
+      const s = runtime.studio;
+      if ( !p || !s?.tool ) return;
+      try { s.pointerMove(p); }
+      catch(err) { console.error(`${MODULE_ID} | мышь`, err); }
+    };
+    this._flushMove = flushMove;
     add(window, "pointermove", ev => {
       const s = runtime.studio;
       if ( !s?.tool || !this._owns() ) return;
       if ( ev.target !== el && !down ) {
         // Курсор ушёл с холста на окно: подсветку гекса снять.
-        if ( s.hover ) s.pointerMove({ x: -1e9, y: -1e9 });
+        if ( s.hover ) { moveAt = { x: -1e9, y: -1e9 }; flushMove(); }
         return;
       }
-      try { s.pointerMove(scenePoint(ev, el)); }
-      catch(err) { console.error(`${MODULE_ID} | мышь`, err); }
+      moveAt = scenePoint(ev, el);
+      if ( !this._moveFrame ) this._moveFrame = requestAnimationFrame(flushMove);
     });
 
     add(window, "pointerup", ev => {
@@ -246,6 +273,9 @@ export default class HexLayer extends InteractionLayer {
       const d = down;
       down = null;
       if ( !s?.tool || !d ) return;
+      // Последнее движение до отпускания кнопки — ещё часть мазка.
+      if ( !d.right && ev.target === el ) moveAt = scenePoint(ev, el);
+      flushMove();
       if ( d.right ) {
         // Правая кнопка без протяжки; протяжкой Foundry двигает карту.
         if ( Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 6 ) s.rightClick();
@@ -268,6 +298,10 @@ export default class HexLayer extends InteractionLayer {
       if ( (ev.key === "Delete" || ev.key === "Backspace") && s.markSel.size ) { own(); s.deleteMarks(); return; }
       // Shift+Пробел: перейти к гексу по координатам.
       if ( ev.shiftKey && ev.code === "Space" ) { own(); runtime.ui?.openGoto?.(); return; }
+      // 1–5: режимы карты (местность, владения, метки, линии, игроки). Пока инструменты Артария активны,
+      // эти клавиши наши, а не панели макросов Foundry.
+      const digit = /^Digit([1-5])$/.exec(ev.code);
+      if ( digit && !ctrl && !ev.altKey && !ev.shiftKey ) { own(); s.setMode(MODES[Number(digit[1]) - 1]); return; }
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();
         runtime.studio.finishLine();

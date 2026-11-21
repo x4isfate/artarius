@@ -100,11 +100,34 @@ export class FoundryGrid {
   };
 }
 
+/** Персонажи пользователя (см. store.ownedActorIds). */
+export const ownedActorIds = store.ownedActorIds;
+
 export default class FoundryBackend {
   constructor() {
     this.grid = new FoundryGrid();
     this.listeners = new Set();
     this._emitQueued = false;
+    /** Номер версии данных: растёт при каждой перемене. По нему кэшируются состояния, типы и слои. */
+    this.version = 0;
+    this._cache = {};
+    this._cacheScene = null;
+    /** Правки, которые уже видны на карте, пока сервер их записывает: id → состояние или null (удалено). */
+    this._optimistic = new Map();
+  }
+
+  /** Данные поменялись: кэш сбрасывается сразу, а подписчики узнают об этом в следующем микрошаге. */
+  invalidate() {
+    this.version++;
+    this._cache = {};
+  }
+
+  /** Значение из кэша текущей версии данных. Другая сцена — другой кэш. */
+  _cached(key, fn) {
+    const sid = canvas?.scene?.id ?? null;
+    if ( sid !== this._cacheScene ) { this._cache = {}; this._cacheScene = sid; this.version++; }
+    if ( !(key in this._cache) ) this._cache[key] = fn();
+    return this._cache[key];
   }
 
   /* Подписка ---------------------------------------------------------- */
@@ -113,6 +136,7 @@ export default class FoundryBackend {
 
   /** Данные поменялись: студия и панели перерисуются в следующем микрошаге. */
   emit() {
+    this.invalidate();
     if ( this._emitQueued ) return;
     this._emitQueued = true;
     queueMicrotask(() => {
@@ -137,11 +161,16 @@ export default class FoundryBackend {
   /** Данные гексов для слоёв климата (импорт Azgaar, генератор). */
   fields() { return canvas?.scene?.getFlag?.(MODULE_ID, "fields") ?? null; }
 
+  /** Игроки: actorIds — их персонажи, через них игрок демиург (и его не спрятать от своих элементов). */
   players() {
-    return game.users.filter(u => !u.isGM).map(u => ({
-      id: u.id, name: u.name, color: u.color?.css ?? String(u.color ?? "#888"), active: u.active
-    }));
+    return this._cached("players", () => game.users.filter(u => !u.isGM).map(u => ({
+      id: u.id, name: u.name, color: u.color?.css ?? String(u.color ?? "#888"), active: u.active,
+      actorIds: ownedActorIds(u)
+    })));
   }
+
+  /** Персонаж, закреплённый за этим пользователем: он становится демиургом того, что создаёт игрок. */
+  characterId() { return game.user.isGM ? "" : (game.user.character?.id ?? ""); }
 
   actors() {
     const rank = a => (a.type === "character" ? 0 : 1);
@@ -155,8 +184,24 @@ export default class FoundryBackend {
 
   get atlas() { return store.getAtlas(canvas?.scene); }
 
-  /** Что видит этот пользователь: скрытые метки других игроков прячутся, мастер видит всё. */
-  states() { return visibleStates(store.effectiveStates(canvas?.scene), game.user.id, game.user.isGM); }
+  /**
+   * Что видит этот пользователь: скрытое от него прячется, мастер видит всё.
+   * Снимок общий до следующей перемены данных: его не меняют, а копируют (см. studio.edit).
+   */
+  states() {
+    return this._cached("states", () => {
+      const all = store.effectiveStates(canvas?.scene);
+      for ( const [id, st] of this._optimistic ) {
+        if ( st ) all.set(id, st); else all.delete(id);
+      }
+      return visibleStates(all, game.user.id, game.user.isGM, this.myActorIds());
+    });
+  }
+
+  /** Персонажи, которыми владеет этот пользователь: через них он демиург. */
+  myActorIds() {
+    return this._cached("myActors", () => new Set(ownedActorIds(game.user)));
+  }
   /** Права этого пользователя: place, draw, editOthers, statuses. */
   permissions() { return permsFor(game.settings.get(MODULE_ID, "permissions"), { id: game.user.id, role: game.user.role, isGM: game.user.isGM }); }
   permissionConfig() { return foundry.utils.deepClone(game.settings.get(MODULE_ID, "permissions") ?? {}); }
@@ -169,13 +214,15 @@ export default class FoundryBackend {
   /** Шрифты Foundry и подключённые модулями: для подписей типов. */
   fonts() { return Object.keys(CONFIG.fontDefinitions ?? {}).sort((a, b) => a.localeCompare(b)); }
   roster() { return game.users.filter(u => !u.isGM).map(u => ({ id: u.id, name: u.name, role: u.role })); }
-  atlasStates() { return store.atlasStates(this.atlas); }
-  types() { return store.getTypes(this.atlas); }
+  atlasStates() { return this._cached("atlas", () => store.atlasStates(this.atlas)); }
+  types() { return this._cached("types", () => store.getTypes(this.atlas)); }
 
   /** Слои атласа; скрытые этим пользователем помечены visible: false. */
   layers() {
-    const hidden = new Set(game.settings.get(MODULE_ID, "hiddenLayers") ?? []);
-    return store.getLayers(this.atlas).map(l => ({ ...l, visible: !hidden.has(l.id) }));
+    return this._cached("layers", () => {
+      const hidden = new Set(game.settings.get(MODULE_ID, "hiddenLayers") ?? []);
+      return store.getLayers(this.atlas).map(l => ({ ...l, visible: !hidden.has(l.id) }));
+    });
   }
 
   /** Слои атласа целиком: добавить, переименовать, переставить, удалить (только мастер). */
@@ -217,7 +264,26 @@ export default class FoundryBackend {
     });
   }
 
-  commitOps(ops) { return store.commitOps(ops, canvas.scene); }
+  /**
+   * Записать правки. Пока сервер их пишет, карта уже показывает новое состояние:
+   * кисть не ждёт ответа. Не получилось — карта возвращается как была.
+   */
+  async commitOps(ops) {
+    const mine = new Map();
+    for ( const op of ops ?? [] ) {
+      if ( !op?.id ) continue;
+      const st = op.action === "delete" ? null : op.state;
+      mine.set(op.id, st);
+      this._optimistic.set(op.id, st);
+    }
+    if ( mine.size ) this.emit();
+    try {
+      return await store.commitOps(ops, canvas.scene);
+    } finally {
+      for ( const [id, st] of mine ) if ( this._optimistic.get(id) === st ) this._optimistic.delete(id);
+      if ( mine.size ) this.emit();
+    }
+  }
   saveType(type) { return store.saveType(type, canvas.scene); }
   deleteType(id) { return store.deleteType(id, canvas.scene); }
   newId() { return foundry.utils.randomID(); }
@@ -274,6 +340,10 @@ export default class FoundryBackend {
 
   /** Призраки: у мастера — заявки на предпросмотре, у игрока — свои открытые заявки и черновик. */
   ghosts(previewIds = []) {
+    return this._cached(`ghosts:${previewIds.join(",")}`, () => this._ghosts(previewIds));
+  }
+
+  _ghosts(previewIds) {
     const scene = canvas?.scene;
     if ( !scene ) return [];
     const atlas = this.atlas;

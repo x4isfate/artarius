@@ -1,11 +1,12 @@
 import { MODULE_ID, CLAIM_STATUS } from "../constants.mjs";
 import {
   getAtlas, ensureAtlas, getDraft, setDraft, getClaims, setClaims, revOf, applyPlan, atlasStates,
-  getTypes, getAtlasTypes, setTypes
+  getTypes, getAtlasTypes, setTypes, ownedActorIds
 } from "../data/store.mjs";
 import { personalTypesUsed } from "../data/world.mjs";
 import { addToDraft, draftOps, buildApplyPlan, conflictOf, randomId } from "./ops.mjs";
 import { postClaimSubmitted } from "./chat.mjs";
+import { needsGMApproval } from "../data/access.mjs";
 
 /**
  * Заявки. Игрок собирает правки в черновик и отправляет их одной заявкой с названием
@@ -240,7 +241,15 @@ export async function autoApplyTrusted(user) {
   if ( !isActiveGM() || user.isGM ) return;
   const trusted = setting("trustedUsers") ?? [];
   if ( !trusted.includes(user.id) ) return;
-  const entries = getClaims(user).filter(c => c.status === CLAIM_STATUS.pending).map(claim => ({ user, claim }));
+  // Смену демиургов подтверждает мастер сам: такая заявка остаётся в очереди.
+  const actorIds = ownedActorIds(user);
+  const held = claim => {
+    const scene = game.scenes.get(claim.sceneId);
+    const atlas = scene ? getAtlas(scene) : null;
+    const base = atlas ? atlasStates(atlas) : new Map();
+    return (claim.ops ?? []).some(op => needsGMApproval(op, base.get(op.id), actorIds));
+  };
+  const entries = getClaims(user).filter(c => c.status === CLAIM_STATUS.pending && !held(c)).map(claim => ({ user, claim }));
   if ( entries.length ) await applyClaims(entries, { ask: false });
 }
 

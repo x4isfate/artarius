@@ -72,10 +72,27 @@ export default class HexRenderer {
     this.lines = this.container.addChild(new PIXI.Container());
     this.marks = this.container.addChild(new PIXI.Container());
     this.labels = this.container.addChild(new PIXI.Container());
+    // Подписи по видам: порядок как раньше — зоны, линии, метки.
+    this.zoneLabels = this.labels.addChild(new PIXI.Container());
+    this.lineLabels = this.labels.addChild(new PIXI.Container());
+    this.markLabels = this.labels.addChild(new PIXI.Container());
     // Координаты гексов, роза ветров, масштаб.
     this.decor = this.container.addChild(new PIXI.Container());
     this.ghosts = this.container.addChild(new PIXI.Graphics());
     this.overlay = this.container.addChild(new PIXI.Graphics());
+    // Гекс под курсором: своя графика, чтобы движение мыши не перерисовывало выделение.
+    this.cursor = this.container.addChild(new PIXI.Graphics());
+    /**
+     * Готовые фигуры по элементам: id → { key, objs }. Если ключ (вид и гексы элемента) не поменялся,
+     * фигура и подписи берутся старые. Перерисовывается только то, что изменилось.
+     */
+    this._zoneCache = new Map();
+    this._lineCache = new Map();
+    this._markCache = new Map();
+    this._terrain = null;
+    this._fields = null;
+    this._decor = null;
+    this._eph = [];
     // Метка, которую тащат мышью: рисуется целиком, со значком, поверх всего.
     this.dragMark = this.container.addChild(new PIXI.Container());
     this.eventMode = "none";
@@ -84,6 +101,38 @@ export default class HexRenderer {
 
   destroy() {
     this.container.destroy({ children: true });
+    this._zoneCache.clear();
+    this._lineCache.clear();
+    this._markCache.clear();
+  }
+
+  /** Убрать фигуры из кэша и с карты насовсем. */
+  _drop(objs) {
+    for ( const o of objs ?? [] ) if ( o && !o.destroyed ) { o.parent?.removeChild(o); o.destroy({ children: true }); }
+  }
+
+  /**
+   * Взять готовое из кэша по id или построить заново, если ключ другой.
+   * build() → [[объект, контейнер], …]; объекты встают в свои контейнеры в порядке вызова.
+   */
+  _reuse(cache, id, key, build, used) {
+    let e = cache.get(id);
+    if ( !e || e.key !== key ) {
+      if ( e ) this._drop(e.objs.map(([o]) => o));
+      e = { key, objs: build().filter(([o]) => o) };
+      cache.set(id, e);
+    }
+    used.add(id);
+    for ( const [o, box] of e.objs ) box.addChild(o);
+    return e;
+  }
+
+  _sweep(cache, used) {
+    for ( const [id, e] of cache ) {
+      if ( used.has(id) ) continue;
+      this._drop(e.objs.map(([o]) => o));
+      cache.delete(id);
+    }
   }
 
   /**
@@ -94,7 +143,7 @@ export default class HexRenderer {
   async snapshot(pixiRenderer, rect, maxSide = 600) {
     const scale = maxSide / Math.max(rect.width, rect.height);
     const width = Math.max(1, Math.round(rect.width * scale)), height = Math.max(1, Math.round(rect.height * scale));
-    const hide = [this.ghosts, this.overlay, this.dragMark];
+    const hide = [this.ghosts, this.overlay, this.cursor, this.dragMark];
     const was = hide.map(o => o.visible);
     for ( const o of hide ) o.visible = false;
     const rt = PIXI.RenderTexture.create({ width, height });
@@ -131,12 +180,15 @@ export default class HexRenderer {
     for ( const c of container.removeChildren() ) c.destroy({ children: true });
   }
 
-  /** Зоны, линии, метки и подписи. */
+  /** Зоны, линии, метки и подписи. Неизменившиеся элементы берутся из кэша. */
   drawData(states, types, layers, world = {}, view = {}, fields = null) {
     this.rough = !!world.rough;
     const show = { marks: true, resources: true, lines: true, rivers: true, labels: true, borders: true, grid: true, ...view };
     this.showBorders = show.borders;
-    for ( const c of [this.zones, this.fieldLayer, this.lines, this.marks, this.labels, this.decor] ) this._clear(c);
+    // Снять всё с карты без уничтожения: что не поменялось, вернётся на место из кэша.
+    for ( const c of [this.zones, this.fieldLayer, this.lines, this.marks, this.zoneLabels, this.lineLabels, this.markLabels, this.decor] ) c.removeChildren();
+    this._drop(this._eph);
+    this._eph = [];
     const hidden = new Set(layers.filter(l => l.visible === false).map(l => l.id));
     const order = new Map(layers.map((l, n) => [l.id, n]));
     const all = [...states.values()];
@@ -145,39 +197,90 @@ export default class HexRenderer {
         || ((a.system.sort ?? 0) - (b.system.sort ?? 0)));
     const vis = visibleZoneCells(zones, types, layers);
     const inside = c => this.grid.inBounds(c);
+    const sig = cells => cells.map(c => `${c[0]},${c[1]}`).join(";");
     this.atlas = world.style !== "flat";
+    const usedZones = new Set();
     if ( this.atlas && !hidden.has("terrain") ) {
       const land = zones.filter(z => layerIdOf(z, types) === "terrain");
-      this._drawAtlasTerrain(land, vis, types);
+      const key = [this.rough, this.grid.radius, ...land.map(z => `${z.system.typeId}|${resolveStyleOf(z, types).color}|${sig(vis.get(z.id) ?? [])}`)].join("#");
+      if ( this._terrain?.key !== key ) {
+        this._drop(this._terrain?.objs);
+        this._terrain = { key, objs: this._drawAtlasTerrain(land, vis, types) };
+      }
+      for ( const o of this._terrain.objs ) this.zones.addChild(o);
       for ( const z of land ) {
         const style = resolveStyleOf(z, types);
         const cells = (vis.get(z.id) ?? []).filter(inside);
-        if ( cells.length && style.labelSize > 0 && z.name ) this._drawZoneLabel(z, style, cells, "terrain");
+        if ( !cells.length || !(style.labelSize > 0) || !z.name ) continue;
+        const k = `${z.name}|${JSON.stringify(style)}|${sig(cells)}`;
+        this._reuse(this._zoneCache, `t:${z.id}`, k, () => [[this._zoneLabel(z, style, cells, "terrain"), this.zoneLabels]], usedZones);
       }
+    } else if ( this._terrain ) {
+      this._drop(this._terrain.objs);
+      this._terrain = null;
     }
     for ( const z of zones ) {
       const layerId = layerIdOf(z, types);
       if ( this.atlas && layerId === "terrain" ) continue;
       const cells = (vis.get(z.id) ?? []).filter(inside);
-      this._drawZone(z, cells, resolveStyleOf(z, types), layerId);
+      if ( !cells.length ) continue;
+      const style = resolveStyleOf(z, types);
+      const k = `${layerId}|${this.rough}|${this.showBorders}|${isHidden(z)}|${z.name}|${JSON.stringify(style)}|${sig(cells)}`;
+      this._reuse(this._zoneCache, z.id, k, () => this._buildZone(z, cells, style, layerId), usedZones);
     }
+    this._sweep(this._zoneCache, usedZones);
     this._drawFields(fields, show);
+    const usedLines = new Set();
     for ( const l of all.filter(s => s.system.kind === "line") ) {
-      if ( isRiverLine(l, types) ? show.rivers : show.lines ) this._drawLine(l, resolveStyleOf(l, types));
+      if ( !(isRiverLine(l, types) ? show.rivers : show.lines) ) continue;
+      const style = resolveStyleOf(l, types);
+      const k = JSON.stringify([l.name, l.system.geometry, style, isHidden(l)]);
+      this._reuse(this._lineCache, l.id, k, () => this._buildLine(l, style), usedLines);
     }
+    this._sweep(this._lineCache, usedLines);
     this._drawMarks(all.filter(s => s.system.kind === "object"
       && (isResourceType(s.system.typeId) ? show.resources : show.marks)), types);
     this.labels.visible = show.labels;
     this.gridLines.visible = show.grid;
-    if ( show.coords ) this._drawCoords();
-    if ( show.windrose ) this._drawWindRose();
-    if ( show.scale ) this._drawScale(world);
+    this._drawDecor(show, world);
+  }
+
+  /** Координаты, роза ветров и линейка: перерисовываются, только когда их включили или выключили. */
+  _drawDecor(show, world) {
+    const key = [show.coords, show.windrose, show.scale, world.hexKm, world.distanceUnit, this.grid.radius, this.grid.allCells().length].join("|");
+    if ( this._decor?.key !== key ) {
+      this._drop(this._decor?.objs);
+      const box = new PIXI.Container();
+      const prev = this.decor;
+      this.decor = box;
+      try {
+        if ( show.coords ) this._drawCoords();
+        if ( show.windrose ) this._drawWindRose();
+        if ( show.scale ) this._drawScale(world);
+      } finally { this.decor = prev; }
+      this._decor = { key, objs: [box] };
+    }
+    this.decor.addChild(this._decor.objs[0]);
   }
 
   /** Высота, температура, осадки, население и лёд: гексы красятся по шкале, как слои Azgaar. */
   _drawFields(fields, show) {
     const cells = this.grid.allCells();
     if ( !fields || !fieldsFit(fields, cells) ) return;
+    const key = [show.heights, show.temp, show.prec, show.pop, show.ice, cells.length].join("|");
+    if ( this._fields?.ref === fields && this._fields.key === key ) {
+      for ( const o of this._fields.objs ) this.fieldLayer.addChild(o);
+      return;
+    }
+    this._drop(this._fields?.objs);
+    this._fields = { ref: fields, key, objs: [] };
+    const add = this.fieldLayer.addChild.bind(this.fieldLayer);
+    this.fieldLayer.addChild = o => { this._fields.objs.push(o); return add(o); };
+    try { this._paintFields(fields, show, cells); }
+    finally { delete this.fieldLayer.addChild; }
+  }
+
+  _paintFields(fields, show, cells) {
     const ALPHA = { height: 0.8, temp: 0.6, prec: 0.6, pop: 0.65 };
     const SHOW = { height: "heights", temp: "temp", prec: "prec", pop: "pop" };
     for ( const id of FIELD_IDS ) {
@@ -340,14 +443,13 @@ export default class HexRenderer {
       g.addChild(mask);
       g.mask = mask;
     }
-    this.zones.addChild(g);
     const glyphs = new PIXI.Graphics();
     for ( const c of cells ) {
       const k = key(c), t = typeOf.get(k);
       const deep = isWater(t) && (dist.get(k) ?? 9) >= 3;
       for ( const gl of glyphsFor(t, grid.center(c), r, k, { deep }) ) this._drawGlyph(glyphs, gl, r);
     }
-    this.zones.addChild(glyphs);
+    return [g, glyphs];
   }
 
   /** Один значок атласа. Формы — как в макете варианта «Атлас». */
@@ -424,9 +526,10 @@ export default class HexRenderer {
     }
   }
 
-  _drawZone(state, cells, style, layerId) {
-    if ( !cells.length ) return;
+  /** Заливка зоны и её подпись: [[фигура, контейнер], [подпись, контейнер]]. */
+  _buildZone(state, cells, style, layerId) {
     const g = new PIXI.Graphics();
+    if ( isHidden(state) ) g.alpha = 0.5;
     // Неровные границы только у местности: державы и области остаются ровно по гексам.
     const rough = this.rough && layerId === "terrain";
     const amp = this.grid.radius * 0.3;
@@ -444,17 +547,17 @@ export default class HexRenderer {
         g.lineTo(b[0], b[1]);
       }
     }
-    this.zones.addChild(g);
-    if ( style.labelSize > 0 && state.name ) this._drawZoneLabel(state, style, cells, layerId);
+    const label = style.labelSize > 0 && state.name ? this._zoneLabel(state, style, cells, layerId) : null;
+    return [[g, this.zones], [label, this.zoneLabels]];
   }
 
   /**
    * Подпись зоны. Державы по умолчанию подписаны изогнутой надписью вдоль зоны, как в Azgaar;
    * labelMode у типа или зоны: "curved", "straight" или "none". labelScale меняет размер.
    */
-  _drawZoneLabel(state, style, cells, layerId) {
+  _zoneLabel(state, style, cells, layerId) {
     const mode = style.labelMode ?? (layerId === "politics" ? "curved" : "straight");
-    if ( mode === "none" ) return;
+    if ( mode === "none" ) return null;
     const scale = Number(style.labelScale) > 0 ? Number(style.labelScale) : 1;
     if ( mode === "curved" && this.grid.neighbors ) {
       const part = largestComponent(cells, c => this.grid.neighbors(c));
@@ -471,14 +574,13 @@ export default class HexRenderer {
           t.rotation = at[i].angle;
           box.addChild(t);
         });
-        this.labels.addChild(box);
-        return;
+        return box;
       }
     }
     const p = this.grid.center(labelCell(cells, this.grid.center));
     const t = makeLabel(state.name, Math.round(style.labelSize * scale), style.labelColor, style.labelFont);
     t.position.set(p.x, p.y);
-    this.labels.addChild(t);
+    return t;
   }
 
   /**
@@ -517,11 +619,14 @@ export default class HexRenderer {
     g.lineStyle(0);
   }
 
-  _drawLine(state, style) {
+  /** Линия и её подписи: [[фигура, контейнер], [подпись, контейнер], …]. */
+  _buildLine(state, style) {
     const pts = state.system.geometry?.points ?? [];
-    if ( pts.length < 2 ) return;
+    if ( pts.length < 2 ) return [];
     const curve = lineCurve(pts, style, state.id);
     const g = new PIXI.Graphics();
+    if ( isHidden(state) ) g.alpha = 0.5;
+    const out = [[g, this.lines]];
     const w0 = style.widthStart ?? 3, w1 = style.widthEnd ?? 3;
     const wMax = Math.max(w0, w1);
     const alpha = style.alpha ?? 1;
@@ -541,13 +646,12 @@ export default class HexRenderer {
       g.drawPolygon(ribbon(curve, w0, w1).flat());
       g.endFill();
     } else stroke(curve, wMax, color(style.color));
-    this.lines.addChild(g);
     if ( style.labelSize > 0 && state.name ) {
       const m = midpoint(curve);
       if ( m ) {
         const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
         t.position.set(m[0], m[1] - wMax - style.labelSize * 0.6);
-        this.labels.addChild(t);
+        out.push([t, this.lineLabels]);
       }
     }
     // Подписи участков со своими названиями.
@@ -556,8 +660,9 @@ export default class HexRenderer {
       if ( !m || !seg.name ) continue;
       const t = makeLabel(seg.name, style.labelSize * 0.85, style.labelColor, style.labelFont);
       t.position.set(m[0], m[1] - wMax - style.labelSize * 0.5);
-      this.labels.addChild(t);
+      out.push([t, this.lineLabels]);
     }
+    return out;
   }
 
   /**
@@ -569,6 +674,7 @@ export default class HexRenderer {
     const byId = new Map(marks.map(m => [m.id, m]));
     const { slots, cells } = layoutMarks(marks, this.grid, m => styles.get(m.id).size, m => styles.get(m.id).cells ?? 1);
     const labelled = new Set();
+    const used = new Set();
     for ( const slot of slots ) {
       if ( slot.more ) { this._drawMore(slot); continue; }
       const m = byId.get(slot.id);
@@ -578,8 +684,11 @@ export default class HexRenderer {
       // Подпись группы — под гексом, чтобы не лезть на соседние значки.
       const g = cells.get(slot.key);
       const below = slot.count > 1 ? { x: g.x, y: g.y + (this.grid.radius * 0.98) } : null;
-      this._drawMark(m, style, slot, label ? below : false);
+      const at = label ? below : false;
+      const k = JSON.stringify([slot.x, slot.y, slot.d, m.name, style, isHidden(m), at]);
+      this._reuse(this._markCache, m.id, k, () => this._buildMark(m, style, slot, at), used);
     }
+    this._sweep(this._markCache, used);
     for ( const group of cells.values() ) if ( group.count > 1 ) this._drawCounter(group);
   }
 
@@ -592,6 +701,7 @@ export default class HexRenderer {
     const t = makeLabel(String(group.count), Math.round(r * 1.35), "#ffe9c4");
     t.position.set(x, y);
     this.marks.addChild(t);
+    this._eph.push(g, t);
   }
 
   /** Плашка «+N» на месте лишних меток. */
@@ -602,6 +712,22 @@ export default class HexRenderer {
     const t = makeLabel(`+${slot.more}`, Math.round(slot.d * 0.38), "#f3e6d6");
     t.position.set(slot.x, slot.y);
     this.marks.addChild(t);
+    this._eph.push(g, t);
+  }
+
+  /** Метка и её подпись: [[значок, контейнер], [подпись, контейнер]]. */
+  _buildMark(state, style, slot, label = null) {
+    const out = [];
+    const prevM = this.marks, prevL = this.markLabels;
+    const fake = arr => ({ addChild: o => { arr.push(o); return o; } });
+    const icons = [], labels = [];
+    this.marks = fake(icons);
+    this.markLabels = fake(labels);
+    try { this._drawMark(state, style, slot, label); }
+    finally { this.marks = prevM; this.markLabels = prevL; }
+    for ( const o of icons ) out.push([o, this.marks]);
+    for ( const o of labels ) out.push([o, this.markLabels]);
+    return out;
   }
 
   /** label: false — без подписи; null — под значком; { x, y } — место подписи группы. */
@@ -648,7 +774,7 @@ export default class HexRenderer {
       const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
       if ( label ) t.position.set(label.x, label.y);
       else t.position.set(x, y + (size * 0.5) + (style.labelSize * 0.75));
-      this.labels.addChild(t);
+      this.markLabels.addChild(t);
     }
   }
 
@@ -676,6 +802,16 @@ export default class HexRenderer {
       box.alpha = 0.9;
     }
     box.position.set(drag.at.x, drag.at.y);
+  }
+
+  /** Гекс под курсором. Рисуется отдельно: движение мыши трогает только его. */
+  drawCursor(studio) {
+    const c = this.cursor;
+    c.clear();
+    if ( studio.hover && studio.tool && studio.tool !== "line" ) {
+      c.beginFill(0xffffff, 0.12).lineStyle({ width: 2, color: 0xffffff, alpha: 0.6 })
+        .drawPolygon(flatV(this.grid.vertices(studio.hover))).endFill().lineStyle(0);
+    }
   }
 
   /** Выделение, курсор, осматриваемый гекс, начатая линия, призраки правок. */
@@ -710,12 +846,16 @@ export default class HexRenderer {
         gh.lineStyle(0);
       }
     }
-    // Зона, в которую пойдут гексы.
+    // Зона, в которую пойдут гексы. Граница считается один раз, пока зона не поменялась.
     if ( studio.tool === "zone" && studio.zone.target !== "new" ) {
       const z = studio.states.get(studio.zone.target);
       if ( z ) {
+        const sig = JSON.stringify(z.system.geometry?.cells ?? []);
+        if ( this._targetEdges?.id !== z.id || this._targetEdges.sig !== sig ) {
+          this._targetEdges = { id: z.id, sig, edges: boundaryEdges(zoneCells(z), grid.vertices) };
+        }
         g.lineStyle({ width: 3, color: 0xffffff, alpha: 0.85 });
-        for ( const [a, b] of boundaryEdges(zoneCells(z), grid.vertices) ) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+        for ( const [a, b] of this._targetEdges.edges ) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
         g.lineStyle(0);
       }
     }
@@ -751,10 +891,7 @@ export default class HexRenderer {
       g.beginFill(0xfff4d6, 0.08).lineStyle({ width: 2, color: 0xfff4d6, alpha: 0.9 })
         .drawRect(x, y, Math.abs(b.at.x - b.start.x), Math.abs(b.at.y - b.start.y)).endFill().lineStyle(0);
     }
-    if ( studio.hover && studio.tool && studio.tool !== "line" ) {
-      g.beginFill(0xffffff, 0.12).lineStyle({ width: 2, color: 0xffffff, alpha: 0.6 })
-        .drawPolygon(flatV(grid.vertices(studio.hover))).endFill().lineStyle(0);
-    }
+    this.drawCursor(studio);
     // Метку тащат: куда ляжет и сама метка под курсором.
     const drag = studio.markDrag;
     if ( drag?.moved ) {
