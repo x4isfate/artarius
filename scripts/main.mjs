@@ -122,6 +122,25 @@ Hooks.once("init", () => {
   Hooks.callAll("artarius.init", game.modules.get(MODULE_ID).api);
 });
 
+/**
+ * Ошибки модуля видны на экране, а не только в консоли: при поломке у игрока сразу есть текст, который можно прислать.
+ * Каждое сообщение показывается один раз за сессию.
+ */
+const shownErrors = new Set();
+function showModuleError(err) {
+  const stack = String(err?.stack ?? "");
+  if ( !stack.includes(`modules/${MODULE_ID}/`) ) return;
+  const msg = String(err?.message ?? err);
+  if ( shownErrors.has(msg) ) return;
+  shownErrors.add(msg);
+  const at = /modules\/artarius\/([^\s)]+)/.exec(stack)?.[1] ?? "";
+  ui.notifications?.error(`Artarius: ${msg}${at ? ` (${at})` : ""}`, { permanent: true });
+}
+window.addEventListener("error", ev => showModuleError(ev.error));
+window.addEventListener("unhandledrejection", ev => showModuleError(ev.reason));
+// Ошибки внутри хуков Foundry ловит сам и пишет в консоль; хук "error" отдаёт их сюда.
+Hooks.on("error", (location, err) => showModuleError(err));
+
 Hooks.once("ready", () => {
   const { backend, studio } = runtime;
   game.socket.on(SOCKET, onSocket);

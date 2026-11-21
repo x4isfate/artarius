@@ -217,7 +217,10 @@ const fields = Object.fromEntries(["SchemaField", "StringField", "NumberField", 
 class ApplicationV2 {
   static DEFAULT_OPTIONS = {};
   constructor(options = {}) {
-    this.options = { ...options, window: { ...(options.window ?? {}) }, position: { ...(options.position ?? {}) } };
+    // Как в Foundry v14: position запечатан, Object.assign с чужим ключом бросает TypeError.
+    const position = Object.seal({ top: null, left: null, width: null, height: null, scale: 1, zIndex: null });
+    Object.assign(position, options.position ?? {});
+    this.options = { ...options, window: { ...(options.window ?? {}) }, position };
     this.rendered = false;
   }
   get element() { return this._el ?? null; }
