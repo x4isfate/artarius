@@ -80,6 +80,8 @@ const MODE_DEFS = [
 ];
 /** Сколько секунд висит плашка «Удалено · Отменить». */
 const TOAST_MS = 6000;
+/** Нижний край панелей у низа экрана (кисть, выбранные метки): выше панели макросов Foundry. */
+const BAR_BOTTOM = 72;
 
 /** Дополнительные кнопки меню от других модулей: id → { label, icon, onClick, visible? }. */
 export const EXTRA_ACTIONS = new Map();
@@ -566,6 +568,7 @@ export default class ArtariusUI {
       this.renderLayerbar();
       this.renderBrushbar();
       this.renderToast();
+      this._placeLayerbar();
     } catch(err) {
       console.error("artarius | render", err);
     }
@@ -1255,16 +1258,21 @@ export default class ArtariusUI {
       </div>`;
   }
 
-  /** Встать под названием сцены в верхней панели Foundry; без неё — в левый верхний угол. */
+  /**
+   * Полоса режимов внизу по центру (правка Геры к 0.9.3): над кистью или панелью выбранных меток,
+   * если они видны, иначе на их месте. Плашка «Отменить» встаёт ещё выше.
+   */
   _placeLayerbar() {
     const el = this.layerbar;
-    if ( !el || el.hidden ) return;
-    const nav = document.querySelector("#scene-navigation, #navigation");
-    const r = nav?.getBoundingClientRect?.();
-    const left = r && r.width ? r.left : 120;
-    const top = r && r.height ? r.bottom + 6 : 8;
-    el.style.left = `${Math.round(left)}px`;
-    el.style.top = `${Math.round(top)}px`;
+    if ( !el ) return;
+    const gap = 8;
+    const below = [this.brushbar, this.bar].filter(b => b && !b.hidden).map(b => b.offsetHeight || 44);
+    const bottom = BAR_BOTTOM + (below.length ? Math.max(...below) + gap : 0);
+    if ( !el.hidden ) el.style.bottom = `${bottom}px`;
+    if ( this.toastEl && !this.toastEl.hidden ) {
+      const top = el.hidden ? bottom : bottom + (el.offsetHeight || 40) + gap;
+      this.toastEl.style.bottom = `${top}px`;
+    }
   }
 
   /** Кисть зон внизу экрана: зона, «Красить сразу», ластик, «Готово». Видна у кисти зон. */
