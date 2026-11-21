@@ -508,6 +508,41 @@ await check("0.5.0: превью сцены — снимок слоя, а не �
   window.__thumb = scene.thumb;
 });
 
+await check("0.9.5: полосы внизу видны при растянутом body и берут цвета кнопок сцены", async () => {
+  const ui = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
+  const s = api().studio;
+  // Тема как у Carolingian UI: тёмные кнопки, активная светлая.
+  const nav = document.getElementById("scene-controls");
+  nav.insertAdjacentHTML("beforeend", `<button type="button" class="control" style="background:rgb(34, 34, 34);color:rgb(230, 230, 230);border:1px solid rgb(80, 80, 80)">a</button>
+    <button type="button" class="control active" style="background:rgb(240, 240, 240);color:rgb(20, 20, 20)">b</button>`);
+  document.getElementById("sidebar").style.background = "rgb(30, 30, 30)";
+  // Тема растягивает body выше окна и делает его блоком для fixed-элементов.
+  const was = document.body.style.cssText;
+  document.body.style.cssText = "transform: translateZ(0); min-height: 180vh; margin: 0";
+  try {
+    s.setMode("realms");
+    ui.render();
+    await new Promise(r => setTimeout(r, 300)); // у кнопок режимов плавная смена цвета
+    const vh = window.innerHeight;
+    for ( const id of ["artarius-layerbar", "artarius-brushbar"] ) {
+      const r = document.getElementById(id).getBoundingClientRect();
+      assert(r.height > 0 && r.top >= 0 && r.bottom <= vh, `${id} за краем экрана: ${r.top}..${r.bottom} при высоте ${vh}`);
+    }
+    const lb = document.querySelector("#artarius-layerbar .art-modes").getBoundingClientRect();
+    const bb = document.getElementById("artarius-brushbar").getBoundingClientRect();
+    assert(lb.bottom <= bb.top && bb.top - lb.bottom < 20, "режимы не над кистью");
+    const bar = document.getElementById("artarius-layerbar");
+    assert(bar.classList.contains("art-themed"), "полоса не взяла тему");
+    const active = getComputedStyle(bar.querySelector(".art-mode.active"));
+    assert(active.backgroundColor === "rgb(240, 240, 240)" && active.color === "rgb(20, 20, 20)", `активный режим: ${active.backgroundColor} / ${active.color}`);
+    assert(getComputedStyle(bar.querySelector(".art-modes")).backgroundColor === "rgb(30, 30, 30)", "фон полосы не как у боковой панели");
+    assert(getComputedStyle(document.getElementById("artarius-brushbar")).backgroundColor === "rgb(30, 30, 30)", "фон кисти не как у боковой панели");
+  } finally {
+    document.body.style.cssText = was;
+    s.setTool("select", { toggle: false });
+  }
+});
+
 // ?shot: показать холст слоя, чтобы снять картинку сгенерированного мира.
 if ( location.search.includes("shot") ) {
   const app = new PIXI.Application({ width: 1400, height: 900, background: "#111111", antialias: true });

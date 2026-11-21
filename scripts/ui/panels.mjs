@@ -82,6 +82,8 @@ const MODE_DEFS = [
 const TOAST_MS = 6000;
 /** Нижний край панелей у низа экрана (кисть, выбранные метки): выше панели макросов Foundry. */
 const BAR_BOTTOM = 72;
+/** Зазор между панелями внизу. */
+const BAR_GAP = 8;
 
 /** Дополнительные кнопки меню от других модулей: id → { label, icon, onClick, visible? }. */
 export const EXTRA_ACTIONS = new Map();
@@ -568,6 +570,7 @@ export default class ArtariusUI {
       this.renderLayerbar();
       this.renderBrushbar();
       this.renderToast();
+      this._syncTheme();
       this._placeLayerbar();
     } catch(err) {
       console.error("artarius | render", err);
@@ -1259,19 +1262,61 @@ export default class ArtariusUI {
   }
 
   /**
-   * Полоса режимов внизу по центру (правка Геры к 0.9.3): над кистью или панелью выбранных меток,
-   * если они видны, иначе на их месте. Плашка «Отменить» встаёт ещё выше.
+   * Панели внизу по центру, снизу вверх: кисть, выбранные метки, полоса режимов, «Отменить» (0.9.4–0.9.5).
+   * Место считается от высоты окна браузера и ставится через top: если тема Foundry растягивает
+   * или сдвигает body, отсчёт от его низа (bottom) уводит панели за край экрана.
+   * Над панелью макросов Foundry, если она видна внизу.
    */
   _placeLayerbar() {
-    const el = this.layerbar;
-    if ( !el ) return;
-    const gap = 8;
-    const below = [this.brushbar, this.bar].filter(b => b && !b.hidden).map(b => b.offsetHeight || 44);
-    const bottom = BAR_BOTTOM + (below.length ? Math.max(...below) + gap : 0);
-    if ( !el.hidden ) el.style.bottom = `${bottom}px`;
-    if ( this.toastEl && !this.toastEl.hidden ) {
-      const top = el.hidden ? bottom : bottom + (el.offsetHeight || 40) + gap;
-      this.toastEl.style.bottom = `${top}px`;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    let y = vh - BAR_BOTTOM;
+    const hot = document.getElementById("hotbar")?.getBoundingClientRect?.();
+    if ( hot && hot.height && hot.top > vh / 2 && hot.top < vh ) y = Math.min(y, hot.top - BAR_GAP);
+    for ( const el of [this.brushbar, this.bar, this.layerbar, this.toastEl] ) {
+      if ( !el || el.hidden ) continue;
+      const h = el.offsetHeight || 44;
+      el.style.top = `${Math.max(BAR_GAP, Math.round(y - h))}px`;
+      el.style.bottom = "auto";
+      y -= h + BAR_GAP;
+    }
+  }
+
+  /**
+   * Цвета панелей у низа экрана берутся у кнопок сцены Foundry: так полосы выглядят как интерфейс,
+   * который включён (ядро, Carolingian UI или другая тема). Нет кнопок — остаётся своя палитра.
+   */
+  _syncTheme() {
+    const pick = sel => { for ( const q of sel ) { const el = document.querySelector(q); if ( el ) return el; } return null; };
+    const btn = pick(["#scene-controls-layers button:not(.active)", "#scene-controls button.control:not(.active)", "#scene-controls button:not(.active)", "#controls .scene-control:not(.active)"]);
+    const on = pick(["#scene-controls-tools button.active", "#scene-controls button.active", "#scene-controls .active", "#controls .control-tool.active"]);
+    const side = pick(["#sidebar-content", "#sidebar .sidebar-tab.active", "#sidebar"]);
+    const solid = c => c && !/^(transparent|rgba\(\s*0,\s*0,\s*0,\s*0\s*\))$/i.test(c.trim());
+    const vars = {};
+    if ( btn ) {
+      const cs = getComputedStyle(btn);
+      if ( solid(cs.color) ) vars["--art-bar-ink"] = cs.color;
+      if ( solid(cs.borderTopColor) && parseFloat(cs.borderTopWidth) > 0 ) vars["--art-bar-line"] = cs.borderTopColor;
+      if ( solid(cs.backgroundColor) ) vars["--art-bar-btn"] = cs.backgroundColor;
+    }
+    if ( on ) {
+      const cs = getComputedStyle(on);
+      if ( solid(cs.backgroundColor) ) vars["--art-bar-on-bg"] = cs.backgroundColor;
+      if ( solid(cs.color) ) vars["--art-bar-on-ink"] = cs.color;
+    }
+    if ( side ) {
+      const bg = getComputedStyle(side).backgroundColor;
+      if ( solid(bg) ) vars["--art-bar-bg"] = bg;
+    }
+    const key = JSON.stringify(vars);
+    if ( key === this._themeKey ) return;
+    this._themeKey = key;
+    for ( const el of [this.bar, this.brushbar, this.layerbar, this.toastEl] ) {
+      if ( !el ) continue;
+      for ( const name of ["--art-bar-ink", "--art-bar-line", "--art-bar-btn", "--art-bar-on-bg", "--art-bar-on-ink", "--art-bar-bg"] ) {
+        if ( vars[name] ) el.style.setProperty(name, vars[name]);
+        else el.style.removeProperty(name);
+      }
+      el.classList.toggle("art-themed", Object.keys(vars).length > 0);
     }
   }
 
