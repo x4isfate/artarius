@@ -191,14 +191,15 @@ async function shot(page, name) {
   /* 9. Карточка гекса ---------------------------------------------- */
   await act("tool", '[data-tool="select"]');
   await page.click('#artarius-layerbar [data-action="toggleLayerPanel"]');
-  check(await page.locator("#artarius-layerbar .art-lb-grid").isVisible(), "кнопка «Слои» у сцены открывает панель слоёв");
-  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  const LW = "#artarius-ui > .art-layerwin";
+  check(await page.locator(`${LW} .art-lb-grid`).first().isVisible(), "плашка «Слои» у сцены открывает окно слоёв");
+  await page.click(`${LW} [data-action="toggleLayer"][data-id="politics"]`);
   check((await ev(() => window.art.backend.atlasLayers.find(l => l.id === "politics").visible)) === false, "кнопка слоя скрывает слой");
-  check(!(await page.locator('#artarius-layerbar [data-id="politics"]').getAttribute("class")).includes(" on"), "выключенный слой виден на кнопке");
-  check(await page.locator('#artarius-layerbar [data-id="@temp"]').isDisabled(), "слой без данных (температура) недоступен");
-  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  check(!(await page.locator(`${LW} [data-id="politics"]`).getAttribute("class")).includes(" on"), "выключенный слой виден на кнопке");
+  check(await page.locator(`${LW} [data-id="@temp"]`).isDisabled(), "слой без данных (температура) недоступен");
+  await page.click(`${LW} [data-action="toggleLayer"][data-id="politics"]`);
   await page.keyboard.press("Escape");
-  check(!(await page.locator("#artarius-layerbar .art-lb-panel").count()), "Esc закрывает панель слоёв");
+  check(!(await page.locator(LW).isVisible()), "Esc закрывает окно слоёв");
   await click([3, 5]);
   check(await page.locator("#artarius-hud .art-hud-left").isVisible() && !(await page.locator(".art-right").isVisible()),
     "щелчок осмотром ставит панель на гекс, большое окно не открывается");

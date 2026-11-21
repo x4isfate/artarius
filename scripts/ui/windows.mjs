@@ -15,7 +15,8 @@ const DEFS = {
   left: { icon: "fa-solid fa-dice-d6", width: 440, height: 560, at: () => ({ left: 120, top: 80 }) },
   right: { icon: "fa-solid fa-hexagon", width: 340, height: "auto", at: () => ({ left: Math.max(120, window.innerWidth - 760), top: 80 }) },
   settings: { icon: "fa-solid fa-gear", width: 620, height: 600, at: () => ({ left: Math.max(120, (window.innerWidth - 620) / 2), top: 70 }) },
-  wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) }
+  wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) },
+  layers: { icon: "fa-solid fa-layer-group", width: 380, height: 460, at: () => ({ left: 130, top: 110 }) }
 };
 
 /** Окно, которое носит часть панели. Своих полей с именами ApplicationV2 не заводит. */

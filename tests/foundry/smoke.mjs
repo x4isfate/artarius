@@ -91,13 +91,15 @@ await check("группа инструментов слева", async () => {
   await tick();
   assert(api().studio.tool === "select" && !win("left"), "окно «Осмотра» всплыло само");
   const uiL = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
-  // 0.6: кнопка «Слои» открывает панель слоёв у названия сцены, как в Azgaar.
-  c.tools.layers.onChange(new Event("x"), true);
+  // 0.9.1: кнопки «Слои» в колонке нет, слои открываются плашкой у сцены в обычном окне Foundry.
+  assert(!c.tools.layers, "кнопка «Слои» осталась в колонке");
+  uiL.toggleLayerPanel(true);
   await tick();
-  assert(document.querySelector("#artarius-layerbar .art-lb-panel [data-id='terrain']"), "кнопка «Слои» не открыла панель слоёв");
-  c.tools.layers.onChange(new Event("x"), true);
+  assert(document.querySelector("#artarius-layers .art-lb-panel [data-id='terrain']"), "плашка «Слои» не открыла окно слоёв");
+  assert(win("layers") && uiL.host.windows.layers.options.window.resizable, "окно слоёв нельзя растянуть");
+  uiL.toggleLayerPanel(false);
   await tick();
-  assert(!document.querySelector("#artarius-layerbar .art-lb-panel") && api().studio.tool === "select", "панель слоёв не закрылась");
+  assert(!win("layers") && api().studio.tool === "select", "окно слоёв не закрылось");
   assert(c.tools.queue.button && c.tools.generator.visible, "кнопки не кнопки или генератор скрыт от мастера");
   // 0.7.0: кнопка «Настройки» открывает и закрывает окно настроек, крестик окна тоже закрывает.
   assert(c.tools.settings?.button, "нет кнопки настроек");
@@ -365,6 +367,9 @@ await check("игрок: правка уходит в черновик, заяв
 
 await check("мастер принимает заявку", async () => {
   const s = api().studio;
+  // С 0.9.1 изменения карты в чате выключены по умолчанию.
+  assert(game.settings.get("artarius", "chatChanges") === false, "сообщения об изменениях включены по умолчанию");
+  await game.settings.set("artarius", "chatChanges", true);
   const id = p1.getFlag("artarius", "claims")[0].id;
   await s.applyClaims([id]);
   await F.settle();
@@ -376,10 +381,12 @@ await check("мастер принимает заявку", async () => {
   const chat = await import("../../scripts/review/chat.mjs");
   const n = F.created.messages.length;
   s.setTool("mark", { toggle: false });
+  s.mark.paint = true;
   press(hexAt([3, 8]));
   await F.settle();
   await chat.flushDirect();
   assert(F.created.messages.length === n + 1, `сообщений о правках ${F.created.messages.length - n}`);
+  s.mark.paint = false;
   s.setTool("select", { toggle: false });
 });
 

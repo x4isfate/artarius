@@ -30,7 +30,8 @@ const lang = { ART: ru.ART, VMAP: ru.VMAP };
 const backend = new MemoryBackend({ lang });
 const studio = new Studio(backend);
 const view = new SvgView(studio, backend, document.getElementById("map"));
-const ui = new ArtariusUI(studio, backend, { project: pt => view.project(pt) });
+// Стенд проверяет содержимое окон сразу после щелчка: окна рисуются без ожидания кадра.
+const ui = new ArtariusUI(studio, backend, { project: pt => view.project(pt), syncRender: true });
 // Подписи значков вместо шрифта.
 new MutationObserver(() => {
   for ( const i of document.querySelectorAll("#artarius-ui i.fa-solid:not([data-i])") ) {

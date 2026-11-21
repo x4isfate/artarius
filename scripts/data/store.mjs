@@ -237,7 +237,12 @@ export async function commitOps(ops, scene = canvas?.scene) {
   const allowed = ops.filter(op => Hooks.call("artarius.preCommit", op, { scene, direct: game.user.isGM }) !== false);
   if ( !allowed.length ) return;
   let result;
-  const base = game.user.isGM ? atlasStates(atlas) : new Map();
+  // Прежнее состояние нужно хуку только для затронутых элементов: весь атлас не копируем.
+  const base = new Map();
+  if ( game.user.isGM ) for ( const op of allowed ) {
+    const page = atlas.pages.get(op.id);
+    if ( page?.type === FEATURE_TYPE ) base.set(op.id, pageToState(page));
+  }
   if ( game.user.isGM ) {
     const plan = buildApplyPlan(allowed.map(op => ({ ...op, baseRev: revOf(atlas, op.id) })), id => revOf(atlas, id), { force: true });
     result = await applyPlan(atlas, plan);
@@ -253,7 +258,7 @@ export async function commitOps(ops, scene = canvas?.scene) {
   return result;
 }
 
-/** Применить план к атласу: создания, правки и удаления тремя пакетными вызовами. */
+/** Применить план к атласу: создания, правки и удаления пакетными вызовами. */
 export async function applyPlan(atlas, plan) {
   const toPage = s => ({
     _id: s.id,
@@ -264,11 +269,45 @@ export async function applyPlan(atlas, plan) {
   });
   if ( plan.create.length ) await atlas.createEmbeddedDocuments("JournalEntryPage", plan.create.map(toPage), { keepId: true });
   if ( plan.update.length ) {
-    await atlas.updateEmbeddedDocuments("JournalEntryPage", plan.update.map(s => {
-      const { type, ...rest } = toPage(s);
-      return rest;
-    }), { recursive: false });
+    // На сервер уходит только то, что поменялось. Где из объекта что-то убрали, страница пишется целиком.
+    const partial = [], whole = [];
+    for ( const s of plan.update ) {
+      const page = atlas.pages.get(s.id);
+      const { type, ...full } = toPage(s);
+      const diff = page ? pageDiff(page._source, full) : null;
+      if ( diff === null ) whole.push(full);
+      else if ( Object.keys(diff).length > 1 ) partial.push(diff);
+    }
+    if ( partial.length ) await atlas.updateEmbeddedDocuments("JournalEntryPage", partial);
+    if ( whole.length ) await atlas.updateEmbeddedDocuments("JournalEntryPage", whole, { recursive: false });
   }
   if ( plan.delete.length ) await atlas.deleteEmbeddedDocuments("JournalEntryPage", plan.delete);
   return plan;
+}
+
+const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** Есть ли в старом объекте ключи, которых нет в новом (на любой глубине). Массивы заменяются целиком. */
+function lostKeys(before, after) {
+  if ( !isObj(before) ) return false;
+  if ( !isObj(after) ) return true;
+  return Object.keys(before).some(k => !(k in after) || lostKeys(before[k], after[k]));
+}
+
+/**
+ * Правка страницы только по изменённым полям: { _id, name?, "text.content"?, "system.<ключ>"? }.
+ * null — если из системы что-то убрали: тогда страница пишется целиком без слияния.
+ */
+export function pageDiff(source, full) {
+  const out = { _id: full._id };
+  if ( source.name !== full.name ) out.name = full.name;
+  if ( (source.text?.content ?? "") !== (full.text?.content ?? "") ) out["text.content"] = full.text.content;
+  const a = source.system ?? {}, b = full.system ?? {};
+  for ( const k of Object.keys(a) ) {
+    if ( !(k in b) ) return null;
+    if ( lostKeys(a[k], b[k]) ) return null;
+  }
+  for ( const k of Object.keys(b) ) if ( !sameJSON(a[k], b[k]) ) out[`system.${k}`] = b[k];
+  return out;
 }

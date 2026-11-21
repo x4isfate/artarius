@@ -609,28 +609,28 @@
 }
 #artarius-layerbar .art-lb-toggle b { font-weight: 600; color: var(--art-warn); }
 #artarius-layerbar .art-lb-toggle:hover, #artarius-layerbar .art-lb-toggle.active { border-color: var(--art-warn); }
-#artarius-layerbar .art-lb-panel {
-  margin-top: 6px; width: min(460px, calc(100vw - 32px)); padding: 10px; border-radius: 8px;
-  border: 1px solid var(--art-line-2); background: rgba(24, 21, 18, 0.96); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
-}
-#artarius-layerbar .art-lb-panel .art-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-#artarius-layerbar .art-lb-panel select { flex: 1; min-width: 0; height: 28px; }
-#artarius-layerbar .art-lb-label { font-size: 12px; font-style: italic; color: var(--art-muted); white-space: nowrap; }
-#artarius-layerbar .art-lb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-#artarius-layerbar .art-lb-btn {
-  height: 28px; margin: 0; padding: 0 6px; border: 1px solid transparent; border-radius: 4px;
-  background: rgba(232, 214, 195, 0.05); color: var(--art-muted); font-size: 13px; cursor: pointer;
+/* 0.9.1: слои в своём окне, его двигают и растягивают */
+#artarius-ui > .art-layerwin { left: 130px; top: var(--art-top, 64px); width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - var(--art-top, 64px) - 26px); z-index: 3; }
+.artarius .art-lb-panel { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.artarius .art-lb-panel .art-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.artarius .art-lb-panel select { flex: 1; min-width: 0; height: 28px; }
+.artarius .art-lb-label { font-size: 12px; font-style: italic; color: var(--art-muted); white-space: nowrap; }
+.artarius .art-lb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
+.artarius .art-lb-btn {
+  display: flex; align-items: center; gap: 6px;
+  height: 28px; margin: 0; padding: 0 8px; border: 1px solid transparent; border-radius: 4px;
+  background: rgba(232, 214, 195, 0.05); color: var(--art-muted); font-size: 13px; cursor: pointer; text-align: left;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   transition: background-color 0.12s ease-out, color 0.12s ease-out;
 }
-#artarius-layerbar .art-lb-btn:hover:not(:disabled) { border-color: var(--art-line-2); }
-#artarius-layerbar .art-lb-btn.on { background: rgba(201, 87, 63, 0.32); color: var(--art-ink); border-color: rgba(201, 87, 63, 0.6); }
-#artarius-layerbar .art-lb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-#artarius-layerbar .art-hint { margin: 8px 0 0; }
+.artarius .art-lb-btn:hover:not(:disabled) { border-color: var(--art-line-2); }
+.artarius .art-lb-btn.on { background: rgba(201, 87, 63, 0.32); color: var(--art-ink); border-color: rgba(201, 87, 63, 0.6); }
+.artarius .art-lb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.artarius .art-lb-panel .art-hint { margin: 4px 0 0; }
 .artarius .art-keys { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .artarius .art-keys kbd { min-width: 52px; text-align: center; }
 @media (prefers-reduced-motion: reduce) {
-  #artarius-layerbar .art-lb-btn, #artarius-layerbar .art-lb-toggle { transition: none; }
+  .artarius .art-lb-btn, #artarius-layerbar .art-lb-toggle { transition: none; }
 }
 
 /* 0.6.0: карточка при наведении и статусы значками */
