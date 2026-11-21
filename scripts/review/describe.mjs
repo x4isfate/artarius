@@ -2,9 +2,10 @@
  * Описание правок словами: одна строка на правку и разница «было → стало» по полям.
  * Чистый код без Foundry: перевод и имена типов приходят снаружи.
  *
- * ctx = { t(key, data), typeName(id), layerName(id) }
+ * ctx = { t(key, data), typeName(id), layerName(id), actorName(id), userName(id) }
  */
 import { changedFields, formatStatus } from "./ops.mjs";
+import { demiurgesOf } from "../data/access.mjs";
 import { zoneCells } from "../data/world.mjs";
 import { KIND_TOOL } from "../constants.mjs";
 
@@ -40,13 +41,13 @@ export function describeOp(op, base, ctx) {
 /** Значение поля элемента словами. */
 function fieldText(key, s, ctx) {
   if ( !s ) return "";
-  const { t, typeName = id => id, layerName = id => id } = ctx;
+  const { t, typeName = id => id, layerName = id => id, actorName = id => id, userName = id => id } = ctx;
   const sys = s.system ?? {};
   switch ( key ) {
     case "name": return s.name ?? "";
     case "text": return plain(s.text);
     case "type": return sys.typeId ? typeName(sys.typeId) : "";
-    case "demiurge": return sys.demiurge ?? "";
+    case "demiurge": return demiurgesOf(s).map(actorName).join(", ");
     case "statuses": return (sys.statuses ?? []).map(formatStatus).join(", ");
     case "aspects": return (sys.aspects ?? []).map(a => {
       const inner = (a.statuses ?? []).map(formatStatus).join(", ");
@@ -62,7 +63,11 @@ function fieldText(key, s, ctx) {
       .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
     case "layer": return sys.layerId ? layerName(sys.layerId) : "";
     case "links": return (sys.links ?? []).length ? t("ART.Diff.linksN", { n: sys.links.length }) : "";
-    case "visibility": return t(`ART.Vis.${sys.visibility?.mode ?? "all"}`);
+    case "visibility": {
+      const mode = sys.visibility?.mode ?? "all";
+      const who = mode === "some" ? (sys.visibility?.users ?? []).map(userName).join(", ") : "";
+      return who ? `${t(`ART.Vis.${mode}`)}: ${who}` : t(`ART.Vis.${mode}`);
+    }
     default: return "";
   }
 }

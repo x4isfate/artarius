@@ -49,7 +49,7 @@ async function shot(page, name) {
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const atlas = () => ev(() => [...window.art.backend.atlas.values()].map(s => ({
     id: s.id, name: s.name, kind: s.system.kind, typeId: s.system.typeId, cells: s.system.geometry.cells?.length ?? 0,
-    statuses: s.system.statuses, aspects: s.system.aspects, demiurge: s.system.demiurge
+    statuses: s.system.statuses, aspects: s.system.aspects, demiurge: s.system.demiurge, demiurges: s.system.demiurges
   })));
   /** Экранная точка центра гекса [i, j]. */
   const at = async cell => ev(([i, j]) => {
@@ -119,11 +119,11 @@ async function shot(page, name) {
   /* 4. Рисовать сразу в выбранную зону ----------------------------- */
   const forestId = a.find(z => z.typeId === "forest").id;
   await act("zoneTarget", `[data-id="${forestId}"]`);
-  await page.locator('#artarius-ui input[data-model="zone.paint"]').check();
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="paint"]').click();
   await drag([6, 10], [6, 14]);
   a = await atlas();
   check(a.find(z => z.id === forestId).cells === 8, "в режиме «рисовать сразу» протяжка ушла в лес");
-  await page.locator('#artarius-ui input[data-model="zone.paint"]').uncheck();
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="pick"]').click();
 
   /* 5. Убрать гексы из слоя --------------------------------------- */
   await click([6, 10]); await click([6, 11]);
@@ -191,14 +191,15 @@ async function shot(page, name) {
   /* 9. Карточка гекса ---------------------------------------------- */
   await act("tool", '[data-tool="select"]');
   await page.click('#artarius-layerbar [data-action="toggleLayerPanel"]');
-  check(await page.locator("#artarius-layerbar .art-lb-grid").isVisible(), "кнопка «Слои» у сцены открывает панель слоёв");
-  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  const LW = "#artarius-ui > .art-layerwin";
+  check(await page.locator(`${LW} .art-lb-grid`).first().isVisible(), "плашка «Слои» у сцены открывает окно слоёв");
+  await page.click(`${LW} [data-action="toggleLayer"][data-id="politics"]`);
   check((await ev(() => window.art.backend.atlasLayers.find(l => l.id === "politics").visible)) === false, "кнопка слоя скрывает слой");
-  check(!(await page.locator('#artarius-layerbar [data-id="politics"]').getAttribute("class")).includes(" on"), "выключенный слой виден на кнопке");
-  check(await page.locator('#artarius-layerbar [data-id="@temp"]').isDisabled(), "слой без данных (температура) недоступен");
-  await page.click('#artarius-layerbar [data-action="toggleLayer"][data-id="politics"]');
+  check(!(await page.locator(`${LW} [data-id="politics"]`).getAttribute("class")).includes(" on"), "выключенный слой виден на кнопке");
+  check(await page.locator(`${LW} [data-id="@temp"]`).isDisabled(), "слой без данных (температура) недоступен");
+  await page.click(`${LW} [data-action="toggleLayer"][data-id="politics"]`);
   await page.keyboard.press("Escape");
-  check(!(await page.locator("#artarius-layerbar .art-lb-panel").count()), "Esc закрывает панель слоёв");
+  check(!(await page.locator(LW).isVisible()), "Esc закрывает окно слоёв");
   await click([3, 5]);
   check(await page.locator("#artarius-hud .art-hud-left").isVisible() && !(await page.locator(".art-right").isVisible()),
     "щелчок осмотром ставит панель на гекс, большое окно не открывается");
@@ -219,7 +220,9 @@ async function shot(page, name) {
   const markId = await ev(() => window.art.studio.contents().marks[0].id);
   await act("openItem", `[data-id="${markId}"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:name"]`, "Винтерфол-на-Скале");
-  await page.selectOption(`#artarius-ui select[data-key="${markId}:demiurge"]`, "a-ice");
+  // 0.9.2: демиургов отмечают галочками, можно нескольких или никого.
+  await page.locator(`#artarius-ui [data-change="toggleDemiurge"][data-id="${markId}"][data-actor="a-ice"]`).check();
+  await shot(page, "demiurges");
   check(!(await page.locator(`#artarius-ui [data-action="addStatus"][data-id="${markId}"]`).count()), "статусы сначала только для чтения");
   await act("editStatuses", `[data-id="${markId}"]`);
   await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
@@ -232,7 +235,7 @@ async function shot(page, name) {
   await ev(() => window.art.studio.flush());
   a = await atlas();
   let m = a.find(x => x.id === markId);
-  check(m.name === "Винтерфол-на-Скале" && m.demiurge === "a-ice" && m.statuses[0].name === "Голод" && m.statuses[0].value === 1 && m.statuses[0].max === 10, "имя, демиург и статус «Голод (1/10)» сохранены");
+  check(m.name === "Винтерфол-на-Скале" && m.demiurge === "a-ice" && m.demiurges.join() === "a-ice" && m.statuses[0].name === "Голод" && m.statuses[0].value === 1 && m.statuses[0].max === 10, "имя, демиург и статус «Голод (1/10)» сохранены");
   await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:statuses.1.name"]`, "Защищённая крепость");
   await act("toAspect", `[data-id="${markId}"][data-n="1"]`);
@@ -322,7 +325,23 @@ async function shot(page, name) {
   await click([6, 6]);
   const zonesBefore = await ev(() => window.art.studio.contents().zones.length);
   await hud("hudZone");
-  check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
+  check(await page.locator("#artarius-hud .art-hud-zones").isVisible(), "«Добавить в зону» открывает список зон");
+  check(await page.locator('#artarius-hud .art-hud-zones [data-action="hudZoneAdd"]').count() > 0, "в списке уже созданные зоны");
+  await shot(page, "hud-zones");
+  {
+    const far = await ev(() => {
+      const s = window.art.studio, here = new Set(s.contents().zones.map(z => z.id));
+      return s.zones().find(z => !here.has(z.id) && z.system.geometry.cells?.length)?.id ?? null;
+    });
+    if ( far ) {
+      await page.click(`#artarius-hud [data-action="hudZoneAdd"][data-id="${far}"]`);
+      await ev(() => window.art.studio.flush?.());
+      check(await ev(id => window.art.studio.contents().zones.some(z => z.id === id), far), "гекс лёг в выбранную зону");
+    } else {
+      await page.click('#artarius-hud [data-action="hudZoneNew"]');
+      check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
+    }
+  }
   await hud("hudPan");
   {
     // Щелчок по метке выбирает её и панель не трогает, поэтому щёлкаем по краю гекса, мимо меток.
@@ -653,6 +672,67 @@ async function shot(page, name) {
   await page.waitForTimeout(150);
   check(await page.locator('#artarius-ui [data-action="wfQuickWorld"]').count() === 1, "кнопка «Новый мир» во вкладке «Мир»");
   await shot(page, "world");
+
+  /* 19. 0.9.3: режимы сверху, кисть внизу, пипетка, справочник, «Отменить» --- */
+  await ev(() => { const s = window.art.studio; s.closeSettings?.(); s.setTool("select", { toggle: false }); s.closeRight?.(); });
+  await page.waitForTimeout(100);
+  check(await page.locator('#artarius-layerbar .art-mode[data-mode]').count() === 5, "сверху пять режимов карты");
+  await page.locator('#artarius-layerbar .art-mode[data-mode="terrain"]').click();
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.mode)) === "terrain", "кнопка «Местность» включает кисть местности");
+  check(await page.locator('#artarius-layerbar .art-mode[data-mode="terrain"].active').count() === 1, "режим подсвечен");
+  check(await page.locator("#artarius-brushbar:not([hidden])").isVisible(), "внизу полоса кисти");
+  const tilesTerrain = await ev(() => [...document.querySelectorAll("#artarius-ui .art-tiles [data-id]")].map(e => window.art.studio.typeById(e.dataset.id)?.layerId).filter(Boolean));
+  check(tilesTerrain.length > 0 && tilesTerrain.every(l => l === "terrain"), "в палитре плитки только местности");
+  await shot(page, "mode-terrain");
+  await page.mouse.click(5, 300);
+  await page.keyboard.press("2");
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.mode)) === "realms", "клавиша 2 включает «Владения»");
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="erase"]').click();
+  await page.waitForTimeout(80);
+  check((await ev(() => window.art.studio.zone.erase)) === true, "ластик на полосе кисти");
+  const realmCell = await ev(() => { const s = window.art.studio; const z = s.zones().find(z => s.typeById(z.system.typeId)?.layerId !== "terrain" && z.system.geometry.cells.length); return z ? { id: z.id, cell: z.system.geometry.cells[0] } : null; });
+  if ( realmCell ) {
+    await ev(c => { const s = window.art.studio; s.zone.target = "new"; s.eyedrop(c.cell); }, realmCell);
+    await page.waitForTimeout(80);
+    check((await ev(() => window.art.studio.zone.target)) === realmCell.id, "пипетка берёт зону с гекса");
+  }
+  await shot(page, "brush-bar");
+  await page.locator('#artarius-brushbar [data-action="brushDone"]').click();
+  await page.waitForTimeout(80);
+  check((await ev(() => window.art.studio.tool)) === "select" && !(await page.locator("#artarius-brushbar").isVisible()), "«Готово» убирает кисть");
+  await page.keyboard.press("5");
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.rightTab)) === "queue", "клавиша 5 открывает заявки");
+  await page.locator('#artarius-ui [data-action="rightTab"][data-tab="catalog"]').click();
+  await page.waitForTimeout(120);
+  check(await page.locator("#artarius-ui .art-catalog .art-cat-item").count() > 0, "справочник показывает зоны, метки и линии");
+  await page.locator("#artarius-ui .art-catalog .art-cat-item").first().click();
+  await page.waitForTimeout(120);
+  check(!!(await ev(() => window.art.studio.openId)) && (await ev(() => window.art.studio.rightTab)) === "tile", "щелчок в справочнике открывает карточку");
+  await page.locator('#artarius-ui [data-action="rightTab"][data-tab="catalog"]').click();
+  await page.waitForTimeout(100);
+  await shot(page, "catalog");
+  // Удаление метки: внизу «Удалено · Отменить», кнопка возвращает метку.
+  await ev(() => { const s = window.art.studio; s.closeRight?.(); s.setTool("select", { toggle: false }); });
+  const nMarks = await marksN();
+  await ev(() => { const s = window.art.studio; const id = [...s.states.values()].find(x => x.system.kind === "object").id; return s.deleteMarks([id]); });
+  await page.waitForTimeout(120);
+  check(await page.locator("#artarius-toast:not([hidden])").isVisible(), "после удаления внизу «Отменить»");
+  await shot(page, "toast");
+  await page.locator('#artarius-toast [data-action="undo"]').click();
+  await page.waitForTimeout(150);
+  check((await marksN()) === nMarks && !(await page.locator("#artarius-toast").isVisible()), "«Отменить» возвращает метку");
+  // Подсказки абзацами спрятаны под «?».
+  await ev(() => window.art.studio.setMode("marks"));
+  await page.waitForTimeout(100);
+  const hintsOff = await page.locator("#artarius-ui .art-intro").count();
+  await page.locator('#artarius-ui [data-action="toggleHints"]').first().click();
+  await page.waitForTimeout(100);
+  check(hintsOff === 0 && (await page.locator("#artarius-ui .art-intro").count()) > 0, "подсказки показываются по «?»");
+  await page.locator('#artarius-ui [data-action="toggleHints"]').first().click();
+  await ev(() => window.art.studio.setTool("select", { toggle: false }));
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");

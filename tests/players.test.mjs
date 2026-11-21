@@ -60,7 +60,7 @@ test("hidden mark: author and GM see it, chosen players too, others do not", () 
   assert.ok(canSee(mk("some", ["ice"]), "ice"));
   assert.ok(!canSee(mk("some", ["ice"]), "sun"));
   assert.ok(canSee(mk("all"), "sun"));
-  assert.ok(canSee({ system: { kind: "area", visibility: { mode: "gm" } } }, "sun"), "only marks hide");
+  assert.ok(!canSee({ system: { kind: "area", visibility: { mode: "gm" } } }, "sun"), "zones hide too (0.9.2)");
   assert.ok(isHidden(mk("some")) && !isHidden(mk("all")));
   const states = new Map([["a", mk("gm")], ["b", mk("all")]]);
   assert.deepEqual([...visibleStates(states, "ice").keys()], ["b"]);

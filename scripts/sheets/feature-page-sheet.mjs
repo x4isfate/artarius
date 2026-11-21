@@ -1,3 +1,4 @@
+import { demiurgesOf } from "../data/access.mjs";
 import { MODULE_ID } from "../constants.mjs";
 import { getTypes, getLayers } from "../data/store.mjs";
 import { formatStatus } from "../review/ops.mjs";
@@ -32,7 +33,8 @@ export default class FeaturePageSheet extends JournalEntryPageHandlebarsSheet {
     const atlas = page.parent;
     const type = getTypes(atlas).find(t => t.id === sys.typeId);
     const layer = getLayers(atlas).find(l => l.id === sys.layerId);
-    const demiurge = sys.demiurge ? (game.actors.get(sys.demiurge) ?? await fromUuid(sys.demiurge).catch(() => null)) : null;
+    const demiurges = [];
+    for ( const id of demiurgesOf(page) ) demiurges.push(game.actors.get(id) ?? await fromUuid(id).catch(() => null));
     const pages = atlas?.pages;
     const enriched = await foundry.applications.ux.TextEditor.implementation.enrichHTML(page.text?.content ?? "", {
       relativeTo: page, secrets: page.isOwner
@@ -42,7 +44,7 @@ export default class FeaturePageSheet extends JournalEntryPageHandlebarsSheet {
       kindLabel: game.i18n.localize(`ART.Kind.${{ area: "zone", object: "mark", line: "line" }[sys.kind] ?? "mark"}`),
       typeName: type?.name ?? "",
       layerName: sys.kind === "area" ? (layer?.name ?? "") : "",
-      demiurge: demiurge?.name ?? "",
+      demiurge: demiurges.filter(Boolean).map(a => a.name).join(", "),
       description: enriched,
       statuses: (sys.statuses ?? []).map(formatStatus).filter(Boolean),
       aspects: (sys.aspects ?? []).map(a => ({

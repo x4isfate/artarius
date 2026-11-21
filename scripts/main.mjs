@@ -53,9 +53,10 @@ Hooks.once("init", () => {
   S("layerPresets", { scope: "client", config: false, type: Array, default: [], onChange: () => runtime.backend?.emit() });
   S("windows", { scope: "client", config: false, type: Object, default: {} });
   S("permissions", { scope: "world", config: false, type: Object, default: {}, onChange: () => runtime.backend?.emit() });
+  // Сообщения об изменениях карты выключены по умолчанию: их рисует у себя каждый игрок.
   S("chatChanges", {
     name: "ART.Chat.setting", hint: "ART.Chat.settingHint",
-    scope: "world", config: true, type: Boolean, default: true
+    scope: "world", config: true, type: Boolean, default: false
   });
 
   const backend = new FoundryBackend();
@@ -66,7 +67,6 @@ Hooks.once("init", () => {
   // Кнопки в колонке инструментов (группа Артария слева).
   runtime.buttons = {
     queue: () => studio.openQueue(),
-    layers: () => runtime.ui?.toggleLayerPanel(),
     settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()
@@ -128,6 +128,9 @@ Hooks.once("ready", () => {
   rememberClaimStatuses();
   const host = new FoundryHost({ onClose: name => runtime.ui?.windowClosed(name) });
   runtime.ui = new ArtariusUI(studio, backend, { host, project: screenPoint });
+  host.onDockChange = () => runtime.ui?.render();
+  // Свёрнутая или развёрнутая боковая панель Foundry меняет край, к которому прижата правая панель.
+  Hooks.on("collapseSidebar", () => setTimeout(() => host._onResize(), 250));
   syncUI();
   if ( !game.settings.get(MODULE_ID, "guideSeen") && isWorldScene() ) {
     GuideApp.open();
@@ -267,6 +270,8 @@ for ( const hook of ["createJournalEntryPage", "updateJournalEntryPage", "delete
 Hooks.on("updateJournalEntry", journal => { if ( isCurrentAtlas(journal) ) emit(); });
 Hooks.on("createJournalEntry", () => emit());
 Hooks.on("updateActor", () => emit());
+Hooks.on("createActor", () => emit());
+Hooks.on("deleteActor", () => emit());
 
 Hooks.on("updateScene", (scene, changes) => {
   if ( scene !== canvas?.scene ) return;
@@ -279,6 +284,8 @@ Hooks.on("updateScene", (scene, changes) => {
 });
 
 Hooks.on("updateUser", (user, changes) => {
+  // Закреплённый персонаж решает, демиург ли игрок, и кто видит скрытое.
+  if ( "character" in changes ) emit();
   if ( !foundry.utils.hasProperty(changes, `flags.${MODULE_ID}`) ) return;
   emit();
   if ( user.isSelf ) announceDecisions(user);
