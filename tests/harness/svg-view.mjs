@@ -4,6 +4,7 @@
  */
 import { shapePoints, shapeOf } from "../../scripts/data/mark-shape.mjs";
 import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells, cellKey } from "../../scripts/data/world.mjs";
+import { MODES } from "../../scripts/studio.mjs";
 import { resolveStyleOf, lineCurve, lineDash } from "../../scripts/canvas/style.mjs";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -57,6 +58,8 @@ export default class SvgView {
       if ( (ev.key === "Delete" || ev.key === "Backspace") && this.studio.markSel.size ) this.studio.deleteMarks();
       if ( ev.shiftKey && ev.code === "Space" ) { ev.preventDefault(); window.art?.ui?.openGoto?.(); }
       if ( ev.key === "Enter" && this.studio.tool === "line" ) this.studio.finishLine();
+      const digit = /^Digit([1-5])$/.exec(ev.code);
+      if ( digit && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey ) this.studio.setMode(MODES[Number(digit[1]) - 1]);
     });
   }
 

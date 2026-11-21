@@ -84,7 +84,42 @@ export default class FoundryHost {
     this._saveTimer = null;
     /** Окна, размер которых пользователь задал сам (окно гекса тогда не подстраивается под содержимое). */
     this.sized = {};
+    /**
+     * Окна у правого края, вплотную к боковой панели Foundry (макет Б): правая панель по умолчанию.
+     * Потянул окно за шапку — оно открепилось; кнопка с булавкой прикрепляет снова.
+     */
+    this.docked = { right: this._saved().right?.docked ?? true };
+    this._onResize = () => { for ( const n of Object.keys(this.docked) ) if ( this.docked[n] ) this._dock(n); };
+    window.addEventListener("resize", this._onResize);
   }
+
+  /** Место прикреплённого окна: вся высота, справа до боковой панели Foundry. */
+  _dockPos(name) {
+    const w = this.windows[name];
+    const sb = document.getElementById("sidebar")?.getBoundingClientRect?.();
+    const edge = sb && sb.width ? sb.left : window.innerWidth;
+    const width = Math.round(w?.position?.width && Number.isFinite(w.position.width) ? w.position.width : (DEFS[name]?.width ?? 360));
+    return { left: Math.max(0, Math.round(edge - width - 6)), top: 6, width, height: Math.max(200, window.innerHeight - 12) };
+  }
+
+  _dock(name) {
+    const w = this.windows[name];
+    if ( !w?.rendered ) return;
+    this._docking = true;
+    try { w.setPosition(this._dockPos(name)); } finally { this._docking = false; }
+    w.element?.classList.add("art-docked");
+  }
+
+  /** Прикрепить окно к правому краю или открепить. */
+  dock(name, on = true) {
+    this.docked[name] = !!on;
+    this.windows[name]?.element?.classList.toggle("art-docked", !!on);
+    if ( on ) this._dock(name);
+    this._pending = { ...(this._pending ?? {}), [name]: { ...(this._saved()[name] ?? {}), ...(this._pending?.[name] ?? {}), docked: !!on } };
+    this._flushSave();
+  }
+
+  isDocked(name) { return !!this.docked[name]; }
 
   _userSized(name) {
     this.sized[name] = true;
@@ -138,7 +173,9 @@ export default class FoundryHost {
           this.titles[name] = want;
           w.options.window.title = want;
           await w.render({ force: true, window: { title: want } });
-        } else if ( name === "right" && !this.sized.right ) w.setPosition({ height: "auto" });
+          if ( this.docked[name] ) this._dock(name);
+        } else if ( this.docked[name] ) this._dock(name);
+        else if ( name === "right" && !this.sized.right ) w.setPosition({ height: "auto" });
         if ( this._want[name] === want ) break;
       }
     } catch(err) {
@@ -161,10 +198,24 @@ export default class FoundryHost {
 
   /** Запомнить место окна. Пишем не чаще раза в полсекунды: при перетаскивании событий много. */
   _moved(name, position) {
+    // Своё перемещение к краю не в счёт; если окно утащили от края — оно открепилось.
+    if ( this.docked[name] && !this._docking ) {
+      const at = this._dockPos(name);
+      if ( Math.abs((position.left ?? at.left) - at.left) > 8 || Math.abs((position.top ?? at.top) - at.top) > 8 ) {
+        this.docked[name] = false;
+        this.windows[name]?.element?.classList.remove("art-docked");
+        this.onDockChange?.(name, false);
+      } else return;
+    }
     const keep = { left: position.left, top: position.top };
     if ( name !== "right" || this.sized[name] ) Object.assign(keep, { width: position.width, height: position.height });
     if ( this.sized[name] ) keep.sized = true;
+    if ( name in this.docked ) keep.docked = !!this.docked[name];
     this._pending = { ...(this._pending ?? {}), [name]: keep };
+    this._flushSave();
+  }
+
+  _flushSave() {
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {
       const all = { ...this._saved(), ...this._pending };

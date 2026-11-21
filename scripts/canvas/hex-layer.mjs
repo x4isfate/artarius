@@ -4,6 +4,7 @@
  */
 import { MODULE_ID } from "../constants.mjs";
 import HexRenderer from "./hex-renderer.mjs";
+import { MODES } from "../studio.mjs";
 
 const { InteractionLayer } = foundry.canvas.layers;
 
@@ -297,6 +298,10 @@ export default class HexLayer extends InteractionLayer {
       if ( (ev.key === "Delete" || ev.key === "Backspace") && s.markSel.size ) { own(); s.deleteMarks(); return; }
       // Shift+Пробел: перейти к гексу по координатам.
       if ( ev.shiftKey && ev.code === "Space" ) { own(); runtime.ui?.openGoto?.(); return; }
+      // 1–5: режимы карты (местность, владения, метки, линии, игроки). Пока инструменты Артария активны,
+      // эти клавиши наши, а не панели макросов Foundry.
+      const digit = /^Digit([1-5])$/.exec(ev.code);
+      if ( digit && !ctrl && !ev.altKey && !ev.shiftKey ) { own(); s.setMode(MODES[Number(digit[1]) - 1]); return; }
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();
         runtime.studio.finishLine();

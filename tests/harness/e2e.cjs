@@ -119,11 +119,11 @@ async function shot(page, name) {
   /* 4. Рисовать сразу в выбранную зону ----------------------------- */
   const forestId = a.find(z => z.typeId === "forest").id;
   await act("zoneTarget", `[data-id="${forestId}"]`);
-  await page.locator('#artarius-ui input[data-model="zone.paint"]').check();
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="paint"]').click();
   await drag([6, 10], [6, 14]);
   a = await atlas();
   check(a.find(z => z.id === forestId).cells === 8, "в режиме «рисовать сразу» протяжка ушла в лес");
-  await page.locator('#artarius-ui input[data-model="zone.paint"]').uncheck();
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="pick"]').click();
 
   /* 5. Убрать гексы из слоя --------------------------------------- */
   await click([6, 10]); await click([6, 11]);
@@ -672,6 +672,67 @@ async function shot(page, name) {
   await page.waitForTimeout(150);
   check(await page.locator('#artarius-ui [data-action="wfQuickWorld"]').count() === 1, "кнопка «Новый мир» во вкладке «Мир»");
   await shot(page, "world");
+
+  /* 19. 0.9.3: режимы сверху, кисть внизу, пипетка, справочник, «Отменить» --- */
+  await ev(() => { const s = window.art.studio; s.closeSettings?.(); s.setTool("select", { toggle: false }); s.closeRight?.(); });
+  await page.waitForTimeout(100);
+  check(await page.locator('#artarius-layerbar .art-mode[data-mode]').count() === 5, "сверху пять режимов карты");
+  await page.locator('#artarius-layerbar .art-mode[data-mode="terrain"]').click();
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.mode)) === "terrain", "кнопка «Местность» включает кисть местности");
+  check(await page.locator('#artarius-layerbar .art-mode[data-mode="terrain"].active').count() === 1, "режим подсвечен");
+  check(await page.locator("#artarius-brushbar:not([hidden])").isVisible(), "внизу полоса кисти");
+  const tilesTerrain = await ev(() => [...document.querySelectorAll("#artarius-ui .art-tiles [data-id]")].map(e => window.art.studio.typeById(e.dataset.id)?.layerId).filter(Boolean));
+  check(tilesTerrain.length > 0 && tilesTerrain.every(l => l === "terrain"), "в палитре плитки только местности");
+  await shot(page, "mode-terrain");
+  await page.mouse.click(5, 300);
+  await page.keyboard.press("2");
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.mode)) === "realms", "клавиша 2 включает «Владения»");
+  await page.locator('#artarius-brushbar [data-action="brushMode"][data-mode="erase"]').click();
+  await page.waitForTimeout(80);
+  check((await ev(() => window.art.studio.zone.erase)) === true, "ластик на полосе кисти");
+  const realmCell = await ev(() => { const s = window.art.studio; const z = s.zones().find(z => s.typeById(z.system.typeId)?.layerId !== "terrain" && z.system.geometry.cells.length); return z ? { id: z.id, cell: z.system.geometry.cells[0] } : null; });
+  if ( realmCell ) {
+    await ev(c => { const s = window.art.studio; s.zone.target = "new"; s.eyedrop(c.cell); }, realmCell);
+    await page.waitForTimeout(80);
+    check((await ev(() => window.art.studio.zone.target)) === realmCell.id, "пипетка берёт зону с гекса");
+  }
+  await shot(page, "brush-bar");
+  await page.locator('#artarius-brushbar [data-action="brushDone"]').click();
+  await page.waitForTimeout(80);
+  check((await ev(() => window.art.studio.tool)) === "select" && !(await page.locator("#artarius-brushbar").isVisible()), "«Готово» убирает кисть");
+  await page.keyboard.press("5");
+  await page.waitForTimeout(120);
+  check((await ev(() => window.art.studio.rightTab)) === "queue", "клавиша 5 открывает заявки");
+  await page.locator('#artarius-ui [data-action="rightTab"][data-tab="catalog"]').click();
+  await page.waitForTimeout(120);
+  check(await page.locator("#artarius-ui .art-catalog .art-cat-item").count() > 0, "справочник показывает зоны, метки и линии");
+  await page.locator("#artarius-ui .art-catalog .art-cat-item").first().click();
+  await page.waitForTimeout(120);
+  check(!!(await ev(() => window.art.studio.openId)) && (await ev(() => window.art.studio.rightTab)) === "tile", "щелчок в справочнике открывает карточку");
+  await page.locator('#artarius-ui [data-action="rightTab"][data-tab="catalog"]').click();
+  await page.waitForTimeout(100);
+  await shot(page, "catalog");
+  // Удаление метки: внизу «Удалено · Отменить», кнопка возвращает метку.
+  await ev(() => { const s = window.art.studio; s.closeRight?.(); s.setTool("select", { toggle: false }); });
+  const nMarks = await marksN();
+  await ev(() => { const s = window.art.studio; const id = [...s.states.values()].find(x => x.system.kind === "object").id; return s.deleteMarks([id]); });
+  await page.waitForTimeout(120);
+  check(await page.locator("#artarius-toast:not([hidden])").isVisible(), "после удаления внизу «Отменить»");
+  await shot(page, "toast");
+  await page.locator('#artarius-toast [data-action="undo"]').click();
+  await page.waitForTimeout(150);
+  check((await marksN()) === nMarks && !(await page.locator("#artarius-toast").isVisible()), "«Отменить» возвращает метку");
+  // Подсказки абзацами спрятаны под «?».
+  await ev(() => window.art.studio.setMode("marks"));
+  await page.waitForTimeout(100);
+  const hintsOff = await page.locator("#artarius-ui .art-intro").count();
+  await page.locator('#artarius-ui [data-action="toggleHints"]').first().click();
+  await page.waitForTimeout(100);
+  check(hintsOff === 0 && (await page.locator("#artarius-ui .art-intro").count()) > 0, "подсказки показываются по «?»");
+  await page.locator('#artarius-ui [data-action="toggleHints"]').first().click();
+  await ev(() => window.art.studio.setTool("select", { toggle: false }));
 
   const pageErrors = await ev(() => window.artErrors);
   assert.deepEqual([...errors, ...pageErrors], [], "ошибок в консоли нет");

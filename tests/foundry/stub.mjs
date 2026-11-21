@@ -238,6 +238,7 @@ class ApplicationV2 {
     this.rendered = true;
     return this;
   }
+  get position() { return this.options.position; }
   setPosition(p = {}) { Object.assign(this.options.position, p); this._onPosition?.(this.options.position); return this.options.position; }
   async close() {
     this.rendered = false;

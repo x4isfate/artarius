@@ -30,6 +30,12 @@ const iconCategory = path => Object.keys(ICON_LIBRARY).find(c => ICON_LIBRARY[c]
 
 export const TOOLS = ["select", "zone", "mark", "line"];
 
+/**
+ * Режимы карты (0.9.3, полоса сверху): местность и владения — кисть зон своих слоёв,
+ * метки и линии — свои инструменты, игроки — заявки. Клавиши 1–5.
+ */
+export const MODES = ["terrain", "realms", "marks", "lines", "players"];
+
 export default class Studio {
   constructor(backend) {
     this.backend = backend;
@@ -41,15 +47,18 @@ export default class Studio {
     this.inspected = null;
     /** Раскрытый элемент в карточке. */
     this.openId = null;
-    /** Вкладка правой панели: "tile" или "queue". */
+    /** Вкладка правой панели: "tile" (гекс), "catalog" (справочник) или "queue" (заявки). */
     this.rightTab = "tile";
+    /** Справочник в правой панели: поиск и свёрнутые ветки (ключи «layer:id», «marks», «lines»). */
+    this.catalog = { q: "", shut: new Set() };
     this.rightOpen = false;
     /** Панель кнопок вокруг осматриваемого гекса. */
     this.hudOpen = false;
     /** Метку тащат мышью: { id, from, at, moved }. */
     this.markDrag = null;
     /** Настройки инструментов. */
-    this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, detachLayer: "terrain", filter: "" };
+    /** scope — какие слои у кисти: "" все, "terrain" местность, "realms" всё, кроме местности. erase — кисть стирает. */
+    this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, erase: false, detachLayer: "terrain", filter: "", scope: "" };
     this.mark = { typeId: "city", name: "", text: "", paint: false };
     /** mode: "free" — точки где угодно, "hex" — путь через центры гексов, "draw" — от руки протяжкой. */
     this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [], join: true };
@@ -156,12 +165,58 @@ export default class Studio {
 
   /** Тип по умолчанию для вида, если выбранного больше нет. */
   _ensureType(slot, kind) {
-    const list = this.typesOf(kind);
+    const list = slot === "zone" ? this.zoneTypes() : this.typesOf(kind);
     if ( !list.some(t => t.id === this[slot].typeId) ) this[slot].typeId = list[0]?.id ?? "";
   }
 
   zones() {
     return [...this.states.values()].filter(s => s.system.kind === "area");
+  }
+
+  /** Слой подходит режиму кисти: местность или всё остальное. */
+  inScope(layerId, scope = this.zone.scope) {
+    if ( scope === "terrain" ) return layerId === "terrain";
+    if ( scope === "realms" ) return layerId !== "terrain";
+    return true;
+  }
+
+  /** Типы зон для кисти с учётом режима. Пустой режим — все типы. */
+  zoneTypes() {
+    const all = this.typesOf("area");
+    const list = all.filter(t => this.inScope(t.layerId ?? "overlay"));
+    return list.length ? list : all;
+  }
+
+  /** Режим карты сейчас: по инструменту и открытой вкладке. */
+  get mode() {
+    if ( this.tool === "zone" ) return this.zone.scope === "terrain" ? "terrain" : "realms";
+    if ( this.tool === "mark" ) return "marks";
+    if ( this.tool === "line" ) return "lines";
+    if ( this.rightOpen && this.rightTab === "queue" ) return "players";
+    return "";
+  }
+
+  /** Включить режим карты. Тот же режим ещё раз — снова Осмотр. */
+  setMode(mode) {
+    if ( !MODES.includes(mode) ) return;
+    // Кисть, открытая не из полосы режимов (scope пуст), ещё не «Владения»: первое нажатие включает режим.
+    const same = (mode === "terrain" || mode === "realms") ? this.tool === "zone" && this.zone.scope === mode : mode === this.mode;
+    if ( same && mode !== "players" ) return this.setTool("select", { toggle: false });
+    if ( mode === "terrain" || mode === "realms" ) {
+      const was = this.zone.scope;
+      this.zone.scope = mode;
+      if ( was !== mode ) {
+        this.zone.target = "new";
+        const cur = this.typeById(this.zone.typeId);
+        if ( !cur || !this.inScope(cur.layerId ?? "overlay") ) this.zone.typeId = "";
+      }
+      return this.setTool("zone", { toggle: false });
+    }
+    if ( mode === "marks" ) return this.setTool("mark", { toggle: false });
+    if ( mode === "lines" ) return this.setTool("line", { toggle: false });
+    if ( this.tool !== "select" ) this.setTool("select", { toggle: false });
+    if ( this.rightOpen && this.rightTab === "queue" ) return this.closeRight();
+    this.openQueue();
   }
 
   /**
@@ -259,6 +314,16 @@ export default class Studio {
         this._drag = { last: cell, erase: false, added: new Map(), inspect: true };
       }
       return;
+    }
+    // Alt-щелчок кистью — пипетка: кисть берёт зону под курсором.
+    if ( alt && this.tool === "zone" ) {
+      if ( inside ) this.eyedrop(cell);
+      return;
+    }
+    // Щелчок «Метками» по уже стоящей метке открывает её карточку, а не ставит новую.
+    if ( this.tool === "mark" && !shift && !alt ) {
+      const hit = markAt(this.markSlots().slots, point);
+      if ( hit ) { this.openMarkCard(hit.id, hit.cell); return; }
     }
     if ( alt || this.tool === "select" ) {
       // Метку под курсором можно утащить на другой гекс, с Alt — в любую точку; щелчок без протяжки выбирает её.
@@ -392,7 +457,8 @@ export default class Studio {
     if ( !d ) return;
     // В режиме «Рисовать сразу» протяжка тут же уходит в зону или ставит метки.
     if ( !d.erase && d.added.size ) {
-      if ( this.tool === "zone" && this.zone.paint ) await this.attach([...d.added.values()]);
+      if ( this.tool === "zone" && this.zone.erase ) await this.eraseCells([...d.added.values()]);
+      else if ( this.tool === "zone" && this.zone.paint ) await this.attach([...d.added.values()]);
       else if ( this.tool === "mark" && this.mark.paint ) await this.placeMarks([...d.added.values()]);
     }
     this.changed("ui");
@@ -517,6 +583,28 @@ export default class Studio {
     this.changed("ui");
   }
 
+  /**
+   * Ластик кисти: гексы уходят из выбранной зоны, а без неё — из всех зон режима
+   * (местность или владения). Сами зоны остаются, пустые — в «Архиве».
+   */
+  async eraseCells(cells) {
+    if ( !cells.length ) return;
+    const target = this.zone.target !== "new" && this.states.has(this.zone.target) ? this.zone.target : null;
+    const ops = detachOps({ states: this.states, types: this.types, cells, zoneId: target })
+      .filter(op => target || this.inScope(layerIdOf(this.states.get(op.id), this.types)));
+    for ( const c of cells ) this.selection.delete(cellKey(c));
+    if ( ops.length ) await this._commit(ops);
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Кисть: красить сразу, стирать или выбирать гексы под кнопку. */
+  setBrush(mode) {
+    this.zone.paint = mode === "paint";
+    this.zone.erase = mode === "erase";
+    this.changed("ui");
+  }
+
   /** Убрать выбранные гексы из зон слоя. */
   async detach(cells = this.selectedCells()) {
     if ( !cells.length ) return this.backend.notify("warn", this.t("ART.Zone.noCells"));
@@ -628,7 +716,7 @@ export default class Studio {
     this.hudMenu = null;
     await this._commit(list.map(s => ({ action: "delete", id: s.id, name: s.name })), { label: "delete" });
     const name = list.length === 1 ? (list[0].name || this.t("ART.Card.unnamed")) : "";
-    this.backend.notify("info", list.length === 1 ? this.t("ART.Mark.deletedOne", { name }) : this.t("ART.Mark.deletedMany", { n: list.length }));
+    this.showToast(list.length === 1 ? this.t("ART.Mark.deletedOne", { name }) : this.t("ART.Mark.deletedMany", { n: list.length }), { undo: true });
     this.changed("ui");
     this.changed("overlay");
   }
@@ -1099,6 +1187,34 @@ export default class Studio {
     this.changed("overlay");
   }
 
+  /** Карточка метки из режима «Метки»: гекс в осмотр, справа раскрыта эта метка. */
+  openMarkCard(id, cell) {
+    this.inspected = cell ? [cell[0], cell[1]] : this.inspected;
+    this.selection.clear();
+    this.rightOpen = true;
+    this.rightTab = "tile";
+    this.openId = id;
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
+  /** Пипетка: кисть берёт зону режима на этом гексе (верхнюю по слоям). */
+  eyedrop(cell) {
+    const key = cellKey(cell);
+    const order = new Map(this.layers.map((l, n) => [l.id, n]));
+    const here = this.zones().filter(z => zoneCells(z).some(c => cellKey(c) === key))
+      .filter(z => this.inScope(layerIdOf(z, this.types)))
+      .sort((a, b) => (order.get(layerIdOf(b, this.types)) ?? 0) - (order.get(layerIdOf(a, this.types)) ?? 0));
+    const z = here[0];
+    if ( !z ) return this.backend.notify("info", this.t("ART.Zone.nothingHere"));
+    this.zone.target = z.id;
+    this.zone.typeId = z.system.typeId;
+    this.zone.erase = false;
+    this.backend.notify("info", this.t("ART.Zone.picked", { name: z.name || this.t("ART.Card.unnamed") }));
+    this.changed("ui");
+    this.changed("overlay");
+  }
+
   /** Подробности гекса в окне; id — сразу раскрыть этот элемент. */
   openDetails(id = null) {
     if ( !this.inspected ) return;
@@ -1260,7 +1376,7 @@ export default class Studio {
     this.markSel.delete(id);
     if ( this.openId === id ) this.openId = null;
     await this._commit([{ action: "delete", id, name: s.name }]);
-    this.backend.notify("info", this.t("ART.Card.deleted", { name: s.name || this.t("ART.Card.unnamed") }));
+    this.showToast(this.t("ART.Card.deleted", { name: s.name || this.t("ART.Card.unnamed") }), { undo: true });
     this.changed("ui");
     this.changed("overlay");
   }
@@ -1303,6 +1419,26 @@ export default class Studio {
   panTo(id) {
     const pt = this.pointOf(this.stateOf(id));
     if ( pt ) this.backend.panTo(pt);
+  }
+
+  /** Из справочника: карта едет к элементу, его гекс в осмотре, справа раскрыта его карточка. */
+  focusFeature(id) {
+    const st = this.stateOf(id);
+    if ( !st ) return;
+    const pt = this.pointOf(st);
+    const cell = st.system.kind === "area" ? zoneCells(st)[0]
+      : st.system.kind === "object" ? markCell(st, this.grid.cellAt)
+      : pt ? this.grid.cellAt(pt) : null;
+    if ( pt ) this.backend.panTo(pt);
+    if ( cell && this.grid.inBounds(cell) ) {
+      this.inspected = [cell[0], cell[1]];
+      this.selection.clear();
+    }
+    this.rightOpen = true;
+    this.rightTab = cell ? "tile" : this.rightTab;
+    this.openId = id;
+    this.changed("ui");
+    this.changed("overlay");
   }
 
   /* Статусы и аспекты. path — "statuses" или "aspects.N.statuses". */
@@ -1606,6 +1742,22 @@ export default class Studio {
 
   /* ---------------------------------------------------------------- */
 
+  /**
+   * Плашка внизу на несколько секунд: что сделано и кнопка «Отменить» (0.9.3, вместо всплывающих уведомлений).
+   * Без панелей (тесты, API) текст уходит обычным уведомлением.
+   */
+  showToast(text, { undo = false } = {}) {
+    this.toast = { text, undo, id: (this.toast?.id ?? 0) + 1, at: Date.now() };
+    if ( !this._hasToastUI ) this.backend.notify("info", text);
+    this.changed("ui");
+  }
+
+  hideToast() {
+    if ( !this.toast ) return;
+    this.toast = null;
+    this.changed("ui");
+  }
+
   /** Запомнить шаг для Ctrl+Z. Новый шаг стирает то, что можно было вернуть Ctrl+Shift+Z. */
   _remember(entry) {
     this._history.push(entry);
@@ -1627,6 +1779,7 @@ export default class Studio {
     await this.flush();
     const e = this._history.pop();
     if ( !e ) { this.backend.notify("info", this.t("ART.Undo.nothing")); return false; }
+    this.toast = null;
     await e.undo();
     this._redo.push(e);
     this.markSel.clear();

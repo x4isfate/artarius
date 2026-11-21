@@ -271,7 +271,9 @@
       "createEmpty": "Create an empty zone",
       "createdEmpty": "Zone «{name}» created with no hexes. It is in the Archive; paint with it any time.",
       "noneFound": "No such zones.",
-      "paintWith": "Paint with this zone"
+      "paintWith": "Paint with this zone",
+      "nothingHere": "No zone of this mode here.",
+      "picked": "Brush: «{name}»"
     },
     "Mark": {
       "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
@@ -280,8 +282,8 @@
       "paint": "Place on click",
       "noCells": "Select hexes first.",
       "noType": "Pick a mark type.",
-      "deletedOne": "Mark “{name}” deleted. Ctrl+Z brings it back.",
-      "deletedMany": "Marks deleted: {n}. Ctrl+Z brings them back."
+      "deletedOne": "Mark “{name}” deleted.",
+      "deletedMany": "Marks deleted: {n}."
     },
     "Line": {
       "hint": "Pick a mode below. Right-click removes the last point, Esc clears the line, Enter or double-click finishes it.",
@@ -343,7 +345,7 @@
       "order": "Order on the hex",
       "earlier": "Earlier",
       "later": "Later",
-      "deleted": "“{name}” deleted. Ctrl+Z brings it back.",
+      "deleted": "“{name}” deleted.",
       "statusesAspects": "Statuses and aspects",
       "editStatuses": "Edit",
       "doneStatuses": "Done",
@@ -638,6 +640,52 @@
       "curved": "Curved",
       "straight": "Straight",
       "none": "Hidden"
+    },
+    "Mode": {
+      "title": "Map modes",
+      "terrain": "Terrain",
+      "realms": "Realms",
+      "marks": "Marks",
+      "lines": "Lines",
+      "players": "Players",
+      "hint": {
+        "terrain": "brush for forests, mountains, seas",
+        "realms": "brush for realms, regions and your own layers",
+        "marks": "place marks; click a mark to open it",
+        "lines": "roads, rivers, borders",
+        "players": "player claims"
+      }
+    },
+    "Brush": {
+      "newOf": "New zone: {name}",
+      "pick": "Select",
+      "paint": "Paint",
+      "erase": "Erase",
+      "done": "Done",
+      "eyedrop": "Alt-click the map to take the zone under the cursor",
+      "hint": {
+        "pick": "Drag selects hexes; the button applies the zone",
+        "paint": "Drag paints with the chosen zone right away",
+        "erase": "Drag removes hexes from the chosen zone, or from every zone of this mode"
+      }
+    },
+    "Catalog": {
+      "tab": "Catalog",
+      "show": "Show on the map and open",
+      "find": "Find a zone, mark or demiurge",
+      "none": "Nothing found.",
+      "emptyLayer": "No zones in this layer yet."
+    },
+    "Dock": {
+      "on": "Dock to the right edge",
+      "off": "Undock"
+    },
+    "Hints": {
+      "show": "Show hints",
+      "hide": "Hide hints"
+    },
+    "Toast": {
+      "undo": "Undo"
     }
   }
 }
