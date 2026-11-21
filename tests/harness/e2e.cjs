@@ -682,6 +682,8 @@ async function shot(page, name) {
   check((await ev(() => window.art.studio.mode)) === "terrain", "кнопка «Местность» включает кисть местности");
   check(await page.locator('#artarius-layerbar .art-mode[data-mode="terrain"].active').count() === 1, "режим подсвечен");
   check(await page.locator("#artarius-brushbar:not([hidden])").isVisible(), "внизу полоса кисти");
+  const boxes = await ev(() => { const r = id => document.getElementById(id).getBoundingClientRect(); const m = r("artarius-layerbar").width ? document.querySelector("#artarius-layerbar .art-modes").getBoundingClientRect() : null; return { modes: m && { top: m.top, bottom: m.bottom, cx: (m.left + m.right) / 2 }, brush: r("artarius-brushbar"), w: innerWidth }; });
+  check(boxes.modes && boxes.modes.bottom <= boxes.brush.top && boxes.brush.top - boxes.modes.bottom < 20 && Math.abs(boxes.modes.cx - boxes.w / 2) < 4, "режимы внизу по центру, прямо над кистью");
   const tilesTerrain = await ev(() => [...document.querySelectorAll("#artarius-ui .art-tiles [data-id]")].map(e => window.art.studio.typeById(e.dataset.id)?.layerId).filter(Boolean));
   check(tilesTerrain.length > 0 && tilesTerrain.every(l => l === "terrain"), "в палитре плитки только местности");
   await shot(page, "mode-terrain");
