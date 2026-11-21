@@ -556,25 +556,41 @@ export default class ArtariusUI {
       (globalThis.cancelAnimationFrame ?? clearTimeout)(this._renderFrame);
       this._renderFrame = null;
     }
-    try {
-      if ( this.parts.wheel ) patch(this.parts.wheel, this.renderWheel());
+    // Каждая часть рисуется отдельно: ошибка в одной (например, на непривычных данных мира) не гасит остальные.
+    const safe = (name, fn) => {
+      try { fn(); } catch(err) { this._renderError(name, err); }
+    };
+    safe("wheel", () => { if ( this.parts.wheel ) patch(this.parts.wheel, this.renderWheel()); });
+    safe("left", () => {
       const leftOn = this._leftVisible();
       if ( leftOn ) patch(this.parts.left, this.renderLeft());
       this._show("left", leftOn, this._leftTitle());
+    });
+    safe("right", () => {
       if ( s.rightOpen ) patch(this.parts.right, this.renderRight());
       this._show("right", s.rightOpen, this.t({ queue: "ART.Queue.title", catalog: "ART.Catalog.tab" }[s.rightTab] ?? "ART.Card.tab"));
+    });
+    safe("settings", () => {
       if ( s.settings.open ) patch(this.parts.settings, this.renderSettings());
       this._show("settings", s.settings.open, this.t("ART.Settings.title"));
-      this.renderHud();
-      this.renderBar();
-      this.renderLayerbar();
-      this.renderBrushbar();
-      this.renderToast();
-      this._syncTheme();
-      this._placeLayerbar();
-    } catch(err) {
-      console.error("artarius | render", err);
-    }
+    });
+    safe("hud", () => this.renderHud());
+    safe("bar", () => this.renderBar());
+    safe("modes", () => this.renderLayerbar());
+    safe("brush", () => this.renderBrushbar());
+    safe("toast", () => this.renderToast());
+    safe("theme", () => this._syncTheme());
+    safe("place", () => this._placeLayerbar());
+  }
+
+  /** Ошибка отрисовки: в консоль и один раз уведомлением с текстом, чтобы её можно было прислать. */
+  _renderError(part, err) {
+    console.error(`artarius | render ${part}`, err);
+    const msg = `${part}: ${err?.message ?? err}`;
+    this._renderErrors ??= new Set();
+    if ( this._renderErrors.has(msg) ) return;
+    this._renderErrors.add(msg);
+    this.backend.notify?.("error", `Artarius ${msg}`);
   }
 
   /** Окно инструмента: у зоны, метки и линии всегда; у «Осмотра» в Foundry — только по кнопке «Слои». */
