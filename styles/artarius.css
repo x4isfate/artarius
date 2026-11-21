@@ -598,7 +598,7 @@
 }
 
 /* 0.6.0: слои у названия сцены, как панель «Слои» в Azgaar */
-#artarius-layerbar { position: fixed; left: 120px; top: 8px; z-index: 65; pointer-events: none; }
+#artarius-layerbar { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 65; pointer-events: none; max-width: calc(100vw - 32px); }
 #artarius-layerbar[hidden] { display: none; }
 #artarius-layerbar > * { pointer-events: auto; }
 #artarius-layerbar .art-lb-toggle {
@@ -610,7 +610,7 @@
 #artarius-layerbar .art-lb-toggle b { font-weight: 600; color: var(--art-warn); }
 #artarius-layerbar .art-lb-toggle:hover, #artarius-layerbar .art-lb-toggle.active { border-color: var(--art-warn); }
 /* 0.9.1: слои в своём окне, его двигают и растягивают */
-#artarius-ui > .art-layerwin { left: 130px; top: var(--art-top, 64px); width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - var(--art-top, 64px) - 26px); z-index: 3; }
+#artarius-ui > .art-layerwin { left: 50%; top: auto; bottom: 132px; transform: translateX(-50%); width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 160px); z-index: 3; }
 .artarius .art-lb-panel { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
 .artarius .art-lb-panel .art-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .artarius .art-lb-panel select { flex: 1; min-width: 0; height: 28px; }
