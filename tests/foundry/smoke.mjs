@@ -116,6 +116,20 @@ await check("группа инструментов слева", async () => {
   c.tools.queue.onChange(new Event("x"), true);
   await tick();
   assert(api().studio.rightOpen && api().studio.rightTab === "queue" && win("right"), "заявки не открылись");
+  {
+    // 0.9.3: правая панель прижата к боковой панели Foundry; сдвинутая — открепляется.
+    const host = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui.host;
+    const w = host.windows.right;
+    const sb = document.getElementById("sidebar").getBoundingClientRect();
+    assert(host.isDocked("right") && w.element.classList.contains("art-docked"), "правая панель не прикреплена");
+    assert(Math.abs(w.position.left + w.position.width + 6 - sb.left) <= 1 && w.position.top === 6, `правая панель не у края: ${JSON.stringify(w.position)}`);
+    w.setPosition({ left: 200, top: 200 });
+    await tick();
+    assert(!host.isDocked("right") && !w.element.classList.contains("art-docked"), "сдвинутая панель не открепилась");
+    host.dock("right", true);
+    await tick();
+    assert(host.isDocked("right") && Math.abs(w.position.left + w.position.width + 6 - sb.left) <= 1, "булавка не вернула панель к краю");
+  }
   api().studio.closeRight();
   await tick();
   assert(!win("right"), "окно заявок не закрылось");

@@ -128,6 +128,9 @@ Hooks.once("ready", () => {
   rememberClaimStatuses();
   const host = new FoundryHost({ onClose: name => runtime.ui?.windowClosed(name) });
   runtime.ui = new ArtariusUI(studio, backend, { host, project: screenPoint });
+  host.onDockChange = () => runtime.ui?.render();
+  // Свёрнутая или развёрнутая боковая панель Foundry меняет край, к которому прижата правая панель.
+  Hooks.on("collapseSidebar", () => setTimeout(() => host._onResize(), 250));
   syncUI();
   if ( !game.settings.get(MODULE_ID, "guideSeen") && isWorldScene() ) {
     GuideApp.open();
