@@ -828,3 +828,27 @@
   #artarius-brushbar, #artarius-toast { animation: none; }
   #artarius-layerbar .art-mode { transition: none; }
 }
+
+/*
+ * 0.9.5: полосы внизу в цветах интерфейса Foundry. Цвета снимаются с кнопок сцены (ядро, Carolingian UI
+ * и другие темы) и приходят переменными --art-bar-*; без них остаётся своя палитра.
+ */
+#artarius-bar.art-themed, #artarius-brushbar.art-themed, #artarius-toast.art-themed,
+#artarius-layerbar.art-themed .art-modes {
+  background: var(--art-bar-bg, rgba(24, 21, 18, 0.95));
+  color: var(--art-bar-ink, var(--art-ink));
+  border-color: var(--art-bar-line, var(--art-line-2));
+}
+#artarius-layerbar.art-themed .art-mode { color: var(--art-bar-ink, var(--art-ink)); border-right-color: var(--art-bar-line, var(--art-line)); }
+#artarius-layerbar.art-themed .art-mode:hover { background: color-mix(in srgb, var(--art-bar-ink, #fff) 10%, transparent); }
+#artarius-layerbar.art-themed .art-mode.active { background: var(--art-bar-on-bg, var(--art-warn)); color: var(--art-bar-on-ink, #1b1714); }
+#artarius-layerbar.art-themed .art-mode.art-lb-toggle b { color: inherit; }
+#artarius-bar.art-themed .art-btn:not(.art-accent):not(.art-danger),
+#artarius-brushbar.art-themed .art-btn:not(.art-accent):not(.art-danger),
+#artarius-toast.art-themed .art-btn:not(.art-accent):not(.art-danger) {
+  background: var(--art-bar-btn, transparent); color: var(--art-bar-ink, var(--art-ink)); border-color: var(--art-bar-line, var(--art-line-2));
+}
+#artarius-bar.art-themed .art-btn.active, #artarius-brushbar.art-themed .art-btn.active {
+  background: var(--art-bar-on-bg, var(--art-warn)); color: var(--art-bar-on-ink, #1b1714); border-color: var(--art-bar-on-bg, var(--art-warn));
+}
+#artarius-bar.art-themed kbd, #artarius-brushbar.art-themed kbd, #artarius-toast.art-themed kbd, #artarius-layerbar.art-themed kbd { color: inherit; border-color: currentColor; }
