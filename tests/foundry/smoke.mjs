@@ -543,6 +543,19 @@ await check("0.9.5: полосы внизу видны при растянуто
   }
 });
 
+await check("0.9.6: окна открываются, когда в сохранённом месте есть sized и docked (0.9.3–0.9.5 падали)", async () => {
+  const { default: FoundryHost } = await import("../../scripts/ui/windows.mjs");
+  await game.settings.set("artarius", "windows", {
+    right: { left: 900, top: 6, width: 340, height: 700, sized: true, docked: true },
+    left: { left: 100, top: 80, sized: false }
+  });
+  const host = new FoundryHost({});
+  for ( const name of ["left", "right"] ) host.attach(name, document.createElement("div"));
+  assert(host.windows.right.options.position.left === 900 && host.windows.right.options.position.width === 340, "место окна не взято из сохранённого");
+  assert(host.isDocked("right") && host.sized.right, "прикрепление и размер пользователя потерялись");
+  window.removeEventListener("resize", host._onResize);
+});
+
 // ?shot: показать холст слоя, чтобы снять картинку сгенерированного мира.
 if ( location.search.includes("shot") ) {
   const app = new PIXI.Application({ width: 1400, height: 900, background: "#111111", antialias: true });
