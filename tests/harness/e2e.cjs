@@ -49,7 +49,7 @@ async function shot(page, name) {
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const atlas = () => ev(() => [...window.art.backend.atlas.values()].map(s => ({
     id: s.id, name: s.name, kind: s.system.kind, typeId: s.system.typeId, cells: s.system.geometry.cells?.length ?? 0,
-    statuses: s.system.statuses, aspects: s.system.aspects, demiurge: s.system.demiurge
+    statuses: s.system.statuses, aspects: s.system.aspects, demiurge: s.system.demiurge, demiurges: s.system.demiurges
   })));
   /** Экранная точка центра гекса [i, j]. */
   const at = async cell => ev(([i, j]) => {
@@ -220,7 +220,9 @@ async function shot(page, name) {
   const markId = await ev(() => window.art.studio.contents().marks[0].id);
   await act("openItem", `[data-id="${markId}"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:name"]`, "Винтерфол-на-Скале");
-  await page.selectOption(`#artarius-ui select[data-key="${markId}:demiurge"]`, "a-ice");
+  // 0.9.2: демиургов отмечают галочками, можно нескольких или никого.
+  await page.locator(`#artarius-ui [data-change="toggleDemiurge"][data-id="${markId}"][data-actor="a-ice"]`).check();
+  await shot(page, "demiurges");
   check(!(await page.locator(`#artarius-ui [data-action="addStatus"][data-id="${markId}"]`).count()), "статусы сначала только для чтения");
   await act("editStatuses", `[data-id="${markId}"]`);
   await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
@@ -233,7 +235,7 @@ async function shot(page, name) {
   await ev(() => window.art.studio.flush());
   a = await atlas();
   let m = a.find(x => x.id === markId);
-  check(m.name === "Винтерфол-на-Скале" && m.demiurge === "a-ice" && m.statuses[0].name === "Голод" && m.statuses[0].value === 1 && m.statuses[0].max === 10, "имя, демиург и статус «Голод (1/10)» сохранены");
+  check(m.name === "Винтерфол-на-Скале" && m.demiurge === "a-ice" && m.demiurges.join() === "a-ice" && m.statuses[0].name === "Голод" && m.statuses[0].value === 1 && m.statuses[0].max === 10, "имя, демиург и статус «Голод (1/10)» сохранены");
   await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
   await page.fill(`#artarius-ui [data-key="${markId}:statuses.1.name"]`, "Защищённая крепость");
   await act("toAspect", `[data-id="${markId}"][data-n="1"]`);
@@ -323,7 +325,23 @@ async function shot(page, name) {
   await click([6, 6]);
   const zonesBefore = await ev(() => window.art.studio.contents().zones.length);
   await hud("hudZone");
-  check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
+  check(await page.locator("#artarius-hud .art-hud-zones").isVisible(), "«Добавить в зону» открывает список зон");
+  check(await page.locator('#artarius-hud .art-hud-zones [data-action="hudZoneAdd"]').count() > 0, "в списке уже созданные зоны");
+  await shot(page, "hud-zones");
+  {
+    const far = await ev(() => {
+      const s = window.art.studio, here = new Set(s.contents().zones.map(z => z.id));
+      return s.zones().find(z => !here.has(z.id) && z.system.geometry.cells?.length)?.id ?? null;
+    });
+    if ( far ) {
+      await page.click(`#artarius-hud [data-action="hudZoneAdd"][data-id="${far}"]`);
+      await ev(() => window.art.studio.flush?.());
+      check(await ev(id => window.art.studio.contents().zones.some(z => z.id === id), far), "гекс лёг в выбранную зону");
+    } else {
+      await page.click('#artarius-hud [data-action="hudZoneNew"]');
+      check((await ev(() => window.art.studio.contents().zones.length)) >= Math.max(1, zonesBefore), "кнопка зоны на панели добавляет гекс в зону");
+    }
+  }
   await hud("hudPan");
   {
     // Щелчок по метке выбирает её и панель не трогает, поэтому щёлкаем по краю гекса, мимо меток.

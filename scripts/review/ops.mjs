@@ -11,6 +11,7 @@
  *
  * Черновик игрока: { [featureId]: Op }. На один элемент всегда одна операция.
  */
+import { demiurgesOf } from "../data/access.mjs";
 
 /** Сливает новую операцию с той, что уже лежит в черновике для этого элемента. */
 export function mergeOp(prev, next) {
@@ -97,19 +98,22 @@ export const DIFF_FIELDS = [
   ["name", s => s.name],
   ["text", s => s.text ?? ""],
   ["type", s => s.system?.typeId ?? ""],
-  ["demiurge", s => s.system?.demiurge ?? ""],
+  ["demiurge", s => demiurgesOf(s).slice().sort()],
   ["statuses", s => s.system?.statuses ?? []],
   ["aspects", s => s.system?.aspects ?? []],
   ["geometry", s => s.system?.geometry ?? {}],
   ["style", s => s.system?.style ?? {}],
   ["layer", s => [s.system?.layerId ?? "", s.system?.blend ?? "", s.system?.sort ?? 0]],
   ["links", s => s.system?.links ?? []],
-  ["visibility", s => s.system?.visibility?.mode ?? "all"]
+  ["visibility", s => {
+    const v = s.system?.visibility;
+    return !v?.mode || v.mode === "all" ? "all" : [v.mode, v.mode === "some" ? [...(v.users ?? [])].sort() : []];
+  }]
 ];
 
 /** Какие части элемента меняет правка. */
 export function changedFields(before, after) {
-  if ( !before ) return DIFF_FIELDS.map(([k]) => k).filter(k => (k !== "layer" || after?.system?.kind === "area") && (k !== "visibility" || after?.system?.kind === "object"));
+  if ( !before ) return DIFF_FIELDS.map(([k]) => k).filter(k => (k !== "layer" || after?.system?.kind === "area") && (k !== "visibility" || (after?.system?.visibility?.mode ?? "all") !== "all"));
   return DIFF_FIELDS.filter(([, get]) => JSON.stringify(get(before)) !== JSON.stringify(get(after))).map(([k]) => k);
 }
 

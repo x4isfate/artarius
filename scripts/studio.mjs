@@ -12,7 +12,7 @@
 import { TOOL_KIND } from "./constants.mjs";
 import {
   cellKey, parseKey, attachOps, detachOps, markOps, lineOp, tileContents, cellsAlong,
-  makeType, nextZoneColor, layerIdOf, zoneCells, markCell
+  makeType, nextZoneColor, layerIdOf, zoneCells, markCell, blankState
 } from "./data/world.mjs";
 import { randomId, statusToAspect } from "./review/ops.mjs";
 import { simplify } from "./geometry/geometry.mjs";
@@ -20,7 +20,7 @@ import { viewOf, activePreset, BUILTIN_PRESETS, VIEW_PARTS } from "./data/view.m
 import { ICON_LIBRARY, iconPath, isLibraryIcon } from "./data/icons.mjs";
 import { layoutMarks, markAt, groupOrder, markFootprint } from "./data/mark-layout.mjs";
 import { baseStatus, baseAspect } from "./data/statuses.mjs";
-import { checkOps } from "./data/access.mjs";
+import { checkOps, demiurgesOf, setDemiurges, canEditVisibility, lockedViewers } from "./data/access.mjs";
 import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
@@ -162,6 +162,28 @@ export default class Studio {
 
   zones() {
     return [...this.states.values()].filter(s => s.system.kind === "area");
+  }
+
+  /**
+   * Один справочник зон: слой → тип → зоны, вместе с пустыми (у них 0 гексов).
+   * Его читают кисть зон, меню «Добавить в зону», окно слоёв и настройки.
+   * filter ищет по названию зоны и типа. Зоны с неизвестным типом идут последней группой.
+   */
+  zoneCatalog(filter = "") {
+    const f = String(filter ?? "").trim().toLowerCase();
+    const types = this.typesOf("area");
+    const typeName = id => types.find(t => t.id === id)?.name ?? "";
+    const match = z => !f || (z.name ?? "").toLowerCase().includes(f) || typeName(z.system.typeId).toLowerCase().includes(f);
+    const zones = this.zones().filter(match).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+    const out = this.layers.map(layer => ({
+      layer,
+      types: types.filter(t => (t.layerId ?? "overlay") === layer.id)
+        .map(type => ({ type, zones: zones.filter(z => z.system.typeId === type.id) }))
+    }));
+    const placed = new Set(out.flatMap(g => g.types.flatMap(x => x.zones.map(z => z.id))));
+    const lost = zones.filter(z => !placed.has(z.id));
+    if ( lost.length ) out.push({ layer: { id: "", name: this.t("ART.Zone.otherZones") }, types: [{ type: null, zones: lost }] });
+    return out;
   }
 
   /* ---------------------------------------------------------------- */
@@ -468,6 +490,31 @@ export default class Studio {
     for ( const c of cells ) this.selection.delete(cellKey(c));
     this.changed("ui");
     this.changed("overlay");
+  }
+
+  /**
+   * Кнопка «Создать зону» в окне зон: с выбранными гексами — как «Добавить», без них — пустая зона.
+   * Пустая зона встаёт в справочник с 0 гексов, красить ею можно потом.
+   */
+  async createZone() {
+    if ( this.selection.size ) return this.attach();
+    const type = this.typeById(this.zone.typeId);
+    if ( !type ) return this.backend.notify("warn", this.t("ART.Zone.noType"));
+    const id = this.backend.newId();
+    const state = blankState({
+      id, kind: "area", name: this.zone.name.trim() || type.name, typeId: type.id, layerId: type.layerId ?? "overlay",
+      style: type.layerId === "terrain" ? {} : { color: this.zone.color || nextZoneColor(this.states) },
+      geometry: { cells: [] }
+    });
+    const text = this.zone.text?.trim();
+    if ( text ) state.text = text;
+    this.zone.target = id;
+    this.zone.name = "";
+    this.zone.text = "";
+    this.zone.color = "";
+    await this._commit([{ action: "create", id, state }]);
+    this.backend.notify("info", this.t("ART.Zone.createdEmpty", { name: state.name }));
+    this.changed("ui");
   }
 
   /** Убрать выбранные гексы из зон слоя. */
@@ -1072,6 +1119,21 @@ export default class Studio {
   async zoneHere() {
     if ( !this.inspected ) return;
     this._ensureType("zone", "area");
+    this.hudMenu = null;
+    await this.attach(this.inspectCells());
+  }
+
+  /** Кнопка «Добавить в зону» на панели гекса: список уже созданных зон с поиском. */
+  toggleZoneMenu() {
+    this.hudMenu = this.hudMenu?.kind === "zone" ? null : { kind: "zone", q: "" };
+    this.changed("ui");
+  }
+
+  /** Положить осматриваемые гексы в уже созданную зону (и дальше красить ею). */
+  async addHereToZone(zoneId) {
+    if ( !this.inspected || !this.states.has(zoneId) ) return;
+    this.hudMenu = null;
+    this.zone.target = zoneId;
     await this.attach(this.inspectCells());
   }
 
@@ -1117,7 +1179,7 @@ export default class Studio {
     const terrain = byLayer("terrain");
     const realm = byLayer("politics");
     const region = byLayer("regions");
-    const owner = [realm, ...zones, ...marks].find(s => s?.system?.demiurge)?.system.demiurge ?? "";
+    const owner = demiurgesOf([realm, ...zones, ...marks].find(s => s && demiurgesOf(s).length))[0] ?? "";
     return { cell: this.inspected, terrain, realm, region, owner, zones, marks, lines, cells: this.multi ? this.selection.size : 1 };
   }
 
@@ -1298,19 +1360,52 @@ export default class Studio {
     }, { now: true });
   }
 
-  /** Кому видна метка: "all" — всем, "gm" — мастеру и автору, "some" — ещё выбранным игрокам. */
+  /**
+   * Кому виден элемент (метка, зона, линия): "all" — всем, "gm" — мастеру, автору и демиургам,
+   * "some" — ещё выбранным игрокам. Игроки-демиурги всегда в списке: убрать их нельзя.
+   */
   setVisibility(id, mode, users = null) {
     const st = this.stateOf(id);
-    if ( !st || st.system.kind !== "object" || !this.canChangeVisibility(st) ) return;
+    if ( !st || !this.canChangeVisibility(st) ) return;
     this.edit(id, s => {
       const cur = s.system.visibility ?? { mode: "all", users: [] };
-      s.system.visibility = { mode: mode ?? cur.mode, users: users ?? cur.users ?? [] };
+      const m = mode ?? cur.mode ?? "all";
+      const list = new Set(users ?? cur.users ?? []);
+      for ( const u of this.lockedViewers(s) ) list.add(u);
+      s.system.visibility = { mode: m, users: m === "some" ? [...list] : [] };
     }, { now: true });
   }
 
-  /** Видимость меняет мастер или автор метки. */
+  /** Отметить или снять игрока в «Кто видит». Демиурга снять нельзя. */
+  toggleViewer(id, userId) {
+    const st = this.stateOf(id);
+    if ( !st || !this.canChangeVisibility(st) || this.lockedViewers(st).includes(userId) ) return;
+    const cur = new Set(st.system.visibility?.users ?? []);
+    if ( cur.has(userId) ) cur.delete(userId); else cur.add(userId);
+    this.setVisibility(id, "some", [...cur]);
+  }
+
+  /** Игроки, от которых элемент не спрятать: их персонажи — его демиурги. */
+  lockedViewers(st) {
+    return lockedViewers(st, this.backend.players?.() ?? []);
+  }
+
+  /** «Кто видит» меняет мастер или игрок, чей персонаж — демиург элемента. */
   canChangeVisibility(st) {
-    return this.backend.isGM || (!!st?.system.author && st.system.author === this.backend.userId);
+    return canEditVisibility(st, { isGM: this.backend.isGM, actorIds: this.backend.myActorIds?.() });
+  }
+
+  /** Демиурги элемента. У игрока такая правка уходит мастеру заявкой, даже у доверенного. */
+  setDemiurges(id, ids) {
+    this.edit(id, s => { setDemiurges(s.system, ids); }, { now: true });
+  }
+
+  /** Отметить или снять одного демиурга. */
+  toggleDemiurge(id, actorId) {
+    const st = this.stateOf(id);
+    if ( !st || !actorId ) return;
+    const cur = demiurgesOf(st);
+    this.setDemiurges(id, cur.includes(actorId) ? cur.filter(x => x !== actorId) : [...cur, actorId]);
   }
 
   addAspect(id) {
@@ -1336,7 +1431,7 @@ export default class Studio {
     this.edit(id, s => {
       if ( field === "name" ) s.name = value;
       else if ( field === "text" ) s.text = value;
-      else if ( field === "demiurge" ) s.system.demiurge = value;
+      else if ( field === "demiurge" ) setDemiurges(s.system, Array.isArray(value) ? value : (value ? [value] : []));
       else if ( field === "typeId" ) {
         s.system.typeId = value;
         if ( s.system.kind === "area" ) s.system.layerId = this.typeById(value)?.layerId ?? s.system.layerId;
@@ -1392,7 +1487,7 @@ export default class Studio {
       ? attachOps({ states, types, layers, cells, target: target.id })
       : attachOps({ states, types, layers, cells, newZone: {
         id: this.backend.newId(), typeId, name: type.name,
-        color: type.layerId === "terrain" ? "" : nextZoneColor(states), demiurge: zone.system.demiurge ?? ""
+        color: type.layerId === "terrain" ? "" : nextZoneColor(states), demiurges: demiurgesOf(zone)
       } });
     // Если новый тип на другом слое, гекс из старой зоны attachOps не уберёт: убираем сами.
     if ( !ops.some(op => op.id === zoneId) ) ops.push(...detachOps({ states, types, cells, zoneId }));
@@ -1556,12 +1651,16 @@ export default class Studio {
     if ( !ops.length ) return;
     // Новый элемент помнит автора: от этого зависят «чужое» в правах и кто видит скрытую метку.
     const me = this.backend.userId;
+    // Созданное игроком получает демиургом его персонажа (нет персонажа — демиургов нет).
+    const hero = this.backend.isGM ? "" : (this.backend.characterId?.() ?? "");
     for ( const op of ops ) {
-      if ( op.action === "create" && op.state?.system && !op.state.system.author && me && !this.states.has(op.id) ) op.state.system.author = me;
+      if ( op.action !== "create" || !op.state?.system || this.states.has(op.id) ) continue;
+      if ( !op.state.system.author && me ) op.state.system.author = me;
+      if ( hero && !demiurgesOf(op.state).length ) setDemiurges(op.state.system, [hero]);
     }
     // Права игрока: что нельзя, отбрасывается с объяснением.
     if ( !this.backend.isGM && this.backend.permissions ) {
-      const { allowed, denied } = checkOps(ops, id => this.states.get(id), this.backend.permissions(), me);
+      const { allowed, denied } = checkOps(ops, id => this.states.get(id), this.backend.permissions(), me, this.backend.myActorIds?.());
       if ( denied.length ) {
         const what = [...new Set(denied.map(d => this.t(`ART.Perm.${d.perm}`)))].join(", ");
         this.backend.notify("warn", this.t("ART.Perm.denied", { what }));

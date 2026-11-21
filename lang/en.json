@@ -177,7 +177,8 @@
       "text": "Description",
       "textPh": "Optional",
       "typeHere": "A new type applies to this hex only; the rest of the zone stays.",
-      "typeHereMany": "A new type applies only to the selected hexes of this zone; the rest stays."
+      "typeHereMany": "A new type applies only to the selected hexes of this zone; the rest stays.",
+      "owners": "Demiurges"
     },
     "Guide": {
       "title": "How to play"
@@ -265,7 +266,12 @@
       "noType": "Pick a zone type.",
       "nothingToDetach": "Selected hexes have no zones on this layer.",
       "cells": "{n} hexes",
-      "archive": "Archive"
+      "archive": "Archive",
+      "otherZones": "No type",
+      "createEmpty": "Create an empty zone",
+      "createdEmpty": "Zone «{name}» created with no hexes. It is in the Archive; paint with it any time.",
+      "noneFound": "No such zones.",
+      "paintWith": "Paint with this zone"
     },
     "Mark": {
       "hint": "Select hexes by click or drag, pick a mark type and press Place. Each hex gets its own mark.",
@@ -342,7 +348,9 @@
       "editStatuses": "Edit",
       "doneStatuses": "Done",
       "noStatusesYet": "No statuses or aspects yet.",
-      "addOwnStatus": "Custom status"
+      "addOwnStatus": "Custom status",
+      "noActors": "No characters yet.",
+      "ownersByClaim": "The GM confirms new demiurges: this edit goes to them as a claim."
     },
     "Queue": {
       "title": "Claims",
@@ -385,7 +393,7 @@
       "name": "name",
       "text": "description",
       "type": "type",
-      "demiurge": "demiurge",
+      "demiurge": "demiurges",
       "statuses": "statuses",
       "aspects": "aspects",
       "geometry": "place",
@@ -514,7 +522,9 @@
       "dragOrder": "drag up or down to reorder",
       "markPick": "Place a mark: pick type",
       "delete": "Delete mark (Delete)",
-      "deleteWhich": "Which mark to delete?"
+      "deleteWhich": "Which mark to delete?",
+      "zoneAdd": "Add to zone",
+      "zoneNew": "New zone: {name}"
     },
     "Settings": {
       "title": "Artarius settings",
@@ -598,14 +608,17 @@
       "no": "denied",
       "hint": "GM and assistant GM can do everything. A player's own setting beats the role. Others' things are those this player did not create.",
       "players": "Individual players",
-      "noPlayers": "No players yet."
+      "noPlayers": "No players yet.",
+      "visibility": "change visibility (demiurges only)"
     },
     "Vis": {
       "title": "Who sees it",
       "all": "Everyone",
-      "gm": "Only GM and me",
-      "some": "GM, me and chosen",
-      "onlyAuthor": "Only the GM or the mark's author can change visibility."
+      "gm": "GM and demiurges",
+      "some": "GM, demiurges and chosen players",
+      "locked": "Demiurge: always sees it",
+      "lockedList": "Demiurges always see it: {names}",
+      "onlyDemiurge": "Only the GM or a player whose character is a demiurge can change visibility."
     },
     "Chat": {
       "setting": "Map changes in chat",

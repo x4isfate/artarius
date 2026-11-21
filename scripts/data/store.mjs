@@ -311,3 +311,14 @@ export function pageDiff(source, full) {
   for ( const k of Object.keys(b) ) if ( !sameJSON(a[k], b[k]) ) out[`system.${k}`] = b[k];
   return out;
 }
+
+/** Персонажи, которыми владеет пользователь: закреплённый за ним и те, где у него права владельца. */
+export function ownedActorIds(user) {
+  if ( !user || user.isGM ) return [];
+  const out = new Set();
+  if ( user.character?.id ) out.add(user.character.id);
+  for ( const a of game.actors ?? [] ) {
+    try { if ( a.testUserPermission(user, "OWNER") ) out.add(a.id); } catch { /* актёр без прав */ }
+  }
+  return [...out];
+}

@@ -100,16 +100,8 @@ export class FoundryGrid {
   };
 }
 
-/** Персонажи, которыми владеет пользователь: закреплённый за ним и те, где у него права владельца. */
-export function ownedActorIds(user) {
-  if ( !user || user.isGM ) return [];
-  const out = new Set();
-  if ( user.character?.id ) out.add(user.character.id);
-  for ( const a of game.actors ?? [] ) {
-    try { if ( a.testUserPermission(user, "OWNER") ) out.add(a.id); } catch { /* актёр без прав */ }
-  }
-  return [...out];
-}
+/** Персонажи пользователя (см. store.ownedActorIds). */
+export const ownedActorIds = store.ownedActorIds;
 
 export default class FoundryBackend {
   constructor() {
@@ -169,11 +161,16 @@ export default class FoundryBackend {
   /** Данные гексов для слоёв климата (импорт Azgaar, генератор). */
   fields() { return canvas?.scene?.getFlag?.(MODULE_ID, "fields") ?? null; }
 
+  /** Игроки: actorIds — их персонажи, через них игрок демиург (и его не спрятать от своих элементов). */
   players() {
-    return game.users.filter(u => !u.isGM).map(u => ({
-      id: u.id, name: u.name, color: u.color?.css ?? String(u.color ?? "#888"), active: u.active
-    }));
+    return this._cached("players", () => game.users.filter(u => !u.isGM).map(u => ({
+      id: u.id, name: u.name, color: u.color?.css ?? String(u.color ?? "#888"), active: u.active,
+      actorIds: ownedActorIds(u)
+    })));
   }
+
+  /** Персонаж, закреплённый за этим пользователем: он становится демиургом того, что создаёт игрок. */
+  characterId() { return game.user.isGM ? "" : (game.user.character?.id ?? ""); }
 
   actors() {
     const rank = a => (a.type === "character" ? 0 : 1);

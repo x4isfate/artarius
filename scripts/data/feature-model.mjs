@@ -21,7 +21,17 @@ export default class FeatureModel extends foundry.abstract.TypeDataModel {
     return {
       kind: new fields.StringField({ required: true, initial: "object", choices: KINDS }),
       typeId: new fields.StringField({ required: true, blank: true, initial: "" }),
+      /** Старое поле: один демиург. С 0.9.2 тут первый из demiurges, читать через demiurgesOf. */
       demiurge: new fields.StringField({ required: true, blank: true, initial: "" }),
+      /** Демиурги: id персонажей, ноль, один или несколько. */
+      demiurges: new fields.ArrayField(new fields.StringField({ required: true, blank: false })),
+      /** Кто создал элемент (id пользователя). */
+      author: new fields.StringField({ required: true, blank: true, initial: "" }),
+      /** Кто видит: all — все; gm — мастер, автор и демиурги; some — ещё users. */
+      visibility: new fields.SchemaField({
+        mode: new fields.StringField({ required: true, initial: "all", choices: ["all", "gm", "some"] }),
+        users: new fields.ArrayField(new fields.StringField({ required: true, blank: false }))
+      }),
       statuses: new fields.ArrayField(statusSchema()),
       aspects: new fields.ArrayField(new fields.SchemaField({
         id: new fields.StringField({ required: true, blank: true, initial: "" }),
