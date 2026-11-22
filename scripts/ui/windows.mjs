@@ -10,13 +10,20 @@ import { MODULE_ID } from "../constants.mjs";
 
 const { ApplicationV2 } = foundry.applications.api;
 
-/** Окна по частям: заголовок, значок, размер по умолчанию. */
+/**
+ * Окна по частям: заголовок, значок, размер по умолчанию.
+ * SIZE_VERSION: размеры по умолчанию поменялись в 0.9.9 (окна стали шире, ~580×640).
+ * Сохранённый до этого размер окон инструментов и слоёв не берём, место — берём.
+ */
+const SIZE_VERSION = 99;
+const RESIZED = new Set(["left", "layers"]);
 const DEFS = {
-  left: { icon: "fa-solid fa-dice-d6", width: 440, height: 560, at: () => ({ left: 120, top: 80 }) },
+  left: { icon: "fa-solid fa-dice-d6", width: 580, height: 640, at: () => ({ left: 120, top: 60 }) },
   right: { icon: "fa-solid fa-hexagon", width: 340, height: "auto", at: () => ({ left: Math.max(120, window.innerWidth - 760), top: 80 }) },
   settings: { icon: "fa-solid fa-gear", width: 620, height: 600, at: () => ({ left: Math.max(120, (window.innerWidth - 620) / 2), top: 70 }) },
   wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) },
-  layers: { icon: "fa-solid fa-layer-group", width: 380, height: 460, at: () => ({ left: Math.max(10, Math.round(window.innerWidth / 2 - 190)), top: Math.max(10, window.innerHeight - 460 - 140) }) }
+  layers: { icon: "fa-solid fa-layer-group", width: 580, height: 640, at: () => ({ left: 140, top: 60 }) },
+  aspects: { icon: "fa-solid fa-wand-magic-sparkles", width: 580, height: 640, at: () => ({ left: 160, top: 70 }) }
 };
 
 /** Окно, которое носит часть панели. Своих полей с именами ApplicationV2 не заводит. */
@@ -138,7 +145,8 @@ export default class FoundryHost {
     // В ApplicationV2 объект position запечатан: лишние ключи (sized, docked) роняют конструктор окна.
     // Из сохранённого берём только место и размер.
     const pos = {};
-    for ( const k of ["left", "top", "width", "height"] ) if ( saved[k] !== undefined && saved[k] !== null ) pos[k] = saved[k];
+    const oldSize = RESIZED.has(name) && saved.v !== SIZE_VERSION;
+    for ( const k of oldSize ? ["left", "top"] : ["left", "top", "width", "height"] ) if ( saved[k] !== undefined && saved[k] !== null ) pos[k] = saved[k];
     const position = { width: def.width, height: def.height, ...def.at(), ...pos };
     // Ход и подробности гекса — по содержимому. Старый сохранённый размер окна гекса (до 0.6 оно было на полэкрана) не берём.
     if ( name === "right" && !saved.sized ) {
@@ -215,6 +223,7 @@ export default class FoundryHost {
     if ( name !== "right" || this.sized[name] ) Object.assign(keep, { width: position.width, height: position.height });
     if ( this.sized[name] ) keep.sized = true;
     if ( name in this.docked ) keep.docked = !!this.docked[name];
+    keep.v = SIZE_VERSION;
     this._pending = { ...(this._pending ?? {}), [name]: keep };
     this._flushSave();
   }

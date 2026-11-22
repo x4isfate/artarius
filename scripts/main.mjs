@@ -1,5 +1,7 @@
-import { MODULE_ID, FEATURE_TYPE, CLAIM_STATUS, WORLD_DEFAULTS } from "./constants.mjs";
+import { MODULE_ID, FEATURE_TYPE, ASPECT_TYPE, CLAIM_STATUS, WORLD_DEFAULTS } from "./constants.mjs";
 import FeatureModel from "./data/feature-model.mjs";
+import AspectModel from "./data/aspect-model.mjs";
+import NewsApp from "./apps/news-app.mjs";
 import * as store from "./data/store.mjs";
 import { getAtlas, ensureAtlas, upgradeAtlas, getClaims } from "./data/store.mjs";
 import HexLayer, { LAYER_NAME, runtime, inputDebug, boardElement } from "./canvas/hex-layer.mjs";
@@ -27,6 +29,7 @@ const L = k => game.i18n.localize(k);
 
 Hooks.once("init", () => {
   CONFIG.JournalEntryPage.dataModels[FEATURE_TYPE] = FeatureModel;
+  CONFIG.Item.dataModels[ASPECT_TYPE] = AspectModel;
   CONFIG.Canvas.layers[LAYER_NAME] = { layerClass: HexLayer, group: "interface" };
 
   try {
@@ -44,6 +47,8 @@ Hooks.once("init", () => {
   });
   S("trustedUsers", { scope: "world", config: false, type: Array, default: [] });
   S("guideSeen", { scope: "client", config: false, type: Boolean, default: false });
+  // «Что нового»: версия, до которой окно не показывать (галочка «Не показывать до следующей версии»).
+  S("newsSeen", { scope: "client", config: false, type: String, default: "" });
   S("checkUpdates", {
     name: "VMAP.Settings.checkUpdates.name", hint: "VMAP.Settings.checkUpdates.hint",
     scope: "world", config: true, type: Boolean, default: true
@@ -66,7 +71,9 @@ Hooks.once("init", () => {
   runtime.isWorld = () => isWorldScene();
   // Кнопки в колонке инструментов (группа Артария слева).
   runtime.buttons = {
-    queue: () => studio.openQueue(),
+    queue: () => studio.setMode("players"),
+    layers: () => studio.toggleLayers(),
+    aspects: () => studio.toggleAspects(),
     settings: () => (studio.settings.open ? studio.closeSettings() : studio.openSettings()),
     generator: () => openGenerator(),
     guide: () => GuideApp.open()
@@ -79,6 +86,8 @@ Hooks.once("init", () => {
     backend, studio, store,
     isWorldScene, worldOf,
     openGuide: () => GuideApp.open(),
+    /** Окно «Что нового»: весь список изменений, новая версия раскрыта. */
+    openNews: () => NewsApp.open(),
     openAzgaar: () => AzgaarApp.open(),
     openAzgaarGenerator: () => AzgaarGenerator.open(),
     /** Окно генератора тестового мира. generateTestWorld(options) — то же без окна. */
@@ -154,7 +163,9 @@ Hooks.once("ready", () => {
   if ( !game.settings.get(MODULE_ID, "guideSeen") && isWorldScene() ) {
     GuideApp.open();
     game.settings.set(MODULE_ID, "guideSeen", true);
-  }
+    // Тот, кто впервые открыл «Как играть», про эту версию уже прочитал.
+    game.settings.set(MODULE_ID, "newsSeen", game.modules.get(MODULE_ID)?.version ?? "");
+  } else if ( game.user.isGM && NewsApp.shouldShow() ) NewsApp.open();
   checkForUpdate();
   Hooks.callAll("artarius.ready", game.modules.get(MODULE_ID).api);
 });
@@ -289,12 +300,35 @@ for ( const hook of ["createJournalEntryPage", "updateJournalEntryPage", "delete
 Hooks.on("updateJournalEntry", journal => { if ( isCurrentAtlas(journal) ) emit(); });
 Hooks.on("createJournalEntry", () => emit());
 Hooks.on("updateActor", () => emit());
+// Аспекты — предметы Foundry: их правка и папки перерисовывают окна.
+for ( const hook of ["createItem", "updateItem", "deleteItem"] ) {
+  Hooks.on(hook, item => { if ( item.type === ASPECT_TYPE ) emit(); });
+}
+for ( const hook of ["createFolder", "updateFolder", "deleteFolder"] ) {
+  Hooks.on(hook, folder => { if ( folder.type === "Item" ) emit(); });
+}
+
+/**
+ * Аспект бросили на карту (из окна «Аспекты» или из списка предметов Foundry):
+ * он ложится на метку, линию или верхнюю зону под курсором.
+ */
+Hooks.on("dropCanvasData", (cnv, data) => {
+  if ( data?.type !== "Item" || !isWorldScene() || !runtime.studio ) return;
+  const id = data.artariusAspect ?? (String(data.uuid ?? "").startsWith("Item.") ? data.uuid.slice(5) : null);
+  const item = id ? game.items.get(id) : null;
+  if ( item?.type !== ASPECT_TYPE ) return;
+  runtime.studio.dropAspect(item.id, { x: data.x, y: data.y });
+  return false;
+});
 Hooks.on("createActor", () => emit());
 Hooks.on("deleteActor", () => emit());
 
 Hooks.on("updateScene", (scene, changes) => {
   if ( scene !== canvas?.scene ) return;
-  const worldChanged = foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.world`);
+  // Стиль берега перерисовывает только карту, без перестройки холста.
+  const flat = Object.keys(foundry.utils.flattenObject(changes));
+  const coastOnly = flat.length && flat.every(k => k.startsWith(`flags.${MODULE_ID}.world.coast`) || k.startsWith(`flags.${MODULE_ID}.world.-=coast`) || k === "_id");
+  const worldChanged = foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.world`) && !coastOnly;
   const gridChanged = "grid" in changes || "width" in changes || "height" in changes || "padding" in changes;
   if ( worldChanged || gridChanged ) {
     // Режим сцены или сетка поменялись: холст перерисует Foundry, если поменялась сетка; иначе сами.

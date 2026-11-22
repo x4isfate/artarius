@@ -42,7 +42,7 @@ for ( const tpl of readdirSync(path.join(root, "templates")) ) {
 
 /* Windows built from strings: data-action → DEFAULT_OPTIONS.actions --- */
 
-for ( const file of ["scripts/apps/azgaar-app.mjs"] ) {
+for ( const file of ["scripts/apps/azgaar-app.mjs", "scripts/apps/news-app.mjs"] ) {
   const src = read(file);
   const keys = actionKeys(src);
   for ( const [, a] of src.matchAll(/data-action="([^"$]+)"/g) ) {
@@ -53,10 +53,14 @@ for ( const file of ["scripts/apps/azgaar-app.mjs"] ) {
 /* Panels -------------------------------------------------------------- */
 
 {
+  // Панели: panels.mjs и примешанный к ним unified.mjs (0.9.9) — обработчики из обоих.
   const file = "scripts/ui/panels.mjs";
-  const src = read(file);
-  const block = src.match(/get actions\(\) \{[\s\S]*?return \{([\s\S]*?)\n {4}\};/)?.[1] ?? "";
-  const keys = new Set([...block.matchAll(/^\s*([A-Za-z]\w*)\s*:/gm)].map(m => m[1]));
+  const src = read(file) + "\n" + read("scripts/ui/unified.mjs");
+  const blocks = [
+    src.match(/get actions\(\) \{[\s\S]*?return Object\.assign\(this\.unifiedActions\(\), \{([\s\S]*?)\n {4}\}\);/)?.[1] ?? "",
+    src.match(/unifiedActions\(\) \{[\s\S]*?return \{([\s\S]*?)\n {4}\};/)?.[1] ?? ""
+  ];
+  const keys = new Set(blocks.flatMap(block => [...block.matchAll(/^\s*([A-Za-z]\w*)\s*:/gm)].map(m => m[1])));
   if ( !keys.size ) fail(`${file}: не найден get actions()`);
   const used = new Set([
     ...[...src.matchAll(/data-(?:action|enter|change)="([A-Za-z]\w*)"/g)].map(m => m[1]),

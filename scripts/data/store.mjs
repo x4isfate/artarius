@@ -109,6 +109,12 @@ export const getTypes = atlas => mergeTypes(getAtlasTypes(atlas), foundry.utils.
 export const getLayers = atlas => foundry.utils.deepClone(atlas?.getFlag(MODULE_ID, "layers") ?? STARTER_LAYERS)
   .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
+/** Папки типов и слоёв атласа (0.9.9): [{ id, kind, name, color }]. */
+export const getFolders = atlas => foundry.utils.deepClone(atlas?.getFlag(MODULE_ID, "folders") ?? []);
+export async function setFolders(atlas, folders) {
+  return atlas.update({ [`flags.${MODULE_ID}.folders`]: folders });
+}
+
 export async function setTypes(atlas, types) {
   return atlas.update({ [`flags.${MODULE_ID}.types`]: types });
 }

@@ -1,8 +1,8 @@
 {
   "id": "artarius",
-  "title": "Artarius: гекс-мир",
+  "title": "Artarius",
   "description": "Модуль для системы «Витрувий»: гекс-мир для политической игры богов. Сцена превращается в плоскую карту из гексов: зоны, метки и линии, слои, типы, ходы игроков. Игроки рисуют черновик и подают заявки, мастер принимает их, отклоняет или назначает проверку Витрувия. Импорт карт из Azgaar.",
-  "version": "0.9.6",
+  "version": "0.9.9",
   "compatibility": {
     "minimum": "14",
     "verified": "14.370",
@@ -35,6 +35,9 @@
   "documentTypes": {
     "JournalEntryPage": {
       "feature": {}
+    },
+    "Item": {
+      "aspect": {}
     }
   },
   "socket": true,
@@ -51,7 +54,7 @@
   },
   "url": "https://github.com/x4isfate/artarius",
   "manifest": "https://github.com/x4isfate/artarius/releases/latest/download/module.json",
-  "download": "https://github.com/x4isfate/artarius/releases/download/v0.9.6/artarius.zip",
+  "download": "https://github.com/x4isfate/artarius/releases/download/v0.9.9/artarius.zip",
   "license": "LICENSE",
   "readme": "README.md",
   "changelog": "CHANGELOG.md"
