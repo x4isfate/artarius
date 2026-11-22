@@ -2,10 +2,16 @@ import { KINDS, BLENDS } from "../constants.mjs";
 
 const { fields } = foundry.data;
 
-/** Статус: название и необязательный уровень (7/10). */
+/**
+ * Статус: название и необязательный уровень (7/10).
+ * key — базовый статус (по нему значок), itemId — предмет «Аспект Artarius», из которого статус пришёл (0.9.9).
+ */
 function statusSchema() {
   return new fields.SchemaField({
     id: new fields.StringField({ required: true, blank: true, initial: "" }),
+    key: new fields.StringField({ required: false, blank: true, initial: "" }),
+    itemId: new fields.StringField({ required: false, blank: true, initial: "" }),
+    icon: new fields.StringField({ required: false, blank: true, initial: "" }),
     name: new fields.StringField({ required: true, blank: true, initial: "" }),
     value: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null }),
     max: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null })
@@ -35,6 +41,9 @@ export default class FeatureModel extends foundry.abstract.TypeDataModel {
       statuses: new fields.ArrayField(statusSchema()),
       aspects: new fields.ArrayField(new fields.SchemaField({
         id: new fields.StringField({ required: true, blank: true, initial: "" }),
+        key: new fields.StringField({ required: false, blank: true, initial: "" }),
+        itemId: new fields.StringField({ required: false, blank: true, initial: "" }),
+        icon: new fields.StringField({ required: false, blank: true, initial: "" }),
         name: new fields.StringField({ required: true, blank: true, initial: "" }),
         description: new fields.StringField({ required: true, blank: true, initial: "" }),
         value: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null }),

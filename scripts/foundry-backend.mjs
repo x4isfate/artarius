@@ -2,7 +2,7 @@
  * Backend студии поверх Foundry: атлас сцены, черновики и заявки в флагах
  * пользователей, ходы в настройке мира, сетка из canvas.grid.
  */
-import { MODULE_ID, WORLD_DEFAULTS, CLAIM_STATUS } from "./constants.mjs";
+import { MODULE_ID, WORLD_DEFAULTS, CLAIM_STATUS, ASPECT_TYPE } from "./constants.mjs";
 import * as store from "./data/store.mjs";
 import { visibleStates, permsFor } from "./data/access.mjs";
 import {
@@ -243,6 +243,81 @@ export default class FoundryBackend {
 
   async setHidden(ids) {
     await game.settings.set(MODULE_ID, "hiddenLayers", [...new Set(ids)]);
+    this.emit();
+  }
+
+  /* Папки (0.9.9) ------------------------------------------------------ */
+
+  folders() { return this._cached("folders", () => store.getFolders(this.atlas)); }
+
+  async setFolders(list) {
+    if ( !game.user.isGM ) return;
+    const atlas = this.atlas ?? await store.ensureAtlas(canvas.scene);
+    await store.setFolders(atlas, list);
+  }
+
+  /* Аспекты и статусы: предметы «Аспект Artarius» (0.9.9) --------------- */
+
+  aspects() {
+    return this._cached("aspects", () => (game.items?.contents ?? []).filter(i => i.type === ASPECT_TYPE)
+      .sort((a, b) => ((a.sort ?? 0) - (b.sort ?? 0)) || a.name.localeCompare(b.name))
+      .map(i => ({ id: i.id, name: i.name, folder: i.folder?.id ?? "", system: foundry.utils.deepClone(i._source.system ?? {}) })));
+  }
+
+  /** Папки предметов, где лежат аспекты или которые заведены в окне «Аспекты». */
+  aspectFolders() {
+    return this._cached("aspectFolders", () => {
+      const used = new Set(this.aspects().map(a => a.folder).filter(Boolean));
+      return (game.folders?.contents ?? []).filter(f => f.type === "Item" && (used.has(f.id) || f.getFlag(MODULE_ID, "aspects")))
+        .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+        .map(f => ({ id: f.id, kind: "aspect", name: f.name, color: f.color?.css ?? String(f.color ?? "") }));
+    });
+  }
+
+  canCreateAspects() { return game.user.isGM || !!game.user.can?.("ITEM_CREATE"); }
+
+  async saveAspect({ id, name, folder = "", system }) {
+    if ( id ) {
+      await game.items.get(id)?.update({ name, folder: folder || null, system });
+      return id;
+    }
+    const item = await Item.implementation.create({
+      name, type: ASPECT_TYPE, img: "icons/svg/aura.svg", folder: folder || null, system,
+      ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER }
+    });
+    return item?.id ?? null;
+  }
+
+  async deleteAspect(id) { await game.items.get(id)?.delete(); }
+
+  async saveAspectFolder({ id, name, color }) {
+    if ( id ) {
+      const patch = {};
+      if ( name !== undefined ) patch.name = name;
+      if ( color !== undefined ) patch.color = color;
+      await game.folders.get(id)?.update(patch);
+      return id;
+    }
+    const f = await Folder.implementation.create({ type: "Item", name, color, flags: { [MODULE_ID]: { aspects: true } } });
+    return f?.id ?? null;
+  }
+
+  /** Убрать папку: предметы из неё уходят в корень, сами не удаляются. */
+  async deleteAspectFolder(id) {
+    const f = game.folders.get(id);
+    if ( !f ) return;
+    const items = game.items.filter(i => i.folder?.id === id).map(i => ({ _id: i.id, folder: null }));
+    if ( items.length ) await Item.implementation.updateDocuments(items);
+    await f.delete({ deleteSubfolders: false, deleteContents: false });
+  }
+
+  /* Берег (0.9.9): стиль в настройках мира сцены, видят все -------------- */
+
+  async setCoast(style) {
+    const scene = canvas?.scene;
+    if ( !game.user.isGM || !scene ) return;
+    if ( style ) await scene.setFlag(MODULE_ID, "world.coast", style);
+    else await scene.unsetFlag(MODULE_ID, "world.coast");
     this.emit();
   }
 
