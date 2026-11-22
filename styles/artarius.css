@@ -536,6 +536,7 @@
   border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 #artarius-tip[hidden] { display: none; }
+#artarius-tip.art-tip-below { transform: translate(-50%, 18px); }
 .artarius .art-line-preview { margin: 4px 0 8px; padding: 4px; border: 1px solid var(--art-line); border-radius: 4px; background: var(--art-bg-2); }
 
 /* 0.9.1: выбранная кнопка читается в любой теме: текст не красится, выделяет рамка. */

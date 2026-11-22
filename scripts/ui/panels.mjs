@@ -567,6 +567,8 @@ export default class ArtariusUI {
       this._show("settings", s.settings.open, this.t("ART.Settings.title"));
     });
     safe("hud", () => this.renderHud());
+    // Плашка могла встать под уже открытую карточку при наведении: карточка уходит вниз.
+    safe("tip", () => { if ( !this.tip.hidden ) this.renderTip(); });
     safe("bar", () => this.renderBar());
     safe("modes", () => this.renderLayerbar());
     safe("brush", () => this.renderBrushbar());
@@ -809,7 +811,14 @@ export default class ArtariusUI {
     if ( this._tipKey !== html ) { this.tip.innerHTML = html; this._tipKey = html; }
     this.tip.style.left = `${Math.round(p.x)}px`;
     this.tip.style.top = `${Math.round(p.y)}px`;
+    this.tip.classList.remove("art-tip-below");
     this.tip.hidden = false;
+    // Плашка осмотра стоит над гексом: карточка при наведении не закрывает её, а уходит вниз.
+    const bar = this.studio.hudOpen ? this.hud?.querySelector(".art-qi-bar") : null;
+    if ( bar ) {
+      const a = bar.getBoundingClientRect(), t = this.tip.getBoundingClientRect();
+      if ( a.width && t.left < a.right && t.right > a.left && t.top < a.bottom && t.bottom > a.top ) this.tip.classList.add("art-tip-below");
+    }
   }
 
   /** Карточка при наведении: название, тип, хозяин, статусы и аспекты значками с уровнями. */

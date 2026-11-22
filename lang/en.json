@@ -721,7 +721,7 @@
       "newLine": "New line",
       "zoneOf": "Zone “{name}”",
       "zoneOfHint": "The brush paints with this zone.",
-      "addCells": "Add hexes ({n})",
+      "addCells": "Add hexes: {n}",
       "brush": "Brush",
       "eraseHint": "Shift-drag on the map erases too.",
       "layerOf": "layer {name}",
@@ -752,7 +752,7 @@
       "world": "World"
     },
     "Aspect": {
-      "title": "Aspects and statuses",
+      "title": "Aspects",
       "new": "New aspect",
       "find": "Find an aspect or status",
       "inWorld": "In the world",
@@ -768,7 +768,7 @@
       "onZone": "zone",
       "onMark": "mark",
       "onLine": "line",
-      "props": "Properties",
+      "props": "Parameters",
       "what": "Kind",
       "kindAspect": "Aspect",
       "kindStatus": "Status",
