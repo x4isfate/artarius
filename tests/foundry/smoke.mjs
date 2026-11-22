@@ -84,18 +84,22 @@ await check("группа инструментов слева", async () => {
   const c = CONFIG.Canvas.layers[LAYER].layerClass.prepareSceneControls();
   assert(c.name === LAYER && c.layer === LAYER && c.visible === true, "группа не видна на сцене Артария");
   const names = Object.keys(c.tools);
-  for ( const n of ["select", "zone", "mark", "line", "queue", "settings", "generator", "guide"] ) assert(names.includes(n), `нет ${n}`);
+  // 0.9.9: порядок колонки — Осмотр, Зоны, Метки, Линии, Заявки, Слои, Аспекты, Настройки, Генератор, Как играть.
+  const order = ["select", "zone", "mark", "line", "queue", "layers", "aspects", "settings", "generator", "guide"];
+  for ( const n of order ) assert(names.includes(n), `нет ${n}`);
+  const byOrder = [...names].filter(n => order.includes(n)).sort((x, y) => (c.tools[x].order ?? 0) - (c.tools[y].order ?? 0));
+  assert(byOrder.join() === order.join(), `порядок кнопок: ${byOrder.join()}`);
   assert(!names.includes("turn"), "кнопка хода осталась");
   // 0.6.3: «Осмотр» не открывает окно сам; окно слоёв — по кнопке, его крестик инструмент не гасит.
   c.onToolChange(new Event("x"), c.tools.select, true);
   await tick();
   assert(api().studio.tool === "select" && !win("left"), "окно «Осмотра» всплыло само");
   const uiL = (await import("../../scripts/canvas/hex-layer.mjs")).runtime.ui;
-  // 0.9.1: кнопки «Слои» в колонке нет, слои открываются плашкой у сцены в обычном окне Foundry.
-  assert(!c.tools.layers, "кнопка «Слои» осталась в колонке");
+  // 0.9.9: «Слои» снова в колонке и внизу; окно слоёв — обычное окно Foundry с двумя колонками.
+  assert(c.tools.layers?.button, "кнопки «Слои» нет в колонке");
   uiL.toggleLayerPanel(true);
   await tick();
-  assert(document.querySelector("#artarius-layers .art-lb-panel [data-id='terrain']"), "плашка «Слои» не открыла окно слоёв");
+  assert(document.querySelector("#artarius-layers .art-lrow [data-id='terrain']"), "кнопка «Слои» не открыла окно слоёв");
   assert(win("layers") && uiL.host.windows.layers.options.window.resizable, "окно слоёв нельзя растянуть");
   uiL.toggleLayerPanel(false);
   await tick();
@@ -105,14 +109,14 @@ await check("группа инструментов слева", async () => {
   assert(c.tools.settings?.button, "нет кнопки настроек");
   c.tools.settings.onChange(new Event("x"), true);
   await tick();
-  assert(win("settings")?.querySelector('[data-action="settingsSection"][data-section="layers"]'), "окно настроек не открылось");
+  assert(win("settings")?.querySelector('[data-action="settingsSection"][data-section="world"]') && !win("settings").querySelector('[data-section="layers"]'), "окно настроек не открылось или в нём остались слои");
   await uiL.host.windows.settings.close();
   await tick();
   assert(!api().studio.settings.open && !win("settings"), "крестик не закрыл настройки");
   c.onToolChange(new Event("x"), c.tools.mark, true);
   assert(api().studio.tool === "mark", "инструмент из панели не выбран");
   await tick();
-  assert(win("left")?.textContent.includes("Метка"), "окно инструмента не открылось с заголовком");
+  assert(win("left")?.textContent.includes("Метки") && win("left").querySelector(".art-ucols"), "окно инструмента не открылось с заголовком и двумя колонками");
   c.tools.queue.onChange(new Event("x"), true);
   await tick();
   assert(api().studio.rightOpen && api().studio.rightTab === "queue" && win("right"), "заявки не открылись");
@@ -282,26 +286,27 @@ await check("линия по гексам и от руки на холсте", a
 await check("выбор значка: разделы, поиск, своя картинка", async () => {
   const s = api().studio;
   s.setTool("mark", { toggle: false });
-  s.editTypeInSettings("object", "new");
+  // 0.9.9: тип правится в правой колонке окна «Метки».
+  s.openTypeForm("object");
   await tick();
-  const left = win("settings");
+  const left = win("left");
   assert(left.querySelectorAll('[data-action="pickIcon"]').length >= 10, "нет значков библиотеки");
   left.querySelector('[data-action="iconCat"][data-cat="resources"]').click();
   await tick();
-  const ore = win("settings").querySelector('[data-icon$="/ore.svg"]');
+  const ore = win("left").querySelector('[data-icon$="/ore.svg"]');
   assert(ore, "нет руды в разделе ресурсов");
   ore.click();
   await tick();
   assert(s.typeForm.icon.endsWith("/ore.svg") && s.typeForm.tint, "значок не выбран");
-  const search = win("settings").querySelector('[data-model="typeForm.iconQuery"]');
+  const search = win("left").querySelector('[data-model="typeForm.iconQuery"]');
   search.value = "храм";
   search.dispatchEvent(new Event("input", { bubbles: true }));
   await tick();
-  assert(win("settings").querySelector('[data-icon$="/greek-temple.svg"]'), "поиск не нашёл храм");
-  assert(win("settings").querySelector('[data-action="browseIcon"]'), "нет кнопки своей картинки");
-  s.closeSettings();
+  assert(win("left").querySelector('[data-icon$="/greek-temple.svg"]'), "поиск не нашёл храм");
+  assert(win("left").querySelector('[data-action="browseIcon"]'), "нет кнопки своей картинки");
+  win("left").querySelector('[data-action="cancelType"]').click();
   await tick();
-  assert(!win("settings"), "настройки не закрылись");
+  assert(!s.typeForm && !win("settings"), "правка типа не закрылась или открылись настройки");
 });
 
 await check("0.5.0: крестик закрывает окно, но инструмент и слой остаются; повторный выбор открывает окно", async () => {
@@ -484,13 +489,15 @@ await check("генератор: местность, ресурсы, держа�
 await check("0.9.0: вид «Атлас» по умолчанию, переключатель возвращает простой вид", async () => {
   const rd = layer.renderer;
   assert(rd.atlas === true, "атлас не включён по умолчанию");
-  const zonesAtlas = rd.zones.children.length;
+  // 0.9.9: зоны лежат в контейнерах своих слоёв (прозрачность и размытие слоя).
+  const drawn = r => r.zones.children.reduce((n, box) => n + (box.children?.length ?? 0), 0);
+  const zonesAtlas = drawn(rd);
   await scene.update({ "flags.artarius.world": { ...scene.getFlag("artarius", "world"), style: "flat" } });
   await F.settle();
   layer.refresh?.(true);
   await F.settle();
   assert(layer.renderer.atlas === false, "простой вид не включился");
-  assert(layer.renderer.zones.children.length !== zonesAtlas, "зоны нарисованы так же");
+  assert(drawn(layer.renderer) !== zonesAtlas, "зоны нарисованы так же");
   await scene.update({ "flags.artarius.world": { ...scene.getFlag("artarius", "world"), style: "atlas" } });
   await F.settle();
   layer.refresh?.(true);
@@ -520,7 +527,7 @@ await check("0.9.5: полосы внизу видны при растянуто
   const was = document.body.style.cssText;
   document.body.style.cssText = "transform: translateZ(0); min-height: 180vh; margin: 0";
   try {
-    s.setMode("realms");
+    s.setMode("zones");
     ui.render();
     await new Promise(r => setTimeout(r, 300)); // у кнопок режимов плавная смена цвета
     const vh = window.innerHeight;
@@ -554,6 +561,44 @@ await check("0.9.6: окна открываются, когда в сохран�
   assert(host.windows.right.options.position.left === 900 && host.windows.right.options.position.width === 340, "место окна не взято из сохранённого");
   assert(host.isDocked("right") && host.sized.right, "прикрепление и размер пользователя потерялись");
   window.removeEventListener("resize", host._onResize);
+});
+
+await check("0.9.9: аспекты — предметы Foundry, их бросают на карту; «Что нового» для мастера", async () => {
+  const s = api().studio;
+  const { runtime } = await import("../../scripts/canvas/hex-layer.mjs");
+  runtime.buttons.aspects();
+  await tick();
+  assert(win("aspects"), "окно «Аспекты» не открылось");
+  if ( !s.aspects().length ) {
+    win("aspects").querySelector('[data-action="seedAspects"]')?.click();
+    await F.settle();
+  }
+  const items = game.items.filter(i => i.type === "artarius.aspect");
+  assert(items.length >= 4 && game.folders.contents.some(f => f.type === "Item"), `аспекты не легли предметами в папку: ${items.length}`);
+  await tick();
+  assert(win("aspects").querySelector("[data-drag-aspect]"), `плитки аспектов нельзя тащить: ${win("aspects").textContent.replace(/\s+/g, " ").slice(0, 300)}`);
+  // Бросок предмета на гекс с зоной: аспект ложится на зону.
+  const zone = s.zones().find(z => z.system.geometry.cells?.length);
+  const pt = s.grid.center(zone.system.geometry.cells[0]);
+  const item = items.find(i => i.system.kind === "aspect") ?? items[0];
+  Hooks.callAll("dropCanvasData", canvas, { type: "Item", uuid: `Item.${item.id}`, x: pt.x, y: pt.y });
+  await F.settle();
+  const hosts = s.aspectHosts(item.id);
+  assert(hosts.length >= 1, "аспект не лёг на карту");
+  runtime.buttons.aspects();
+  await tick();
+  assert(!win("aspects"), "окно «Аспекты» не закрылось второй кнопкой");
+  // «Что нового»: мастеру при новой версии, галочка прячет до следующей.
+  const { default: NewsApp } = await import("../../scripts/apps/news-app.mjs");
+  await game.settings.set("artarius", "newsSeen", "");
+  assert(NewsApp.shouldShow(), "окно «Что нового» не показалось бы мастеру");
+  await NewsApp.open();
+  await F.settle();
+  const news = document.getElementById("artarius-news");
+  assert(news?.querySelector(".art-news-ver[open]") && news.querySelector("input[name=newsHide]")?.checked, "в «Что нового» нет раскрытой версии или галочка снята");
+  news.querySelector('[data-action="newsOk"]').click();
+  await F.settle();
+  assert(!NewsApp.shouldShow(), "после «Понятно» окно покажется снова");
 });
 
 // ?shot: показать холст слоя, чтобы снять картинку сгенерированного мира.

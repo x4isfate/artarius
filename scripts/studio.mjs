@@ -605,8 +605,10 @@ export default class Studio {
   async eraseCells(cells) {
     if ( !cells.length ) return;
     const target = this.zone.target !== "new" && this.states.has(this.zone.target) ? this.zone.target : null;
+    // Без выбранной зоны ластик стирает зоны того слоя, чей тип выбран в окне (0.9.9: режим «Зоны» один).
+    const layer = this.typeById(this.zone.typeId)?.layerId ?? "overlay";
     const ops = detachOps({ states: this.states, types: this.types, cells, zoneId: target })
-      .filter(op => target || this.inScope(layerIdOf(this.states.get(op.id), this.types)));
+      .filter(op => target || (this.inScope(layerIdOf(this.states.get(op.id), this.types)) && (this.zone.scope || layerIdOf(this.states.get(op.id), this.types) === layer)));
     for ( const c of cells ) this.selection.delete(cellKey(c));
     if ( ops.length ) await this._commit(ops);
     this.changed("ui");

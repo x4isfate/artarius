@@ -358,9 +358,9 @@ export default class ArtariusUI {
     const v = el.value;
     const hex = el.nextElementSibling;
     if ( hex?.dataset.hex ) hex.value = v;
-    const box = el.closest(".art-item") ?? el.closest(".art-form");
+    const box = el.closest(".art-item, .art-citem, .art-form, .art-ucol-right");
     if ( box && (el.dataset.model === "typeForm.color" || el.dataset.field === "color") ) {
-      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color") ) m.style.setProperty("--c", v);
+      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color, .art-plate, .art-circ") ) m.style.setProperty("--c", v);
     }
   }
 
@@ -407,7 +407,7 @@ export default class ArtariusUI {
       pickZone: el => {
         // Кисть открывается в режиме слоя этой зоны: местность или владения.
         const z = s.states.get(el.dataset.id);
-        if ( z ) s.zone.scope = layerIdOf(z, s.types) === "terrain" ? "terrain" : "realms";
+        if ( z ) s.zone.scope = "";
         s.setTool("zone", { toggle: false });
         s.setZoneTarget(el.dataset.id);
       },

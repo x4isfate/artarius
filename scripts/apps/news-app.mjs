@@ -70,7 +70,7 @@ export default class NewsApp extends ApplicationV2 {
         <summary><b>${esc(s.version)}</b>${n === 0 ? ` <span class="art-news-new">${esc(L("ART.News.latest"))}</span>` : ""}</summary>
         <div class="art-news-body">${s.html}</div></details>`).join("");
     const div = document.createElement("div");
-    div.className = "art-news";
+    div.className = "art-news artarius";
     div.innerHTML = `<div class="art-news-list">${list || `<p>${esc(L("ART.News.missing"))}</p>`}</div>
       <footer class="art-news-foot">
         <label class="art-check"><input type="checkbox" name="newsHide" checked> ${esc(L("ART.News.hide"))}</label>

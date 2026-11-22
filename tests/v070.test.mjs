@@ -16,16 +16,16 @@ const paint = async (studio, typeId, cells) => {
   studio.zone.typeId = typeId;
   await studio.attach(cells);
 };
+// 0.9.9: слои заводятся в окне «Слои», типы — в окне инструмента.
 const addLayer = async (studio, name, exclusive) => {
-  studio.openSettings("layers");
-  studio.settingsPick("new");
+  studio.toggleLayers(true);
+  studio.newLayer();
   Object.assign(studio.layerForm, { name, exclusive });
   await studio.saveLayerForm();
   return studio.layers.find(l => l.name === name);
 };
 const addAreaType = async (studio, name, layerId) => {
-  studio.openSettings("area");
-  studio.settingsPick("new");
+  studio.openTypeForm("area");
   Object.assign(studio.typeForm, { name, layerId });
   await studio.saveTypeForm();
   return studio.typesOf("area").find(t => t.name === name);
@@ -37,7 +37,7 @@ test("a new layer is added at the end and its exclusive flag is honoured", async
   const magic = await addLayer(studio, "Магия", true);
   assert.equal(studio.layers.length, n + 1);
   assert.equal(studio.layers.at(-1).id, magic.id);
-  assert.equal(studio.settings.id, magic.id, "новый слой выбран в списке");
+  assert.equal(studio.layerSel, magic.id, "новый слой выбран в списке");
   const aura = await addAreaType(studio, "Аура", magic.id);
   const curse = await addAreaType(studio, "Проклятие", magic.id);
   await paint(studio, aura.id, [[2, 2], [3, 2]]);
@@ -59,7 +59,7 @@ test("an overlapping layer keeps both zones on the same hex", async () => {
 test("rename, reorder and delete a layer; terrain cannot be deleted", async () => {
   const { studio, backend } = setup();
   const magic = await addLayer(studio, "Магия", true);
-  studio.settingsPick(magic.id);
+  studio.pickLayer(magic.id);
   studio.layerForm.name = "Чары";
   await studio.saveLayerForm();
   assert.equal(studio.layers.find(l => l.id === magic.id).name, "Чары");
@@ -85,34 +85,33 @@ test("rename, reorder and delete a layer; terrain cannot be deleted", async () =
   assert.equal(studio.layers.length, n, "местность не удаляется");
 });
 
-test("players see only type sections and cannot edit layers", async () => {
+test("players get no module settings and cannot edit layers", async () => {
   const { studio, backend } = setup();
   backend.switchUser("fire");
   assert.equal(backend.isGM, false);
   studio.openSettings("layers");
-  assert.equal(studio.settings.section, "area");
+  assert.equal(studio.settings.section, "rights", "у игрока нет разделов мира");
   const n = studio.layers.length;
   studio.layerForm = { id: null, name: "Тайный", exclusive: true };
   await studio.saveLayerForm();
   assert.equal(studio.layers.length, n);
 });
 
-test("editing a type from a tool window closes settings after save and keeps the type picked", async () => {
+test("a type is created and edited in the tool window, settings stay closed", async () => {
   const { studio } = setup();
   studio.setTool("mark", { toggle: false });
-  studio.editTypeInSettings("object", "new");
-  assert.ok(studio.settings.open && studio.typeForm?.kind === "object");
+  studio.openTypeForm("object");
+  assert.ok(!studio.settings.open && studio.typeForm?.kind === "object");
   studio.typeForm.name = "Маяк";
   await studio.saveTypeForm();
   const beacon = studio.typesOf("object").find(t => t.name === "Маяк");
   assert.ok(beacon);
   assert.equal(studio.mark.typeId, beacon.id);
-  assert.equal(studio.settings.open, false, "настройки закрылись сами");
+  assert.equal(studio.typeForm, null, "форма закрылась, тип выбран");
 
-  studio.openSettings("object");
-  studio.settingsPick(beacon.id);
+  studio.openTypeForm("object", beacon.id);
   studio.typeForm.name = "Большой маяк";
   await studio.saveTypeForm();
-  assert.equal(studio.settings.open, true, "открытые вручную настройки остаются открытыми");
-  assert.equal(studio.settings.id, beacon.id);
+  assert.equal(studio.typeById(beacon.id).name, "Большой маяк");
+  assert.equal(studio.settings.open, false);
 });

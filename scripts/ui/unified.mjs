@@ -331,7 +331,7 @@ export const UnifiedUI = {
     const right = s.typeForm?.kind === kind ? this.renderTypeEditor(kind) : this.renderToolRight(kind, target);
     const pill = kind === "line"
       ? `${esc(this.t("ART.Unified.points"))}: <b>${s.line.points.length}</b>`
-      : `${esc(this.t("ART.Unified.selected"))}: <b>${s.selection.size}</b>`;
+      : `${esc(this.t("ART.Unified.selected"))}: <b>${s.selection.size}</b>${s.selection.size ? `<button type="button" class="art-spill-x" data-action="clearSelection" title="${esc(this.t("ART.Sel.clear"))}" aria-label="${esc(this.t("ART.Sel.clear"))}">${icon("xmark")}</button>` : ""}`;
     const ph = { area: "ART.Unified.findZone", object: "ART.Unified.findMark", line: "ART.Unified.findLine" }[kind];
     return `<div class="art-uw">${this.introHint({ area: "ART.Zone.hint", object: "ART.Mark.hint", line: "ART.Line.hint" }[kind])}
       ${this.uStrip(`${slot}.filter`, q, this.t(ph), pill)}
