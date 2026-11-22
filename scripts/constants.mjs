@@ -5,6 +5,9 @@ export const MODULE_ID = "artarius";
 /** Подтип страницы журнала для зоны, метки и линии. */
 export const FEATURE_TYPE = `${MODULE_ID}.feature`;
 
+/** Подтип предмета (Item) для аспекта или статуса: их тащат на зону, метку или линию. */
+export const ASPECT_TYPE = `${MODULE_ID}.aspect`;
+
 /**
  * Три вида элементов карты. Внутренние имена остались с версии 0.1,
  * чтобы старые атласы читались без переноса:
@@ -121,13 +124,25 @@ export const STARTER_TYPES = [
   { id: "marker", kind: "object", name: "Отметка", style: { icon: "modules/artarius/assets/icons/flying-flag.svg", color: "#ff8562", size: 0.5 } },
   { id: "river", kind: "line", name: "Река", style: { color: "#5b8fd6", widthStart: 2, widthEnd: 9, meander: 0.2 } },
   { id: "road", kind: "line", name: "Дорога", style: { color: "#d8c3a0", widthStart: 3, widthEnd: 3, outlineColor: "#3a2d22", outlineWidth: 1, dash: 12, gap: 7, meander: 0.05 } },
-  { id: "border", kind: "line", name: "Граница", style: { color: "#ff6a5a", widthStart: 3, widthEnd: 3, dash: 6, gap: 6, meander: 0 } }
+  { id: "border", kind: "line", name: "Граница", layerId: "politics", style: { color: "#ff6a5a", widthStart: 3, widthEnd: 3, dash: 6, gap: 6, meander: 0 } }
 ];
 
 /** Цвета для новых держав и областей: следующий берётся по кругу. */
 export const REALM_COLORS = [
   "#d64545", "#3f7fd6", "#e0b23c", "#8e5bd6", "#2fa37a", "#e07b39", "#c2459c", "#5bb8d6", "#9bbf3a", "#7a5230"
 ];
+
+/**
+ * Береговая линия в виде «Атлас» (0.9.9). pattern: flat — по рёбрам гексов, rough — волной,
+ * double — две линии, hatch — штрихи к воде. pattern "" — как у поля (волна, если включены неровные границы).
+ * filter: none, shadow (тень под линией), glow (светлая подложка).
+ */
+export const COAST_DEFAULTS = {
+  pattern: "", color: "#463728", width: 1, alpha: 0.85, blur: 0, filter: "none", shallow: false
+};
+
+/** Цвета папок и слоёв на выбор (0.9.9). */
+export const FOLDER_COLORS = ["#c9a45c", "#8c3b3b", "#3f6e3f", "#5a6b8c", "#7a5a9a", "#4a7bb5", "#b08a4a", "#777777"];
 
 /** Настройки сцены по умолчанию. */
 export const WORLD_DEFAULTS = {

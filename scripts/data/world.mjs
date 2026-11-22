@@ -23,6 +23,15 @@ export function layerIdOf(state, types) {
   return types.find(t => t.id === state.system?.typeId)?.layerId ?? "overlay";
 }
 
+/**
+ * Слой линии (0.9.9): свой, иначе слой типа, иначе пусто — линия вне слоёв зон
+ * и прячется только переключателями «Реки» и «Дороги и границы».
+ */
+export function lineLayerOf(state, types) {
+  if ( state.system?.layerId ) return state.system.layerId;
+  return types.find(t => t.id === state.system?.typeId)?.layerId ?? "";
+}
+
 export function layerById(layers, id) {
   return layers.find(l => l.id === id) ?? STARTER_LAYERS.find(l => l.id === id) ?? { id, name: id, exclusive: false };
 }
@@ -281,7 +290,9 @@ export function makeType({ id, kind, name, color, icon = "", layerId = "", layer
     return { id, kind, name, layerId: layerById(layers, lid).id, style };
   }
   if ( kind === "object" ) return { id, kind, name, style: { color, icon: icon || "modules/artarius/assets/icons/flying-flag.svg" } };
-  return { id, kind: "line", name, style: { color, widthStart: 3, widthEnd: 3, meander: 0.1 } };
+  const line = { id, kind: "line", name, style: { color, widthStart: 3, widthEnd: 3, meander: 0.1 } };
+  if ( layerId ) line.layerId = layerId;
+  return line;
 }
 
 /**

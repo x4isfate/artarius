@@ -24,6 +24,7 @@ import { checkOps, demiurgesOf, setDemiurges, canEditVisibility, lockedViewers }
 import { joinLine, lineAt, nameRange, rangeForCells, segmentNameAt, nearestVertex, edgePath } from "./data/lines.mjs";
 import { resolveStyleOf } from "./canvas/style.mjs";
 import { isResourceType } from "./data/view.mjs";
+import { StudioKit } from "./studio-kit.mjs";
 
 /** Раздел библиотеки, где лежит значок; для чужих картинок — первый раздел. */
 const iconCategory = path => Object.keys(ICON_LIBRARY).find(c => ICON_LIBRARY[c].some(([n]) => path === iconPath(n))) ?? "settlements";
@@ -31,10 +32,10 @@ const iconCategory = path => Object.keys(ICON_LIBRARY).find(c => ICON_LIBRARY[c]
 export const TOOLS = ["select", "zone", "mark", "line"];
 
 /**
- * Режимы карты (0.9.3, полоса сверху): местность и владения — кисть зон своих слоёв,
- * метки и линии — свои инструменты, игроки — заявки. Клавиши 1–5.
+ * Режимы карты в полосе внизу (0.9.9): осмотр, зоны, метки, линии, заявки и окно слоёв. Клавиши 1–6.
+ * Местность и владения с 0.9.9 — одна кнопка «Зоны».
  */
-export const MODES = ["terrain", "realms", "marks", "lines", "players"];
+export const MODES = ["select", "zones", "marks", "lines", "players", "layers"];
 
 export default class Studio {
   constructor(backend) {
@@ -58,14 +59,32 @@ export default class Studio {
     this.markDrag = null;
     /** Настройки инструментов. */
     /** scope — какие слои у кисти: "" все, "terrain" местность, "realms" всё, кроме местности. erase — кисть стирает. */
-    this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, erase: false, detachLayer: "terrain", filter: "", scope: "" };
-    this.mark = { typeId: "city", name: "", text: "", paint: false };
+    /** aspects — id предметов-аспектов для новой зоны, label — подпись новой зоны (0.9.9). */
+    this.zone = { target: "new", typeId: "forest", name: "", text: "", color: "", paint: false, erase: false, detachLayer: "terrain", filter: "", scope: "", aspects: [], label: {} };
+    this.mark = { typeId: "city", name: "", text: "", paint: false, filter: "", aspects: [], label: {} };
     /** mode: "free" — точки где угодно, "hex" — путь через центры гексов, "draw" — от руки протяжкой. */
-    this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [], join: true };
+    this.line = { typeId: "river", name: "", text: "", points: [], snap: false, mode: "free", cells: [], join: true, filter: "", aspects: [], label: {} };
+    /** Окна «Слои» и «Аспекты» (0.9.9). */
+    this.layersOpen = false;
+    this.aspectsOpen = false;
+    /** Выбранный в окне слоёв слой или вид («@coast»…). */
+    this.layerSel = null;
+    /** Стиль берега в окне слоёв, пока его не сохранили. */
+    this.coastForm = null;
+    /** Окно аспектов: поиск, выбранный предмет и его форма. */
+    this.aspectQ = "";
+    this.aspectSel = null;
+    this.aspectForm = null;
+    /** Выбор аспекта для новой зоны (slot) или для элемента в карточке (featureId): { slot?, featureId?, q }. */
+    this.aspectPick = null;
+    /** Меню папки «⋮»: { kind, id }. */
+    this.folderMenu = null;
+    /** Элемент карточки гекса в правке (карандаш). Раскрытый без правки — openId. */
+    this.editId = null;
     /** Форма нового или изменяемого типа: { kind, id?, name, color, icon, layerId } или null. */
     this.typeForm = null;
     /** Окно настроек модуля: раздел и выбранный в списке элемент. Раздел: layers | area | object | line | world. */
-    this.settings = { open: false, section: "layers", id: null, back: false };
+    this.settings = { open: false, section: "world", id: null, back: false };
     /** Форма слоя в настройках: { id?, name, exclusive } или null. */
     this.layerForm = null;
     /** Форма заявки игрока. */
@@ -187,29 +206,24 @@ export default class Studio {
     return list.length ? list : all;
   }
 
-  /** Режим карты сейчас: по инструменту и открытой вкладке. */
+  /** Режим карты сейчас: по инструменту и открытой вкладке. Окно слоёв — отдельная кнопка, см. layersOpen. */
   get mode() {
-    if ( this.tool === "zone" ) return this.zone.scope === "terrain" ? "terrain" : "realms";
+    if ( this.tool === "zone" ) return "zones";
     if ( this.tool === "mark" ) return "marks";
     if ( this.tool === "line" ) return "lines";
     if ( this.rightOpen && this.rightTab === "queue" ) return "players";
+    if ( this.tool === "select" ) return "select";
     return "";
   }
 
-  /** Включить режим карты. Тот же режим ещё раз — снова Осмотр. */
+  /** Включить режим карты. Тот же режим ещё раз — снова Осмотр. «Слои» открывают и закрывают окно слоёв. */
   setMode(mode) {
     if ( !MODES.includes(mode) ) return;
-    // Кисть, открытая не из полосы режимов (scope пуст), ещё не «Владения»: первое нажатие включает режим.
-    const same = (mode === "terrain" || mode === "realms") ? this.tool === "zone" && this.zone.scope === mode : mode === this.mode;
-    if ( same && mode !== "players" ) return this.setTool("select", { toggle: false });
-    if ( mode === "terrain" || mode === "realms" ) {
-      const was = this.zone.scope;
-      this.zone.scope = mode;
-      if ( was !== mode ) {
-        this.zone.target = "new";
-        const cur = this.typeById(this.zone.typeId);
-        if ( !cur || !this.inScope(cur.layerId ?? "overlay") ) this.zone.typeId = "";
-      }
+    if ( mode === "layers" ) return this.toggleLayers();
+    if ( mode === "select" ) return this.setTool("select", { toggle: false });
+    if ( mode === this.mode && mode !== "players" ) return this.setTool("select", { toggle: false });
+    if ( mode === "zones" ) {
+      this.zone.scope = "";
       return this.setTool("zone", { toggle: false });
     }
     if ( mode === "marks" ) return this.setTool("mark", { toggle: false });
@@ -506,6 +520,7 @@ export default class Studio {
     if ( this.box ) { this.box = null; this.changed("overlay"); return true; }
     if ( this.markDrag ) { this.markDrag = null; this.changed("overlay"); return true; }
     if ( this.hudMenu ) { this.hudMenu = null; this.changed("ui"); return true; }
+    if ( this.folderMenu || this.aspectPick ) { this.folderMenu = null; this.aspectPick = null; this.changed("ui"); return true; }
     if ( this.markSel.size ) { this.markSel.clear(); this.changed("ui"); this.changed("overlay"); return true; }
     if ( this.typeForm ) { this.typeForm = null; this.changed("ui"); return true; }
     if ( this.hudOpen ) { this.closeHud(); return true; }
@@ -545,12 +560,13 @@ export default class Studio {
         }
       });
       const text = this.zone.text?.trim();
-      if ( text ) for ( const op of ops ) if ( op.action === "create" && op.id === id ) op.state.text = text;
+      for ( const op of ops ) if ( op.action === "create" && op.id === id ) {
+        if ( text ) op.state.text = text;
+        op.state = this._decorate(op.state, "zone");
+      }
       // Дальше рисуем в ту же зону, а не плодим новые.
       this.zone.target = id;
-      this.zone.name = "";
-      this.zone.text = "";
-      this.zone.color = "";
+      this._resetForm("zone");
     }
     await this._commit(ops);
     for ( const c of cells ) this.selection.delete(cellKey(c));
@@ -574,11 +590,10 @@ export default class Studio {
     });
     const text = this.zone.text?.trim();
     if ( text ) state.text = text;
+    const decorated = this._decorate(state, "zone");
     this.zone.target = id;
-    this.zone.name = "";
-    this.zone.text = "";
-    this.zone.color = "";
-    await this._commit([{ action: "create", id, state }]);
+    this._resetForm("zone");
+    await this._commit([{ action: "create", id, state: decorated }]);
     this.backend.notify("info", this.t("ART.Zone.createdEmpty", { name: state.name }));
     this.changed("ui");
   }
@@ -636,7 +651,10 @@ export default class Studio {
       center: this.grid.center, newId: () => this.backend.newId()
     });
     const text = this.mark.text?.trim();
-    if ( text ) for ( const op of ops ) if ( op.action === "create" ) op.state.text = text;
+    for ( const op of ops ) if ( op.action === "create" ) {
+      if ( text ) op.state.text = text;
+      op.state = this._decorate(op.state, "mark");
+    }
     await this._commit(ops);
     for ( const c of cells ) this.selection.delete(cellKey(c));
     this.changed("ui");
@@ -841,12 +859,12 @@ export default class Studio {
       if ( this.line.text?.trim() ) op.state.text = this.line.text.trim();
       // Линии по гексам и от руки не виляют сами: их форму задал игрок.
       if ( this.line.mode !== "free" ) op.state.system.style = { ...(op.state.system.style ?? {}), meander: 0 };
+      op.state = this._decorate(op.state, "line");
       ops = [op];
     }
     this.line.points = [];
     this.line.cells = [];
-    this.line.name = "";
-    this.line.text = "";
+    this._resetForm("line");
     await this._commit(ops);
     if ( join ) this.backend.notify("info", this.t("ART.Line.joined", { name: join.keep.name || this.t("ART.Card.unnamed") }));
     this.changed("ui");
@@ -876,12 +894,12 @@ export default class Studio {
   /* ---------------------------------------------------------------- */
 
   /** Открыть форму нового типа для текущего инструмента или правки существующего. */
-  openTypeForm(kind, id = null) {
+  openTypeForm(kind, id = null, { folder = null } = {}) {
     const existing = id ? this.typeById(id) : null;
     if ( existing ) {
       this.typeForm = {
         kind, id, name: existing.name, color: existing.style?.color ?? "#cccccc",
-        icon: existing.style?.icon ?? "", layerId: existing.layerId ?? "overlay",
+        icon: existing.style?.icon ?? "", layerId: existing.layerId ?? (kind === "line" ? "" : "overlay"),
         pattern: existing.style?.pattern ?? "none", patternColor: existing.style?.patternColor ?? "#1a1a1a",
         tint: existing.style?.tint !== false, iconQuery: "", iconCat: iconCategory(existing.style?.icon),
         shape: existing.kind === "line" ? "circle" : (existing.style?.shape ?? "circle"),
@@ -891,12 +909,14 @@ export default class Studio {
         labelMode: existing.style?.labelMode ?? "", labelScale: existing.style?.labelScale ?? 1
       };
     } else {
-      const layerId = kind === "area" ? (this.typeById(this.zone.typeId)?.layerId ?? "terrain") : "";
+      const slot = { area: "zone", object: "mark", line: "line" }[kind];
+      const cur = this.typeById(this[slot]?.typeId);
+      const layerId = kind === "area" ? (cur?.layerId ?? "terrain") : kind === "line" ? (cur?.layerId ?? "") : "";
       this.typeForm = {
         kind, id: null, name: "", color: nextZoneColor(this.states), icon: kind === "object" ? iconPath("castle") : "", layerId,
         pattern: "none", patternColor: "#1a1a1a", tint: true, iconQuery: "", iconCat: "settlements", shape: "circle",
         lineShape: "curved", bend: 0.5, linePattern: "solid", widthStart: 3, widthEnd: 3,
-        emoji: "", labelFont: "", folder: kind === "object" ? (this.typeById(this.mark.typeId)?.folder ?? "") : "",
+        emoji: "", labelFont: "", folder: folder ?? (cur?.kind === kind ? (cur.folder ?? "") : ""),
         labelMode: "", labelScale: 1
       };
     }
@@ -934,6 +954,7 @@ export default class Studio {
       type.style = { ...(type.style ?? {}), color: f.color };
       if ( f.kind === "object" && f.icon ) type.style.icon = f.icon;
       if ( f.kind === "area" ) type.layerId = f.layerId;
+      if ( f.kind === "line" ) { if ( f.layerId ) type.layerId = f.layerId; else delete type.layerId; }
     } else {
       type = makeType({ id: this.backend.newId(), kind: f.kind, name, color: f.color, icon: f.icon, layerId: f.layerId, layers: this.layers });
     }
@@ -948,8 +969,16 @@ export default class Studio {
       type.style = { ...(type.style ?? {}), tint: f.tint !== false, shape: f.shape || "circle" };
       const emoji = String(f.emoji ?? "").trim().slice(0, 8);
       if ( emoji ) type.style.emoji = emoji; else delete type.style.emoji;
-      const folder = String(f.folder ?? "").trim().slice(0, 40);
-      if ( folder ) type.folder = folder; else delete type.folder;
+    }
+    // Папка есть у типов всех видов (0.9.9).
+    const folder = String(f.folder ?? "").trim().slice(0, 60);
+    if ( folder ) type.folder = folder; else delete type.folder;
+    // Подпись: вид и размер у всех видов одинаково.
+    if ( f.kind !== "area" ) {
+      type.style = { ...(type.style ?? {}) };
+      if ( f.labelMode ) type.style.labelMode = f.labelMode; else delete type.style.labelMode;
+      const sc = Number(f.labelScale);
+      if ( Number.isFinite(sc) && sc > 0 && sc !== 1 ) type.style.labelScale = Math.max(0.4, Math.min(3, sc)); else delete type.style.labelScale;
     }
     if ( f.labelFont ) type.style = { ...(type.style ?? {}), labelFont: f.labelFont };
     else if ( type.style ) delete type.style.labelFont;
@@ -1028,7 +1057,9 @@ export default class Studio {
   settingsSection(section) {
     const gm = this.backend.isGM;
     this.settings.back = false;
-    if ( (section === "layers" || section === "world") && !gm ) section = "area";
+    // С 0.9.9 в настройках только мир и права: типы правятся в окнах инструментов, слои — в окне «Слои».
+    if ( !["world", "rights"].includes(section) ) section = "world";
+    if ( !gm ) section = "rights";
     this.settings.section = section;
     this.typeForm = null;
     this.layerForm = null;
@@ -1062,14 +1093,20 @@ export default class Studio {
     if ( !name ) return this.backend.notify("warn", this.t("ART.Layer.needName"));
     const layers = this.layers.map(({ visible, ...l }) => l);
     let id = f.id;
+    const extra = l => {
+      if ( f.folder ) l.folder = f.folder; else delete l.folder;
+      if ( /^#[0-9a-f]{6}$/i.test(f.color ?? "") ) l.color = f.color; else delete l.color;
+      return l;
+    };
     if ( id ) {
       const l = layers.find(x => x.id === id);
-      if ( l ) Object.assign(l, { name, exclusive: !!f.exclusive });
+      if ( l ) extra(Object.assign(l, { name, exclusive: !!f.exclusive }));
     } else {
       id = this.backend.newId();
-      layers.push({ id, name, exclusive: !!f.exclusive, visible: true });
+      layers.push(extra({ id, name, exclusive: !!f.exclusive, visible: true }));
     }
     await this.backend.setLayers(layers);
+    if ( this.layersOpen ) return this.pickLayer(id);
     this.settingsPick(id);
   }
 
@@ -1081,6 +1118,7 @@ export default class Studio {
     if ( n < 0 || m < 0 || m >= layers.length ) return;
     [layers[n], layers[m]] = [layers[m], layers[n]];
     await this.backend.setLayers(layers);
+    if ( this.layersOpen && this.layerForm?.id === id ) this.pickLayer(id);
     this.changed("ui");
   }
 
@@ -1104,6 +1142,7 @@ export default class Studio {
       await this._commit(zones.map(z => ({ action: "update", id: z.id, state: { ...z, system: { ...z.system, layerId: to } } })));
     }
     await this.backend.setLayers(rest);
+    if ( this.layersOpen ) return this.pickLayer(to);
     this.settingsPick(to);
   }
 
@@ -1194,6 +1233,7 @@ export default class Studio {
     this.rightOpen = true;
     this.rightTab = "tile";
     this.openId = id;
+    this.editId = null;
     this.changed("ui");
     this.changed("overlay");
   }
@@ -1336,6 +1376,7 @@ export default class Studio {
 
   toggleOpen(id) {
     this.openId = this.openId === id ? null : id;
+    if ( this.editId && this.editId !== this.openId ) this.editId = null;
     this.changed("ui");
     this.changed("overlay");
   }
@@ -1573,7 +1614,7 @@ export default class Studio {
         if ( s.system.kind === "area" ) s.system.layerId = this.typeById(value)?.layerId ?? s.system.layerId;
       } else if ( field === "color" ) s.system.style = { ...(s.system.style ?? {}), color: value };
       else if ( field === "shape" ) s.system.style = { ...(s.system.style ?? {}), shape: value };
-      else if ( field === "labelMode" || field === "labelScale" ) {
+      else if ( field === "labelMode" || field === "labelScale" || field === "labelFont" ) {
         const style = { ...(s.system.style ?? {}) };
         if ( value === "" || value === null ) delete style[field];
         else style[field] = field === "labelScale" ? Math.max(0.4, Math.min(3, Number(value) || 1)) : value;
@@ -1598,7 +1639,7 @@ export default class Studio {
           obj[key] = Number.isFinite(num) ? num : null;
         } else obj[key] = value;
       }
-    }, { now: ["demiurge", "typeId", "color", "shape", "size", "cells", "labelMode", "labelScale"].includes(field) });
+    }, { now: ["demiurge", "typeId", "color", "shape", "size", "cells", "labelMode", "labelScale", "labelFont"].includes(field) });
   }
 
   /**
@@ -1847,6 +1888,9 @@ export default class Studio {
     }
   }
 }
+
+// Папки, аспекты, окно слоёв, быстрый осмотр (0.9.9).
+Object.assign(Studio.prototype, StudioKit);
 
 /** Сколько шагов помнит Ctrl+Z. */
 const HISTORY_LIMIT = 100;
