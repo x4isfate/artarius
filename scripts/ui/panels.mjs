@@ -417,7 +417,6 @@ export default class ArtariusUI {
         if ( shut.has(el.dataset.key) ) shut.delete(el.dataset.key); else shut.add(el.dataset.key);
         s.changed("ui");
       },
-      toggleArchive: () => { s.zone.archiveOpen = !s.zone.archiveOpen; s.changed("ui"); },
       // Метка, линия
       placeMarks: () => s.placeMarks(),
       finishLine: () => s.finishLine(),
@@ -431,7 +430,6 @@ export default class ArtariusUI {
       openSettings: el => s.openSettings(el.dataset.section || undefined),
       closeSettings: () => s.closeSettings(),
       settingsSection: el => s.settingsSection(el.dataset.section),
-      settingsPick: el => { s.settings.back = false; s.settingsPick(el.dataset.id); },
       saveLayer: () => s.saveLayerForm(),
       deleteLayer: el => s.deleteLayer(el.dataset.id),
       layerUp: el => s.moveLayer(el.dataset.id, -1),
@@ -479,7 +477,6 @@ export default class ArtariusUI {
       hudDetails: el => s.openDetails(el.dataset.id || null),
       hudMark: () => s.toggleTypeMenu(),
       quickMark: el => s.quickMark(el.dataset.id),
-      hudDelete: () => s.hudDelete(),
       deleteMark: el => s.deleteMarks([el.dataset.id]),
       deleteSelected: () => s.deleteMarks(),
       clearMarkSel: () => s.clearMarkSel(),
@@ -488,8 +485,6 @@ export default class ArtariusUI {
       undo: () => s.undo(),
       redo: () => s.redo(),
       hudZone: () => s.toggleZoneMenu(),
-      hudPan: () => s.inspected && this.backend.panTo(s.grid.center(s.inspected)),
-      hudClose: () => s.closeHud(),
       // Карточка
       closeRight: () => s.closeRight(),
       rightTab: el => s.setRightTab(el.dataset.tab),

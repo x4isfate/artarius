@@ -181,7 +181,8 @@
       "owners": "Demiurges"
     },
     "Guide": {
-      "title": "How to play"
+      "title": "How to play",
+      "sections": "Sections"
     },
     "Sel": {
       "count": "Hexes selected: {n}",
