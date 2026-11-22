@@ -39,7 +39,7 @@ async function shot(page, name) {
   const server = await serve();
   const url = `http://localhost:${server.address().port}/tests/harness/index.html`;
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1500, height: 900 }, deviceScaleFactor: shots ? 2 : 1 });
   const errors = [];
   page.on("pageerror", e => errors.push(e.message));
   page.on("console", m => { if ( m.type() === "error" ) errors.push(m.text()); });
@@ -153,6 +153,7 @@ async function shot(page, name) {
   await act("placeMarks");
   a = await atlas();
   check(a.filter(x => x.kind === "object" && x.name === "Винтерфол").length === 2, "на 2 гекса встали 2 метки");
+  await shot(page, "marks");
   await page.locator('#artarius-ui input[data-model="mark.paint"]').check();
   await click([10, 3]);
   a = await atlas();
@@ -208,9 +209,13 @@ async function shot(page, name) {
     check(await page.locator(`${LW} [data-action="toggleLayer"][data-id="@temp"]`).isDisabled(), "слой без данных (температура) недоступен");
   }
   await page.click(`${LW} [data-action="toggleLayer"][data-id="politics"]`);
+  await act("pickLayer", '[data-id="politics"]');
+  await shot(page, "layers");
   await page.keyboard.press("Escape");
   check(!(await page.locator(LW).isVisible()), "Esc закрывает окно слоёв");
   await click([3, 5]);
+  await page.mouse.move(5, 300);
+  await page.waitForTimeout(400);
   check(await page.locator("#artarius-hud .art-qi-bar").isVisible() && !(await page.locator(".art-right").isVisible()),
     "щелчок осмотром ставит плашку на гекс, большое окно не открывается");
   {
@@ -483,6 +488,7 @@ async function shot(page, name) {
     await act("pickLayer", '[data-id="@coast"]');
   });
   check(await page.locator('#artarius-ui [data-action="coastSet"]').count() > 0, "у береговой линии свой редактор вида");
+  await shot(page, "coast");
   await page.keyboard.press("Escape");
   await act("openSettings");
   await act("settingsSection", '[data-section="world"]');
@@ -651,6 +657,7 @@ async function shot(page, name) {
   check((await ev(() => window.art.studio.inspected?.join(":"))) === "9:9", "переход по «9 9» открывает гекс 9:9");
   await ev(() => {
     const st = document.createElement("style");
+    st.id = "foundry-like-buttons";
     st.textContent = "#artarius-ui button{display:flex;align-items:center;justify-content:center;flex:1 1 auto}";
     document.head.appendChild(st);
     const s = window.art.studio; s.setTool("mark", { toggle: false }); s.openTypeForm("object");
@@ -660,6 +667,8 @@ async function shot(page, name) {
   check(iw >= 30, `значок в выборе виден под кнопками в стиле Foundry (${iw}px)`);
   const ac = await ev(() => { const b = document.querySelector(".art-icon-cats .art-btn.active"); const c = getComputedStyle(b); return [c.color, c.borderColor]; });
   check(ac[0] !== ac[1], "текст выбранной кнопки не красится в цвет рамки");
+  // Стиль с id сильнее стилей модуля, чем стили Foundry: дальше снимки без него.
+  await ev(() => document.getElementById("foundry-like-buttons")?.remove());
 
   /* 17. Игра с игроками: права и видимость -------------------------- */
   await ev(() => window.art.studio.openSettings("rights"));
