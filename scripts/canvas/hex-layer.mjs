@@ -59,13 +59,14 @@ export default class HexLayer extends InteractionLayer {
 
   /**
    * Группа в колонке инструментов слева. Видна только на сцене Артария.
-   * Четыре инструмента и кнопки: заявки, настройки, генератор (мастер), справка, кнопки расширений.
-   * Слои открываются плашкой «Слои» у названия сцены, отдельной кнопки в колонке нет.
+   * Четыре инструмента и кнопки: заявки, слои, аспекты, настройки и генератор (мастер), справка, кнопки расширений.
    */
   static prepareSceneControls() {
     const tools = {};
+    // Порядок колонки (0.9.9): Осмотр, Зоны, Метки, Линии, Заявки, Слои, Аспекты, Настройки, Генератор, Как играть.
+    const TITLE = { select: "ART.Mode.select", zone: "ART.Mode.zones", mark: "ART.Mode.marks", line: "ART.Mode.lines" };
     CONTROL_TOOLS.forEach(([name, icon], order) => {
-      tools[name] = { name, order, icon, title: `ART.Tool.${name}` };
+      tools[name] = { name, order, icon, title: TITLE[name] };
     });
     const gm = !!game.user?.isGM;
     const button = (name, icon, title, order, visible = true) => {
@@ -74,10 +75,12 @@ export default class HexLayer extends InteractionLayer {
         onChange: () => runtime.buttons?.[name]?.()
       };
     };
-    button("queue", "fa-solid fa-scroll", "ART.Queue.title", 10);
-    button("generator", "fa-solid fa-mountain-sun", "ART.Gen.title", 12, gm);
-    button("settings", "fa-solid fa-gear", "ART.Settings.title", 11);
-    button("guide", "fa-solid fa-circle-question", "ART.Guide.title", 13);
+    button("queue", "fa-solid fa-scroll", "ART.Mode.players", 4);
+    button("layers", "fa-solid fa-layer-group", "ART.Layer.title", 5);
+    button("aspects", "fa-solid fa-wand-magic-sparkles", "ART.Aspect.title", 6);
+    button("settings", "fa-solid fa-gear", "ART.Settings.title", 7, gm);
+    button("generator", "fa-solid fa-mountain-sun", "ART.Gen.title", 8, gm);
+    button("guide", "fa-solid fa-circle-question", "ART.Guide.title", 9);
     let order = 20;
     for ( const a of runtime.extraButtons?.() ?? [] ) {
       if ( a.gmOnly && !gm ) continue;
@@ -224,15 +227,17 @@ export default class HexLayer extends InteractionLayer {
       const p = scenePoint(ev, el);
       if ( ev.button === 2 ) { down = { right: true, x: ev.clientX, y: ev.clientY }; return; }
       if ( ev.button !== 0 ) return;
-      // Двойной щелчок линией (тот же инструмент, то же место) заканчивает линию.
+      // Двойной щелчок (тот же инструмент, то же место): у линии заканчивает её,
+      // в осмотре и у меток по метке открывает её карточку (0.9.9).
       const now = performance.now();
-      const dbl = s.tool === "line" && last?.tool === "line" && (now - last.t) < 320
+      const dbl = last?.tool === s.tool && (now - last.t) < 320
         && Math.hypot(ev.clientX - last.x, ev.clientY - last.y) < 8;
       last = dbl ? null : { t: now, tool: s.tool, x: ev.clientX, y: ev.clientY };
       down = { right: false, x: ev.clientX, y: ev.clientY };
       dlog("точка", p, "гекс", runtime.backend?.grid.cellAt(p));
       try {
-        if ( dbl ) s.finishLine();
+        if ( dbl && s.tool === "line" ) s.finishLine();
+        else if ( dbl && ["select", "mark"].includes(s.tool) && s.doubleClick(p) ) { ev.stopPropagation(); ev.preventDefault(); }
         else if ( s.pointerDown(p, mods(ev)) === "grab" ) {
           // Метку взяли мышью: Foundry не должен начинать свою протяжку (рамку выделения).
           ev.stopPropagation();
@@ -298,9 +303,9 @@ export default class HexLayer extends InteractionLayer {
       if ( (ev.key === "Delete" || ev.key === "Backspace") && s.markSel.size ) { own(); s.deleteMarks(); return; }
       // Shift+Пробел: перейти к гексу по координатам.
       if ( ev.shiftKey && ev.code === "Space" ) { own(); runtime.ui?.openGoto?.(); return; }
-      // 1–5: режимы карты (местность, владения, метки, линии, игроки). Пока инструменты Артария активны,
+      // 1–6: Осмотр, Зоны, Метки, Линии, Заявки, Слои. Пока инструменты Артария активны,
       // эти клавиши наши, а не панели макросов Foundry.
-      const digit = /^Digit([1-5])$/.exec(ev.code);
+      const digit = /^Digit([1-6])$/.exec(ev.code);
       if ( digit && !ctrl && !ev.altKey && !ev.shiftKey ) { own(); s.setMode(MODES[Number(digit[1]) - 1]); return; }
       if ( ev.key === "Enter" && runtime.studio.tool === "line" ) {
         ev.preventDefault();

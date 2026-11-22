@@ -17,6 +17,7 @@ export const VIEW_PART_DEFS = [
   { id: "@rivers", on: true, group: "lines" },
   { id: "@lines", on: true, group: "lines" },
   { id: "@borders", on: true, group: "map" },
+  { id: "@coast", on: true, group: "map" },
   { id: "@grid", on: true, group: "map" },
   { id: "@coords", on: false, group: "map" },
   { id: "@heights", on: false, group: "data" },

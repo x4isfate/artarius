@@ -181,7 +181,8 @@
       "owners": "Demiurges"
     },
     "Guide": {
-      "title": "How to play"
+      "title": "How to play",
+      "sections": "Sections"
     },
     "Sel": {
       "count": "Hexes selected: {n}",
@@ -352,7 +353,9 @@
       "noStatusesYet": "No statuses or aspects yet.",
       "addOwnStatus": "Custom status",
       "noActors": "No characters yet.",
-      "ownersByClaim": "The GM confirms new demiurges: this edit goes to them as a claim."
+      "ownersByClaim": "The GM confirms new demiurges: this edit goes to them as a claim.",
+      "edit": "Edit",
+      "editDone": "Done"
     },
     "Queue": {
       "title": "Claims",
@@ -492,7 +495,8 @@
       "ice": "Ice",
       "windrose": "Wind rose",
       "scale": "Scale bar",
-      "noData": "No data: import an Azgaar map or run the generator"
+      "noData": "No data: import an Azgaar map or run the generator",
+      "coast": "Coastline"
     },
     "Icons": {
       "search": "Search: castle, ore, temple…",
@@ -526,7 +530,12 @@
       "delete": "Delete mark (Delete)",
       "deleteWhich": "Which mark to delete?",
       "zoneAdd": "Add to zone",
-      "zoneNew": "New zone: {name}"
+      "zoneNew": "New zone: {name}",
+      "line": "Line from here",
+      "detailsN": "Details: what is on the hex ({n})",
+      "markPickShort": "Place a mark",
+      "findMark": "Find a mark",
+      "newHere": "Open the window with this hex"
     },
     "Settings": {
       "title": "Artarius settings",
@@ -540,7 +549,8 @@
         "line": "Lines",
         "world": "World",
         "rights": "Rights"
-      }
+      },
+      "gmOnly": "Only the GM changes module settings."
     },
     "Shape": {
       "title": "Mark shape",
@@ -639,7 +649,12 @@
       "asType": "As type",
       "curved": "Curved",
       "straight": "Straight",
-      "none": "Hidden"
+      "none": "Hidden",
+      "view": "Style",
+      "font": "Font",
+      "sizePct": "Size: {n}%",
+      "below": "Below the mark",
+      "along": "Along the line"
     },
     "Mode": {
       "title": "Map modes",
@@ -647,14 +662,20 @@
       "realms": "Realms",
       "marks": "Marks",
       "lines": "Lines",
-      "players": "Players",
+      "players": "Claims",
       "hint": {
         "terrain": "brush for forests, mountains, seas",
         "realms": "brush for realms, regions and your own layers",
-        "marks": "place marks; click a mark to open it",
+        "marks": "place marks, double-click opens a mark",
         "lines": "roads, rivers, borders",
-        "players": "player claims"
-      }
+        "players": "player claims",
+        "select": "inspect a hex, move marks",
+        "zones": "terrain, realms, custom layers",
+        "layers": "what the map shows and how"
+      },
+      "select": "Inspect",
+      "zones": "Zones",
+      "layers": "Layers"
     },
     "Brush": {
       "newOf": "New zone: {name}",
@@ -686,6 +707,141 @@
     },
     "Toast": {
       "undo": "Undo"
+    },
+    "Unified": {
+      "selected": "Hexes selected",
+      "points": "Points",
+      "findZone": "Find a type or zone",
+      "findMark": "Find a type or mark",
+      "findLine": "Find a type or line",
+      "onMap": "On the map",
+      "noneOnMap": "None on the map yet.",
+      "more": "{n} more. Narrow the search.",
+      "newMark": "New mark",
+      "newLine": "New line",
+      "zoneOf": "Zone “{name}”",
+      "zoneOfHint": "The brush paints with this zone.",
+      "addCells": "Add hexes: {n}",
+      "brush": "Brush",
+      "eraseHint": "Shift-drag on the map erases too.",
+      "layerOf": "layer {name}",
+      "noLayer": "No layer",
+      "noFolder": "No folder",
+      "noTypes": "No types yet. Start with “New type”.",
+      "nothingFound": "Nothing found.",
+      "pickType": "Pick a type on the left.",
+      "editType": "Edit type",
+      "saveType": "Save type",
+      "deleteType": "Delete type",
+      "undoPoint": "Remove last point",
+      "clearLine": "Start over"
+    },
+    "Folder": {
+      "one": "Folder",
+      "new": "New folder",
+      "newTitle": "New folder name",
+      "renameTitle": "New folder name",
+      "menu": "Folder: name, colour",
+      "rename": "Rename",
+      "ownColor": "Custom colour",
+      "newIn": "New type in folder",
+      "newLayerIn": "New layer in folder",
+      "newAspectIn": "New aspect in folder",
+      "remove": "Remove folder",
+      "gmOnly": "Only the GM creates folders.",
+      "world": "World"
+    },
+    "Aspect": {
+      "title": "Aspects",
+      "new": "New aspect",
+      "find": "Find an aspect or status",
+      "inWorld": "In the world",
+      "hint": "Drag a tile onto a zone, mark or line, on the map or in the hex card.",
+      "dragTile": "Drag onto a zone, mark or line",
+      "empty": "No aspects yet.",
+      "emptyShort": "No aspects yet. Create them in the Aspects window.",
+      "seed": "Add the basic ones",
+      "baseFolder": "Basic",
+      "pick": "Pick an aspect on the left or create one.",
+      "hostsOn": "Attached to",
+      "notHost": "Not attached to anything yet.",
+      "onZone": "zone",
+      "onMark": "mark",
+      "onLine": "line",
+      "props": "Parameters",
+      "what": "Kind",
+      "kindAspect": "Aspect",
+      "kindStatus": "Status",
+      "steps": "Steps",
+      "stepsNone": "none",
+      "stepsN": "{n} steps",
+      "parent": "Part of aspect",
+      "parentNone": "None",
+      "icon": "Icon",
+      "itemNote": "In Foundry this is an Item of type “Artarius Aspect”. It lives in the Items tab, so you can put it in a compendium and move it to another world.",
+      "delete": "Delete aspect",
+      "deleteAsk": "Delete “{name}”?",
+      "deleteUsed": "“{name}” is attached to map features ({n}). Delete it? It stays on the map, it just leaves this list.",
+      "readonly": "Only the GM can change aspects.",
+      "cantCreate": "Only the GM or a player who may create Items can add aspects.",
+      "needName": "Give the aspect a name.",
+      "block": "Aspects and statuses",
+      "add": "Add",
+      "addTo": "Attach an aspect or status",
+      "dragHint": "Or drag one from the Aspects window.",
+      "noneFound": "Nothing found.",
+      "openWindow": "Aspects window",
+      "detach": "Remove",
+      "attached": "“{name}” is now on “{to}”.",
+      "already": "“{name}” is already here.",
+      "dropNothing": "There is no zone, mark or line under the cursor."
+    },
+    "LayerLook": {
+      "view": "Look on the map",
+      "opacity": "Opacity",
+      "blur": "Blur",
+      "reset": "Reset",
+      "hint": "The GM sets it, everyone sees it. The arrow resets it.",
+      "gmOnly": "The GM sets this.",
+      "inLayer": "In the layer",
+      "zones": "Zones",
+      "lines": "Lines",
+      "visible": "shown on the map",
+      "hidden": "hidden",
+      "color": "Colour in lists",
+      "save": "Save layer",
+      "pick": "Pick a layer on the left.",
+      "viewHint": "This is not a zone layer: you can only show or hide it, for yourself.",
+      "group": {
+        "objects": "Marks and labels",
+        "lines": "Rivers and lines",
+        "map": "Map",
+        "data": "Data"
+      }
+    },
+    "Coast": {
+      "style": "Coast style",
+      "flat": "Smooth",
+      "rough": "Rough",
+      "double": "Double",
+      "hatch": "Hatched",
+      "filter": "Filter",
+      "filter_none": "None",
+      "filter_shadow": "Shadow",
+      "filter_glow": "Glow",
+      "width": "Width",
+      "opacity": "Opacity",
+      "blur": "Blur",
+      "shallow": "Shallow-water band along the coast",
+      "hint": "Applies at once, everyone sees it.",
+      "reset": "Reset"
+    },
+    "News": {
+      "title": "Artarius: what's new",
+      "latest": "new",
+      "missing": "The changelog was not found.",
+      "hide": "Don't show until the next version",
+      "ok": "Got it"
     }
   }
 }

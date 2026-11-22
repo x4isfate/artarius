@@ -5,7 +5,8 @@
  */
 import { largestComponent, labelPath, placeLetters, fitFontSize } from "../geometry/label-path.mjs";
 import { shapePoints, shapeOf } from "../data/mark-shape.mjs";
-import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, zoneCells } from "../data/world.mjs";
+import { visibleZoneCells, boundaryEdges, labelCell, layerIdOf, lineLayerOf, zoneCells } from "../data/world.mjs";
+import { COAST_DEFAULTS } from "../constants.mjs";
 import { resolveStyleOf } from "./style.mjs";
 import { isResourceType } from "../data/view.mjs";
 import { isHidden } from "../data/access.mjs";
@@ -60,6 +61,17 @@ export function hatchSegments(ring, dir, step) {
 
 const GHOST = { create: 0x5fcf6f, update: 0xe8c27a, delete: 0xff6a5a };
 
+/** Направление ломаной в точке m (на ближайшем к ней отрезке), в радианах. */
+function angleAt(line, m) {
+  let best = 0, bd = Infinity;
+  for ( let i = 1; i < line.length; i++ ) {
+    const [a, b] = [line[i - 1], line[i]];
+    const d = Math.hypot(((a[0] + b[0]) / 2) - m[0], ((a[1] + b[1]) / 2) - m[1]);
+    if ( d < bd && (a[0] !== b[0] || a[1] !== b[1]) ) { bd = d; best = Math.atan2(b[1] - a[1], b[0] - a[0]); }
+  }
+  return best;
+}
+
 export default class HexRenderer {
   constructor(grid) {
     this.grid = grid;
@@ -90,6 +102,9 @@ export default class HexRenderer {
     this._lineCache = new Map();
     this._markCache = new Map();
     this._terrain = null;
+    /** Контейнеры слоёв (0.9.9): у каждого слоя своя прозрачность и размытие. id → Container. */
+    this._zoneBoxes = new Map();
+    this._lineBoxes = new Map();
     this._fields = null;
     this._decor = null;
     this._eph = [];
@@ -187,9 +202,17 @@ export default class HexRenderer {
     this.showBorders = show.borders;
     // Снять всё с карты без уничтожения: что не поменялось, вернётся на место из кэша.
     for ( const c of [this.zones, this.fieldLayer, this.lines, this.marks, this.zoneLabels, this.lineLabels, this.markLabels, this.decor] ) c.removeChildren();
+    for ( const b of [...this._zoneBoxes.values(), ...this._lineBoxes.values()] ) b.removeChildren();
     this._drop(this._eph);
     this._eph = [];
     const hidden = new Set(layers.filter(l => l.visible === false).map(l => l.id));
+    // Слои снизу вверх: у каждого свой контейнер с прозрачностью и размытием, их задаёт мастер.
+    for ( const l of layers ) {
+      if ( hidden.has(l.id) ) continue;
+      this.zones.addChild(this._layerBox(this._zoneBoxes, l));
+    }
+    this.show = show;
+    this.world = world;
     const order = new Map(layers.map((l, n) => [l.id, n]));
     const all = [...states.values()];
     const zones = all.filter(s => s.system.kind === "area" && !hidden.has(layerIdOf(s, types)))
@@ -202,12 +225,15 @@ export default class HexRenderer {
     const usedZones = new Set();
     if ( this.atlas && !hidden.has("terrain") ) {
       const land = zones.filter(z => layerIdOf(z, types) === "terrain");
-      const key = [this.rough, this.grid.radius, ...land.map(z => `${z.system.typeId}|${resolveStyleOf(z, types).color}|${sig(vis.get(z.id) ?? [])}`)].join("#");
+      const key = [this.rough, this.grid.radius, JSON.stringify(world.coast ?? null), ...land.map(z => `${z.system.typeId}|${resolveStyleOf(z, types).color}|${sig(vis.get(z.id) ?? [])}`)].join("#");
       if ( this._terrain?.key !== key ) {
         this._drop(this._terrain?.objs);
-        this._terrain = { key, objs: this._drawAtlasTerrain(land, vis, types) };
+        const objs = this._drawAtlasTerrain(land, vis, types, { ...COAST_DEFAULTS, ...(world.coast ?? {}) });
+        this._terrain = { key, objs, coast: objs[1] };
       }
-      for ( const o of this._terrain.objs ) this.zones.addChild(o);
+      const tbox = this._zoneBoxes.get("terrain") ?? this.zones;
+      for ( const o of this._terrain.objs ) tbox.addChild(o);
+      if ( this._terrain.coast ) this._terrain.coast.visible = show.coast !== false;
       for ( const z of land ) {
         const style = resolveStyleOf(z, types);
         const cells = (vis.get(z.id) ?? []).filter(inside);
@@ -231,11 +257,16 @@ export default class HexRenderer {
     this._sweep(this._zoneCache, usedZones);
     this._drawFields(fields, show);
     const usedLines = new Set();
+    const layerOf = new Map(layers.map(l => [l.id, l]));
     for ( const l of all.filter(s => s.system.kind === "line") ) {
       if ( !(isRiverLine(l, types) ? show.rivers : show.lines) ) continue;
+      // Линия в слое прячется вместе со слоем и берёт его прозрачность (0.9.9).
+      const lid = lineLayerOf(l, types);
+      if ( lid && hidden.has(lid) ) continue;
+      const box = lid && layerOf.has(lid) ? this._lineBox(layerOf.get(lid)) : this.lines;
       const style = resolveStyleOf(l, types);
-      const k = JSON.stringify([l.name, l.system.geometry, style, isHidden(l)]);
-      this._reuse(this._lineCache, l.id, k, () => this._buildLine(l, style), usedLines);
+      const k = JSON.stringify([l.name, l.system.geometry, style, isHidden(l), lid]);
+      this._reuse(this._lineCache, l.id, k, () => this._buildLine(l, style, box), usedLines);
     }
     this._sweep(this._lineCache, usedLines);
     this._drawMarks(all.filter(s => s.system.kind === "object"
@@ -243,6 +274,31 @@ export default class HexRenderer {
     this.labels.visible = show.labels;
     this.gridLines.visible = show.grid;
     this._drawDecor(show, world);
+  }
+
+  /** Контейнер слоя: прозрачность и размытие из настроек слоя (0.9.9). */
+  _layerBox(map, layer) {
+    let box = map.get(layer.id);
+    if ( !box || box.destroyed ) {
+      box = new PIXI.Container();
+      box.eventMode = "none";
+      map.set(layer.id, box);
+    }
+    const alpha = Number.isFinite(Number(layer.opacity)) ? Math.max(0, Math.min(1, Number(layer.opacity))) : 1;
+    box.alpha = alpha;
+    const blur = Math.max(0, Number(layer.blur) || 0);
+    if ( blur > 0 ) {
+      const f = box.filters?.[0];
+      if ( f?.blur !== blur ) box.filters = [Object.assign(new PIXI.BlurFilter(blur), { blur })];
+    } else if ( box.filters ) box.filters = null;
+    return box;
+  }
+
+  /** Контейнер линий слоя: та же прозрачность и размытие, что у зон слоя. */
+  _lineBox(layer) {
+    const box = this._layerBox(this._lineBoxes, layer);
+    if ( box.parent !== this.lines ) this.lines.addChild(box);
+    return box;
   }
 
   /** Координаты, роза ветров и линейка: перерисовываются, только когда их включили или выключили. */
@@ -388,7 +444,7 @@ export default class HexRenderer {
    * Местность в виде «Атлас»: бумажные цвета с неровным тоном, вода светлее у берега,
    * обводка берега тушью и значки рельефа. Всё в двух Graphics внизу слоя зон.
    */
-  _drawAtlasTerrain(zones, vis, types) {
+  _drawAtlasTerrain(zones, vis, types, coastStyle = COAST_DEFAULTS) {
     const grid = this.grid, r = grid.radius;
     const key = c => `${c[0]},${c[1]}`;
     const typeOf = new Map(), ownColor = new Map();
@@ -425,15 +481,7 @@ export default class HexRenderer {
         g.endFill();
       }
     }
-    // Берег: ребро между сушей и водой, той же волной, что и заливка.
-    g.lineStyle({ width: Math.max(1.5, r * 0.05), color: color(ATLAS_INK), alpha: 0.85, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
-    for ( const [a, b] of coastPairs(cells, near, terrainOf, inBounds) ) {
-      const e = sharedEdge(grid.vertices(a), grid.vertices(b));
-      if ( !e ) continue;
-      const pts = this.rough ? [[e[0].x, e[0].y], ...roughEdge(e[0], e[1], amp), [e[1].x, e[1].y]] : [[e[0].x, e[0].y], [e[1].x, e[1].y]];
-      g.moveTo(pts[0][0], pts[0][1]);
-      for ( const [x, y] of pts.slice(1) ) g.lineTo(x, y);
-    }
+    const coast = this._drawCoast(cells, near, terrainOf, inBounds, coastStyle, amp);
     // Волнистые края крайних гексов не вылезают за поле.
     if ( this.rough ) {
       const mask = new PIXI.Graphics();
@@ -449,51 +497,179 @@ export default class HexRenderer {
       const deep = isWater(t) && (dist.get(k) ?? 9) >= 3;
       for ( const gl of glyphsFor(t, grid.center(c), r, k, { deep }) ) this._drawGlyph(glyphs, gl, r);
     }
-    return [g, glyphs];
+    if ( this.rough ) {
+      const mask = new PIXI.Graphics();
+      mask.beginFill(0xffffff, 1);
+      for ( const c of cells ) mask.drawPolygon(flatV(grid.vertices(c)));
+      mask.endFill();
+      coast.addChild(mask);
+      coast.mask = mask;
+    }
+    return [g, coast, glyphs];
   }
 
-  /** Один значок атласа. Формы — как в макете варианта «Атлас». */
-  _drawGlyph(g, { kind, x, y, s }, r) {
+  /**
+   * Береговая линия по рёбрам суши и воды (0.9.9): узор, цвет, толщина, прозрачность, размытие,
+   * тень или подсветка и полоса мелководья. Пустой узор — как у поля: волна при неровных границах.
+   */
+  _drawCoast(cells, near, terrainOf, inBounds, st, amp) {
+    const grid = this.grid, r = grid.radius;
+    const g = new PIXI.Graphics();
+    const pattern = st.pattern || (this.rough ? "rough" : "flat");
+    // Волна без неровной заливки идёт ближе к ребру, иначе линия уходит от края суши.
+    const wave = this.rough ? amp : r * 0.12;
+    const edges = [];
+    for ( const [a, b] of coastPairs(cells, near, terrainOf, inBounds) ) {
+      const e = sharedEdge(grid.vertices(a), grid.vertices(b));
+      if ( !e ) continue;
+      const pts = pattern === "rough" ? [[e[0].x, e[0].y], ...roughEdge(e[0], e[1], wave), [e[1].x, e[1].y]] : [[e[0].x, e[0].y], [e[1].x, e[1].y]];
+      // Нормаль к воде: от центра суши к центру воды.
+      const ca = grid.center(a), cb = grid.center(b);
+      const len = Math.hypot(cb.x - ca.x, cb.y - ca.y) || 1;
+      edges.push({ pts, n: [(cb.x - ca.x) / len, (cb.y - ca.y) / len] });
+    }
+    const width = Math.max(1.5, r * 0.05) * (Number(st.width) > 0 ? Number(st.width) : 1);
+    const alpha = Math.max(0, Math.min(1, Number(st.alpha ?? 0.85)));
+    const col = color(st.color || ATLAS_INK);
+    const stroke = (w, c, a, dx = 0, dy = 0, off = 0) => {
+      g.lineStyle({ width: w, color: c, alpha: a, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
+      for ( const { pts, n } of edges ) {
+        const ox = dx + (n[0] * off), oy = dy + (n[1] * off);
+        g.moveTo(pts[0][0] + ox, pts[0][1] + oy);
+        for ( const [x, y] of pts.slice(1) ) g.lineTo(x + ox, y + oy);
+      }
+    };
+    if ( st.shallow ) stroke(r * 0.22, color(ATLAS_PAPER.shallow), 0.75, 0, 0, r * 0.11);
+    if ( st.filter === "shadow" ) stroke(width, 0x000000, alpha * 0.3, r * 0.03, r * 0.04);
+    if ( st.filter === "glow" ) stroke(width * 3, 0xf6efe2, alpha * 0.5);
+    stroke(width, col, alpha);
+    if ( pattern === "double" ) stroke(width * 0.7, col, alpha * 0.45, 0, 0, r * 0.09);
+    if ( pattern === "hatch" ) {
+      // Штрихи к воде вдоль берега.
+      g.lineStyle({ width: Math.max(1, width * 0.6), color: col, alpha: alpha * 0.6, cap: PIXI.LINE_CAP.ROUND });
+      for ( const { pts, n } of edges ) {
+        const [x0, y0] = pts[0], [x1, y1] = pts[pts.length - 1];
+        for ( const t of [0.2, 0.5, 0.8] ) {
+          const x = x0 + ((x1 - x0) * t), y = y0 + ((y1 - y0) * t);
+          g.moveTo(x + (n[0] * r * 0.02), y + (n[1] * r * 0.02));
+          g.lineTo(x + (n[0] * r * 0.12) - (n[1] * r * 0.04), y + (n[1] * r * 0.12) + (n[0] * r * 0.04));
+        }
+      }
+    }
+    g.lineStyle(0);
+    const blur = Math.max(0, Number(st.blur) || 0);
+    if ( blur > 0 ) g.filters = [new PIXI.BlurFilter(blur)];
+    return g;
+  }
+
+  /** Один значок атласа. Формы — как в макете варианта «Атлас» и рисунках рельефа 0.9.9. */
+  _drawGlyph(g, gl, r) {
+    const { kind, x, y, s } = gl;
     const ink = color(ATLAS_INK), lw = Math.max(1, r * 0.035);
-    const line = (alpha = 0.85, w = lw) => g.lineStyle({ width: w, color: ink, alpha, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
+    const line = (alpha = 0.85, w = lw, c = ink) => g.lineStyle({ width: w, color: c, alpha, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
     const none = () => g.lineStyle(0);
+    const poly = (pts, fill, alpha) => { none(); g.beginFill(fill, alpha); g.drawPolygon(pts.flat()); g.endFill(); };
+    const path = pts => { g.moveTo(...pts[0]); for ( const p of pts.slice(1) ) g.lineTo(...p); };
     switch ( kind ) {
       case "mountain": {
-        const L = [x - s, y + (s * 0.55)], T = [x, y - (s * 0.75)], R = [x + s, y + (s * 0.55)];
-        none();
-        g.beginFill(0xffffff, 0.35); g.drawPolygon([...L, ...T, ...R]); g.endFill();
-        g.beginFill(0x8a7552, 0.55); g.drawPolygon([...T, ...R, x + (s * 0.15), y + (s * 0.55)]); g.endFill();
+        const hw = gl.hw ?? 1, top = gl.top ?? 0.75;
+        const L = [x - (s * hw), y + (s * 0.55)], T = [x, y - (s * top)], R = [x + (s * hw), y + (s * 0.55)];
+        poly([L, T, R], 0xffffff, 0.35);
+        poly([T, R, [x + (s * 0.15), y + (s * 0.55)]], 0x8a7552, 0.55);
         line(0.9, lw * 1.2);
-        g.moveTo(...L); g.lineTo(...T); g.lineTo(...R);
+        path([L, T, R]);
         // Штрихи склона в тени.
         line(0.5, lw * 0.7);
         for ( const t of [0.35, 0.6] ) {
-          const px = x + (s * t * 0.8), py = y - (s * 0.75) + (s * 1.3 * t);
+          const px = x + (s * t * 0.8 * hw), py = y - (s * top) + ((top + 0.55) * s * t);
           g.moveTo(px, py); g.lineTo(px - (s * 0.12), py + (s * 0.22));
+        }
+        if ( gl.cap ) {
+          // Снежная шапка: верхняя треть склона светлая, с неровным краем.
+          const p1 = [T[0] + (0.32 * (L[0] - T[0])), T[1] + (0.32 * (L[1] - T[1]))];
+          const p2 = [T[0] + (0.32 * (R[0] - T[0])), T[1] + (0.32 * (R[1] - T[1]))];
+          const capPts = [T, p2, [x + (0.1 * s), p2[1] - (0.02 * s)], [x - (0.02 * s), p1[1] + (0.1 * s)], [x - (0.16 * s), p1[1] - (0.03 * s)], p1];
+          poly(capPts, 0xfbfaf4, 0.95);
+          line(0.55, lw * 0.6);
+          path(capPts.slice(1, -1));
         }
         break;
       }
+      case "mountainRound": {
+        const L = [x - s, y + (0.55 * s)], R = [x + s, y + (0.55 * s)], C = [x, y - (1.9 * s)];
+        const q = t => [((1 - t) ** 2 * L[0]) + (2 * (1 - t) * t * C[0]) + (t * t * R[0]), ((1 - t) ** 2 * L[1]) + (2 * (1 - t) * t * C[1]) + (t * t * R[1])];
+        const curve = Array.from({ length: 17 }, (_, i) => q(i / 16));
+        const right = Array.from({ length: 9 }, (_, i) => q(0.5 + (i / 16)));
+        poly(curve, 0xffffff, 0.35);
+        poly([...right, [x + (0.2 * s), y + (0.55 * s)]], 0x8a7552, 0.5);
+        line(0.9, lw * 1.2);
+        path(curve);
+        line(0.5, lw * 0.7);
+        g.moveTo(x + (0.3 * s), y - (0.45 * s)); g.lineTo(x + (0.2 * s), y - (0.25 * s));
+        break;
+      }
+      case "mountainTwin": {
+        const L = [x - s, y + (0.55 * s)], T1 = [x - (0.35 * s), y - (0.6 * s)], S = [x + (0.02 * s), y - (0.2 * s)];
+        const T2 = [x + (0.38 * s), y - (0.85 * s)], R = [x + (1.05 * s), y + (0.55 * s)];
+        poly([L, T1, S, T2, R], 0xffffff, 0.35);
+        poly([T2, R, [x + (0.5 * s), y + (0.55 * s)]], 0x8a7552, 0.55);
+        poly([T1, S, [x - (0.15 * s), y + (0.55 * s)]], 0x8a7552, 0.4);
+        line(0.9, lw * 1.2);
+        path([L, T1, S, T2, R]);
+        line(0.5, lw * 0.7);
+        g.moveTo(x + (0.6 * s), y - (0.35 * s)); g.lineTo(x + (0.48 * s), y - (0.13 * s));
+        break;
+      }
       case "hill": {
-        const R0 = s * 0.7, cy = y + (s * 0.4), a0 = Math.PI * 1.1, a1 = Math.PI * 1.9;
+        const R0 = s * (gl.R0 ?? 0.7), cy = y + (s * 0.4), a0 = Math.PI * (gl.a0 ?? 1.1), a1 = Math.PI * (gl.a1 ?? 1.9);
+        if ( gl.shade ) {
+          // Тень на правом склоне.
+          const am = Math.PI * 1.5;
+          const pts = [];
+          for ( let k = 0; k <= 8; k++ ) { const a = am + ((a1 - am) * k / 8); pts.push([x + (Math.cos(a) * R0), cy + (Math.sin(a) * R0)]); }
+          pts.push([x + (0.2 * s), cy + (Math.sin(a1) * R0) - (0.02 * s)], [x + (0.05 * s), cy - R0 + (0.25 * s)]);
+          poly(pts, 0x8a7552, 0.3);
+        }
         line(0.85, lw * 1.1);
         g.moveTo(x + (Math.cos(a0) * R0), cy + (Math.sin(a0) * R0));
         g.arc(x, cy, R0, a0, a1);
         break;
       }
       case "tree": case "palm": {
+        if ( gl.shadow ) { none(); g.beginFill(ink, 0.14); g.drawEllipse(x + (0.25 * s), y + (0.9 * s), 0.6 * s, 0.16 * s); g.endFill(); }
         line(0.8);
         g.moveTo(x, y + (s * 0.3)); g.lineTo(x, y + (s * 0.9));
-        g.beginFill(kind === "palm" ? 0x6c9061 : 0x7f9a5e, 1);
+        g.beginFill(gl.color ?? (kind === "palm" ? 0x6c9061 : 0x7f9a5e), 1);
         g.drawCircle(x, y, s * 0.55);
+        g.endFill();
+        break;
+      }
+      case "birch": {
+        line(0.85, lw * 1.6);
+        g.moveTo(x, y + (0.2 * s)); g.lineTo(x, y + (0.95 * s));
+        line(1, lw * 0.7, 0xf4f1e6);
+        g.moveTo(x, y + (0.2 * s)); g.lineTo(x, y + (0.95 * s));
+        line(0.85);
+        g.beginFill(0xb9c98e, 1);
+        g.drawEllipse(x, y - (0.05 * s), 0.3 * s, 0.52 * s);
         g.endFill();
         break;
       }
       case "conifer": {
         line(0.8);
         g.moveTo(x, y + (s * 0.5)); g.lineTo(x, y + (s * 0.9));
-        g.beginFill(0x6f8a6a, 1);
-        g.drawPolygon([x - (s * 0.4), y + (s * 0.5), x, y - (s * 0.7), x + (s * 0.4), y + (s * 0.5)]);
-        g.endFill();
+        const tiers = gl.tiers === 2 ? [[0.44, -0.15, 0.5], [0.32, -0.75, -0.05]] : [[0.4, -0.7, 0.5]];
+        for ( const [w, top, bot] of tiers ) {
+          g.beginFill(0x6f8a6a, 1);
+          g.drawPolygon([x - (w * s), y + (bot * s), x, y + (top * s), x + (w * s), y + (bot * s)]);
+          g.endFill();
+        }
+        if ( gl.snow ) {
+          line(0.6, lw * 0.7);
+          g.beginFill(0xfbfaf4, 1);
+          g.drawPolygon([x - (0.15 * s), y - (0.25 * s), x, y - (0.7 * s), x + (0.15 * s), y - (0.25 * s)]);
+          g.endFill();
+        }
         break;
       }
       case "tuft": case "snow": {
@@ -505,9 +681,40 @@ export default class HexRenderer {
         break;
       }
       case "dune": {
+        if ( gl.shade ) {
+          none();
+          g.beginFill(0xb89b62, 0.35);
+          g.moveTo(x - s, y); g.quadraticCurveTo(x, y - (s * 0.6), x + s, y); g.quadraticCurveTo(x + (0.3 * s), y + (0.05 * s), x - s, y);
+          g.endFill();
+        }
         line(0.7);
         g.moveTo(x - s, y); g.quadraticCurveTo(x, y - (s * 0.6), x + s, y);
         g.moveTo(x - (s * 0.5), y + (s * 0.35)); g.quadraticCurveTo(x, y + (s * 0.05), x + (s * 0.5), y + (s * 0.35));
+        break;
+      }
+      case "cactus": {
+        // Микрокактус: та же тушь, но почти прозрачная.
+        line(gl.op ?? 0.3, lw * 0.9);
+        g.moveTo(x, y); g.lineTo(x, y - s);
+        g.moveTo(x, y - (0.5 * s)); g.lineTo(x - (0.3 * s), y - (0.5 * s)); g.lineTo(x - (0.3 * s), y - (0.78 * s));
+        g.moveTo(x, y - (0.38 * s)); g.lineTo(x + (0.28 * s), y - (0.38 * s)); g.lineTo(x + (0.28 * s), y - (0.66 * s));
+        break;
+      }
+      case "ripple": {
+        // Рябь на песке: s — радиус гекса (или его доля).
+        const k = s;
+        line(0.45, lw * 0.9);
+        g.moveTo(x, y);
+        g.quadraticCurveTo(x + (0.07 * k), y - (0.05 * k), x + (0.14 * k), y);
+        g.quadraticCurveTo(x + (0.21 * k), y + (0.05 * k), x + (0.28 * k), y);
+        break;
+      }
+      case "stone": {
+        const k = s;
+        line(0.75, lw * 0.8);
+        g.beginFill(0xb8a98a, 1);
+        g.drawEllipse(x, y, 0.07 * k, 0.045 * k);
+        g.endFill();
         break;
       }
       case "reed": {
@@ -548,7 +755,7 @@ export default class HexRenderer {
       }
     }
     const label = style.labelSize > 0 && state.name ? this._zoneLabel(state, style, cells, layerId) : null;
-    return [[g, this.zones], [label, this.zoneLabels]];
+    return [[g, this._zoneBoxes.get(layerId) ?? this.zones], [label, this.zoneLabels]];
   }
 
   /**
@@ -620,13 +827,13 @@ export default class HexRenderer {
   }
 
   /** Линия и её подписи: [[фигура, контейнер], [подпись, контейнер], …]. */
-  _buildLine(state, style) {
+  _buildLine(state, style, box = this.lines) {
     const pts = state.system.geometry?.points ?? [];
     if ( pts.length < 2 ) return [];
     const curve = lineCurve(pts, style, state.id);
     const g = new PIXI.Graphics();
     if ( isHidden(state) ) g.alpha = 0.5;
-    const out = [[g, this.lines]];
+    const out = [[g, box]];
     const w0 = style.widthStart ?? 3, w1 = style.widthEnd ?? 3;
     const wMax = Math.max(w0, w1);
     const alpha = style.alpha ?? 1;
@@ -646,21 +853,32 @@ export default class HexRenderer {
       g.drawPolygon(ribbon(curve, w0, w1).flat());
       g.endFill();
     } else stroke(curve, wMax, color(style.color));
-    if ( style.labelSize > 0 && state.name ) {
-      const m = midpoint(curve);
-      if ( m ) {
-        const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
-        t.position.set(m[0], m[1] - wMax - style.labelSize * 0.6);
-        out.push([t, this.lineLabels]);
+    // Подпись (0.9.9): labelMode "none" — без подписи, "along" — вдоль линии, иначе прямо над серединой.
+    const lmode = style.labelMode ?? "";
+    const lsize = style.labelSize * (Number(style.labelScale) > 0 ? Number(style.labelScale) : 1);
+    const place = (t, line, lift) => {
+      const m = midpoint(line);
+      if ( !m ) return false;
+      t.position.set(m[0], m[1] - wMax - (lsize * lift));
+      if ( lmode === "along" ) {
+        const a = angleAt(line, m);
+        // Текст не встаёт вверх ногами.
+        t.rotation = a > Math.PI / 2 || a < -Math.PI / 2 ? a + Math.PI : a;
+        t.position.set(m[0] + (Math.sin(t.rotation) * (wMax + (lsize * lift))), m[1] - (Math.cos(t.rotation) * (wMax + (lsize * lift))));
       }
+      return true;
+    };
+    if ( lmode !== "none" && lsize > 0 && state.name ) {
+      const t = makeLabel(state.name, lsize, style.labelColor, style.labelFont);
+      if ( place(t, curve, 0.6) ) out.push([t, this.lineLabels]);
+      else t.destroy();
     }
     // Подписи участков со своими названиями.
-    if ( style.labelSize > 0 ) for ( const seg of state.system.geometry?.segments ?? [] ) {
-      const m = midpoint(pts.slice(seg.from, seg.to + 1));
-      if ( !m || !seg.name ) continue;
-      const t = makeLabel(seg.name, style.labelSize * 0.85, style.labelColor, style.labelFont);
-      t.position.set(m[0], m[1] - wMax - style.labelSize * 0.5);
-      out.push([t, this.lineLabels]);
+    if ( lmode !== "none" && lsize > 0 ) for ( const seg of state.system.geometry?.segments ?? [] ) {
+      if ( !seg.name ) continue;
+      const t = makeLabel(seg.name, lsize * 0.85, style.labelColor, style.labelFont);
+      if ( place(t, pts.slice(seg.from, seg.to + 1), 0.5) ) out.push([t, this.lineLabels]);
+      else t.destroy();
     }
     return out;
   }
@@ -679,7 +897,7 @@ export default class HexRenderer {
       if ( slot.more ) { this._drawMore(slot); continue; }
       const m = byId.get(slot.id);
       const style = styles.get(slot.id);
-      const label = !labelled.has(slot.key) && !!m.name && style.labelSize > 0;
+      const label = !labelled.has(slot.key) && !!m.name && style.labelSize > 0 && style.labelMode !== "none";
       if ( label ) labelled.add(slot.key);
       // Подпись группы — под гексом, чтобы не лезть на соседние значки.
       const g = cells.get(slot.key);
@@ -770,10 +988,11 @@ export default class HexRenderer {
       else foundry.canvas.loadTexture(style.icon).then(fit).catch(() => {});
     }
     this.marks.addChild(c);
-    if ( label !== false && state.name && style.labelSize > 0 ) {
-      const t = makeLabel(state.name, style.labelSize, style.labelColor, style.labelFont);
+    if ( label !== false && state.name && style.labelSize > 0 && style.labelMode !== "none" ) {
+      const lsize = Math.round(style.labelSize * (Number(style.labelScale) > 0 ? Number(style.labelScale) : 1));
+      const t = makeLabel(state.name, lsize, style.labelColor, style.labelFont);
       if ( label ) t.position.set(label.x, label.y);
-      else t.position.set(x, y + (size * 0.5) + (style.labelSize * 0.75));
+      else t.position.set(x, y + (size * 0.5) + (lsize * 0.75));
       this.markLabels.addChild(t);
     }
   }

@@ -43,12 +43,23 @@ test("water is lighter near the coast and deep far away", () => {
 test("glyphs: mountains get peaks, forests trees, deep water waves; layout is stable", () => {
   const c = hm.center([5, 5]), r = hm.radius;
   const m = glyphsFor("mountains", c, r, "5,5");
-  assert.ok(m.length >= 2 && m.every(g => g.kind === "mountain"));
-  assert.ok(Math.max(...m.map(g => g.s)) >= r * 0.5, "горы крупные");
+  assert.ok(m.length >= 1 && m.some(g => g.kind.startsWith("mountain")));
+  assert.ok(Math.max(...m.map(g => g.s)) >= r * 0.4, "горы крупные");
   assert.deepEqual(glyphsFor("mountains", c, r, "5,5"), m, "одинаково при перерисовке");
-  assert.ok(glyphsFor("forest", c, r, "x").filter(g => g.kind === "tree").length >= 3);
-  assert.ok(glyphsFor("taiga", c, r, "x").every(g => g.kind === "conifer"));
-  assert.ok(glyphsFor("desert", c, r, "x").every(g => g.kind === "dune"));
+  // 0.9.9: у гор, холмов, лесов, тайги и пустыни по шесть вариантов рисунка.
+  const kinds = (terrain, ok) => {
+    const seen = new Set();
+    for ( let n = 0; n < 60; n++ ) {
+      const list = glyphsFor(terrain, c, r, `${terrain}${n}`);
+      assert.ok(list.length > 0, `${terrain}: пустой гекс`);
+      for ( const g of list ) { assert.ok(ok.includes(g.kind), `${terrain}: ${g.kind}`); seen.add(JSON.stringify(list.map(x => x.kind))); }
+    }
+    return seen.size;
+  };
+  assert.ok(kinds("forest", ["tree", "conifer", "tuft", "birch"]) >= 4, "леса разные");
+  assert.ok(kinds("taiga", ["conifer", "tuft", "snow"]) >= 4, "тайга разная");
+  assert.ok(kinds("desert", ["dune", "cactus", "ripple", "stone"]) >= 4, "пустыня разная");
+  assert.ok(kinds("mountains", ["mountain", "mountainRound", "mountainTwin", "tuft", "stone", "snow"]) >= 4, "горы разные");
   for ( const g of glyphsFor("forest", c, r, "y") ) assert.ok(Math.hypot(g.x - c.x, g.y - c.y) < r * 0.6, "значок внутри гекса");
   assert.equal(glyphsFor(undefined, c, r, "z", { deep: false }).length, 0, "у берега волн нет");
   let waves = 0;

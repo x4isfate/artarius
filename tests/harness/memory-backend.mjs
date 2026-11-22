@@ -120,6 +120,44 @@ export default class MemoryBackend {
     this.emit();
   }
 
+  /* Папки, аспекты, берег (0.9.9) ---------------------------------- */
+
+  folders() { return clone(this.atlasFolders ?? []); }
+  setFolders(list) { if ( !this.isGM ) return; this.atlasFolders = clone(list); this.emit(); }
+
+  aspects() { return clone(this.items ?? []); }
+  aspectFolders() { return clone(this.itemFolders ?? []); }
+  canCreateAspects() { return this.isGM; }
+  async saveAspect({ id, name, folder = "", system }) {
+    this.items ??= [];
+    const item = { id: id || randomId(), name, folder: folder || "", system: clone(system) };
+    const n = this.items.findIndex(i => i.id === item.id);
+    if ( n >= 0 ) this.items[n] = item; else this.items.push(item);
+    this.emit();
+    return item.id;
+  }
+  async deleteAspect(id) { this.items = (this.items ?? []).filter(i => i.id !== id); this.emit(); }
+  async saveAspectFolder({ id, name, color }) {
+    this.itemFolders ??= [];
+    const f = this.itemFolders.find(x => x.id === id);
+    if ( f ) Object.assign(f, name !== undefined ? { name } : {}, color !== undefined ? { color } : {});
+    else this.itemFolders.push({ id: id || randomId(), kind: "aspect", name, color: color ?? "#c9a45c" });
+    this.emit();
+    return f?.id ?? this.itemFolders[this.itemFolders.length - 1].id;
+  }
+  async deleteAspectFolder(id) {
+    this.itemFolders = (this.itemFolders ?? []).filter(f => f.id !== id);
+    for ( const i of this.items ?? [] ) if ( i.folder === id ) i.folder = "";
+    this.emit();
+  }
+
+  world() { return { ...(this.worldFlags ?? {}) }; }
+  async setCoast(style) {
+    this.worldFlags = { ...(this.worldFlags ?? {}), coast: style ? clone(style) : undefined };
+    if ( !style ) delete this.worldFlags.coast;
+    this.emit();
+  }
+
   customPresets() { return clone(this._presets ?? []); }
   setCustomPresets(list) { this._presets = clone(list); this.emit(); }
   prompt(title, value = "") { return Promise.resolve(globalThis.prompt?.(title, value) ?? value); }
