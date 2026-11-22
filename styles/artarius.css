@@ -348,6 +348,16 @@
 .vmap-guide-body table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
 .vmap-guide-body th, .vmap-guide-body td { padding: 5px 8px; border-bottom: 1px solid var(--vm-line); text-align: left; vertical-align: top; }
 .vmap-guide-body th { color: var(--vm-muted); font-weight: 600; }
+/* 0.9.9: разделы руководства слева. */
+.art-guide { display: grid; grid-template-columns: 180px minmax(0, 1fr); height: 100%; min-height: 0; }
+.art-guide .vmap-guide-body { min-width: 0; }
+.art-guide-nav { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--vm-line, rgba(255, 255, 255, 0.1)); overflow-y: auto; }
+.art-guide-nav button { display: flex; align-items: center; gap: 6px; height: auto; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 6px; background: none; color: inherit; font-size: 13px; text-align: left; line-height: 1.25; cursor: pointer; }
+.art-guide-nav button:hover { background: rgba(255, 255, 255, 0.06); }
+.art-guide-nav button.active { background: rgba(201, 87, 63, 0.18); box-shadow: inset 2px 0 0 #c9573f; }
+.art-guide-nav button:last-child { margin-top: auto; }
+.vmap-guide-body kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--vm-line, #555); border-bottom-width: 2px; border-radius: 4px; font: 12px/18px var(--font-mono, monospace); text-align: center; }
+@media (max-width: 640px) { .art-guide { grid-template-columns: 1fr; } .art-guide-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; } }
 
 .artarius-window .window-content { padding: 12px 14px; overflow-y: auto; }
 .artarius-azgaar { display: flex; flex-direction: column; gap: 6px; }
