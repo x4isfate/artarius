@@ -54,6 +54,13 @@ function mergeObject(target, src, { inplace = true, recursive = true } = {}) {
   }
   return t;
 }
+const flattenObject = (o, pre = "", out = {}) => {
+  for ( const [k, v] of Object.entries(o ?? {}) ) {
+    if ( isObj(v) && Object.keys(v).length ) flattenObject(v, `${pre}${k}.`, out);
+    else out[`${pre}${k}`] = v;
+  }
+  return out;
+};
 let idn = 0;
 const randomID = () => `id${(++idn).toString().padStart(14, "0")}`;
 
@@ -171,6 +178,31 @@ class Scene extends Doc {
 
 class ChatMessage extends Doc { static documentName = "ChatMessage"; }
 
+/** Предметы и папки (0.9.9: аспекты Artarius — предметы). */
+class Folder extends Doc {
+  static documentName = "Folder";
+  async delete() { game.folders.delete(this.id); Hooks.callAll("deleteFolder", this, {}, game.user.id); return this; }
+}
+class Item extends Doc {
+  static documentName = "Item";
+  get folder() { return this._source.folder ? game.folders.get(this._source.folder) ?? null : null; }
+  set folder(v) { /* берётся из _source */ }
+  get system() { return this._source.system; }
+  set system(v) { /* берётся из _source */ }
+  async delete() { game.items.delete(this.id); Hooks.callAll("deleteItem", this, {}, game.user.id); return this; }
+}
+const createIn = (Cls, coll, hook) => async data => {
+  const d = new Cls(data);
+  game[coll].set(d.id, d);
+  Hooks.callAll(hook, d, {}, game.user.id);
+  return d;
+};
+globalThis.Item = { implementation: {
+  create: createIn(Item, "items", "createItem"),
+  updateDocuments: async list => Promise.all(list.map(d => game.items.get(d._id)?.update(d)))
+} };
+globalThis.Folder = { implementation: { create: createIn(Folder, "folders", "createFolder") } };
+
 const created = { scenes: [], messages: [] };
 export { created, Journal, Scene, User, Page };
 
@@ -218,10 +250,33 @@ class ApplicationV2 {
   static DEFAULT_OPTIONS = {};
   constructor(options = {}) {
     // Как в Foundry v14: position запечатан, Object.assign с чужим ключом бросает TypeError.
+    // Как в Foundry: DEFAULT_OPTIONS всей цепочки классов сливаются, потом опции конструктора.
+    const chain = [];
+    for ( let c = this.constructor; c && c !== Object; c = Object.getPrototypeOf(c) ) {
+      if ( Object.hasOwn(c, "DEFAULT_OPTIONS") ) chain.unshift(c.DEFAULT_OPTIONS);
+    }
+    const merge = (t, src) => {
+      for ( const [k, v] of Object.entries(src ?? {}) ) {
+        if ( isObj(v) && isObj(t[k]) ) merge(t[k], v);
+        else t[k] = isObj(v) ? merge({}, v) : Array.isArray(v) ? [...v] : v;
+      }
+      return t;
+    };
+    const merged = {};
+    for ( const o of [...chain, options] ) merge(merged, o);
     const position = Object.seal({ top: null, left: null, width: null, height: null, scale: 1, zIndex: null });
-    Object.assign(position, options.position ?? {});
-    this.options = { ...options, window: { ...(options.window ?? {}) }, position };
+    Object.assign(position, merged.position ?? {});
+    this.options = { ...merged, window: { ...(merged.window ?? {}) }, position };
     this.rendered = false;
+  }
+  _bindActions() {
+    const actions = this.options.actions ?? {};
+    if ( !Object.keys(actions).length ) return;
+    this._el.addEventListener("click", ev => {
+      const t = ev.target.closest("[data-action]");
+      const fn = t && actions[t.dataset.action];
+      if ( typeof fn === "function" ) fn.call(this, ev, t);
+    });
   }
   get element() { return this._el ?? null; }
   get form() { return this.element?.querySelector("form") ?? null; }
@@ -234,6 +289,7 @@ class ApplicationV2 {
       this._el.className = ["application", ...(this.options.classes ?? [])].join(" ");
       if ( this.options.id ) this._el.id = this.options.id;
       this._el.innerHTML = '<header class="window-header"><h1 class="window-title"></h1></header><section class="window-content"></section>';
+      this._bindActions();
     }
     this._el.querySelector(".window-title").textContent = this.title;
     if ( !this._el.isConnected ) document.body.appendChild(this._el);
@@ -286,7 +342,7 @@ class PreciseText extends PIXI.Text {
 
 globalThis.foundry = {
   utils: {
-    deepClone: v => (v === undefined ? v : structuredClone(v)), mergeObject, getProperty, setProperty, expandObject,
+    deepClone: v => (v === undefined ? v : structuredClone(v)), mergeObject, getProperty, setProperty, expandObject, flattenObject,
     hasProperty: (o, k) => getProperty(o, k) !== undefined, randomID, Color,
     escapeHTML: s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]),
     isNewerVersion: (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }) > 0
@@ -312,7 +368,7 @@ globalThis.foundry = {
   grid: { HexagonalGrid, SquareGrid }
 };
 
-globalThis.CONFIG = { JournalEntryPage: { dataModels: {} }, Canvas: { layers: {} } };
+globalThis.CONFIG = { JournalEntryPage: { dataModels: {} }, Item: { dataModels: {} }, Canvas: { layers: {} } };
 globalThis.CONST = {
   GRID_TYPES: { GRIDLESS: 0, SQUARE: 1, HEXODDR: 2, HEXEVENR: 3, HEXODDQ: 4, HEXEVENQ: 5 },
   DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, LIMITED: 1, OBSERVER: 2, OWNER: 3 },
@@ -336,6 +392,8 @@ export async function makeGame(lang) {
     user: gm,
     users,
     journal: new Collection(),
+    items: new Collection(),
+    folders: new Collection(),
     scenes: new Collection(),
     actors: new Collection(),
     keyboard: null,

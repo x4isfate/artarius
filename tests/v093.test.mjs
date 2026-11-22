@@ -21,34 +21,36 @@ const paint = async (studio, typeId, cells, name) => {
   return zones(studio).find(z => z.name === name);
 };
 
-test("five modes, in key order", () => {
-  assert.deepEqual(MODES, ["terrain", "realms", "marks", "lines", "players"]);
+test("six modes, in key order (0.9.9)", () => {
+  assert.deepEqual(MODES, ["select", "zones", "marks", "lines", "players", "layers"]);
 });
 
 test("modes switch tools; the same mode again goes back to select", () => {
   const { studio } = setup();
   assert.equal(studio.mode, "");
-  studio.setMode("terrain");
+  studio.setMode("zones");
   assert.equal(studio.tool, "zone");
-  assert.equal(studio.mode, "terrain");
-  assert.equal(studio.typeById(studio.zone.typeId)?.layerId, "terrain", "terrain brush picks a terrain type");
-  studio.setMode("realms");
-  assert.equal(studio.mode, "realms");
-  assert.notEqual(studio.typeById(studio.zone.typeId)?.layerId, "terrain", "realms brush leaves terrain types out");
+  assert.equal(studio.mode, "zones");
+  assert.equal(studio.zone.scope, "", "one zones mode lists every zone type");
   studio.setMode("marks");
   assert.equal(studio.tool, "mark");
   studio.setMode("lines");
   assert.equal(studio.tool, "line");
   studio.setMode("lines");
   assert.equal(studio.tool, "select");
-  assert.equal(studio.mode, "");
+  assert.equal(studio.mode, "select");
   studio.setMode("players");
   assert.equal(studio.mode, "players");
   assert.equal(studio.rightTab, "queue");
   studio.setMode("players");
-  assert.equal(studio.mode, "", "second press closes the queue");
+  assert.equal(studio.mode, "select", "second press closes the queue");
+  studio.setMode("layers");
+  assert.ok(studio.layersOpen, "layers opens its window");
+  assert.equal(studio.tool, "select", "and keeps the tool");
+  studio.setMode("layers");
+  assert.ok(!studio.layersOpen);
   studio.setMode("nonsense");
-  assert.equal(studio.mode, "");
+  assert.equal(studio.mode, "select");
 });
 
 test("each brush mode lists only its own zone types", () => {
@@ -67,15 +69,15 @@ test("eraser takes hexes out of the zones of its mode only", async () => {
   const { studio } = setup();
   const forest = await paint(studio, "forest", [[2, 2], [3, 2], [4, 2]], "Лес");
   const realm = await paint(studio, "realm", [[2, 2], [3, 2]], "Держава");
-  studio.setMode("realms");
+  studio.setTool("zone", { toggle: false });
   studio.zone.target = "new";
+  studio.zone.typeId = "realm";
   studio.setBrush("erase");
   assert.ok(studio.zone.erase && !studio.zone.paint);
   await studio.eraseCells([[2, 2]]);
   assert.deepEqual(cellsOf(studio.stateOf(realm.id)), ["3:2"]);
-  assert.deepEqual(cellsOf(studio.stateOf(forest.id)), ["2:2", "3:2", "4:2"], "terrain stays in the realms mode");
+  assert.deepEqual(cellsOf(studio.stateOf(forest.id)), ["2:2", "3:2", "4:2"], "terrain stays while a realm type is picked");
   // С выбранной зоной ластик трогает только её.
-  studio.setMode("terrain");
   studio.zone.target = forest.id;
   studio.setBrush("erase");
   await studio.eraseCells([[3, 2]]);
@@ -88,7 +90,7 @@ test("eraser takes hexes out of the zones of its mode only", async () => {
 test("eraser drag on the map goes through pointerUp", async () => {
   const { studio, backend } = setup();
   const realm = await paint(studio, "realm", [[5, 5], [6, 5]], "Держава");
-  studio.setMode("realms");
+  studio.setTool("zone", { toggle: false });
   studio.zone.target = realm.id;
   studio.setBrush("erase");
   studio.pointerDown(backend.grid.center([5, 5]));
@@ -100,17 +102,14 @@ test("Alt-click with the brush picks the zone under the cursor", async () => {
   const { studio, backend } = setup();
   await paint(studio, "forest", [[4, 4]], "Лес");
   const realm = await paint(studio, "realm", [[4, 4]], "Держава");
-  studio.setMode("realms");
+  studio.setTool("zone", { toggle: false });
   studio.zone.target = "new";
   studio.pointerDown(backend.grid.center([4, 4]), { alt: true });
-  assert.equal(studio.zone.target, realm.id);
+  assert.equal(studio.zone.target, realm.id, "the top layer wins");
   assert.equal(studio.zone.typeId, "realm");
-  studio.setMode("terrain");
-  studio.eyedrop([4, 4]);
-  assert.equal(studio.stateOf(studio.zone.target)?.name, "Лес");
   studio.eyedrop([9, 9]);
   assert.match(backend.log.at(-1)[1], /.+/, "empty hex says nothing is here");
-  assert.equal(studio.stateOf(studio.zone.target)?.name, "Лес", "empty hex keeps the brush");
+  assert.equal(studio.stateOf(studio.zone.target)?.name, "Держава", "empty hex keeps the brush");
 });
 
 test("in the marks mode a click on a mark opens its card instead of placing another", async () => {

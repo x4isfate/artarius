@@ -58,7 +58,7 @@ export default class SvgView {
       if ( (ev.key === "Delete" || ev.key === "Backspace") && this.studio.markSel.size ) this.studio.deleteMarks();
       if ( ev.shiftKey && ev.code === "Space" ) { ev.preventDefault(); window.art?.ui?.openGoto?.(); }
       if ( ev.key === "Enter" && this.studio.tool === "line" ) this.studio.finishLine();
-      const digit = /^Digit([1-5])$/.exec(ev.code);
+      const digit = /^Digit([1-6])$/.exec(ev.code);
       if ( digit && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey ) this.studio.setMode(MODES[Number(digit[1]) - 1]);
     });
   }
