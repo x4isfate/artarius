@@ -689,22 +689,31 @@ export default class ArtariusUI {
    * Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить».
    * По умолчанию для формы типа метки; аспекты (1.0) передают свою модель и свои кнопки.
    */
-  renderIconPicker(f, { model = "typeForm", key = "tf", pick = "pickIcon", cat = "iconCat", browse = "browseIcon", defCat = "settlements", title = true } = {}) {
+  renderIconPicker(f, { model = "typeForm", key = "tf", pick = "pickIcon", cat = "iconCat", browse = "browseIcon", defCat = "settlements", title = true,
+    simple = null, simplePick = "", preview = null } = {}) {
     const q = (f.iconQuery ?? "").trim();
-    const curCat = f.iconCat || defCat;
+    // 1.0.1: у статусов и аспектов первый раздел — простые значки Font Awesome, дальше та же библиотека, что у меток.
+    const cats = [...(simple ? ["simple"] : []), ...Object.keys(ICON_LIBRARY)];
+    const curCat = cats.includes(f.iconCat) ? f.iconCat : defCat;
     const path = /[/.]/.test(String(f.icon ?? "")) ? f.icon : "";
-    const list = q ? searchIcons(q) : allIcons().filter(i => i.category === curCat);
-    const cats = Object.keys(ICON_LIBRARY).map(c => `<button type="button" class="art-btn${!q && c === curCat ? " active" : ""}" data-action="${cat}" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
-    const grid = list.length
-      ? list.map(i => `<button type="button" class="art-icon-pick${i.path === path ? " active" : ""}" data-action="${pick}" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
-      : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
+    const catBtns = cats.map(c => `<button type="button" class="art-btn${!q && c === curCat ? " active" : ""}" data-action="${cat}" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
+    let grid;
+    if ( !q && curCat === "simple" ) {
+      grid = simple.map(ic => `<button type="button" class="art-icon-pick art-icon-fa${!path && f.icon === ic ? " active" : ""}" data-action="${simplePick}" data-v="${esc(ic)}" title="${esc(ic)}"
+        style="color:${esc(f.color || "#ddd")}">${icon(ic)}</button>`).join("");
+    } else {
+      const list = q ? searchIcons(q) : allIcons().filter(i => i.category === curCat);
+      grid = list.length
+        ? list.map(i => `<button type="button" class="art-icon-pick${i.path === path ? " active" : ""}" data-action="${pick}" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
+        : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
+    }
     // У типа метки образец сразу в рамке её формы, как на карте (1.0.1).
-    const preview = model === "typeForm"
+    const shown = preview ?? (model === "typeForm"
       ? this.uMarkPlate({ icon: path, color: f.color, tint: f.tint, shape: f.shape }, " art-plate-xl")
-      : path ? iconImg(path, f.color, { tint: f.tint !== false, cls: "art-icon-big" }) : `<span class="art-icon-big"></span>`;
-    const body = `<div class="art-icon-current">${preview}
+      : path ? iconImg(path, f.color, { tint: f.tint !== false, cls: "art-icon-big" }) : `<span class="art-icon-big"></span>`);
+    const body = `<div class="art-icon-current">${shown}
         <input type="search" data-model="${model}.iconQuery" data-key="${key}-iq" value="${esc(q)}" placeholder="${esc(this.t("ART.Icons.search"))}"></div>
-      ${q ? "" : `<div class="art-seg art-icon-cats">${cats}</div>`}
+      ${q ? "" : `<div class="art-seg art-icon-cats">${catBtns}</div>`}
       <div class="art-icons">${grid}</div>
       <div class="art-row-btns"><button type="button" class="art-btn" data-action="${browse}">${icon("folder-open")} ${esc(this.t("ART.Icons.own"))}</button></div>
       <p class="art-hint">${esc(this.t("ART.Icons.ownHint"))}</p>

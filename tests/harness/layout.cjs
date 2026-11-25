@@ -158,7 +158,6 @@ function audit(selector) {
     await ev(() => { const s = window.art.studio; s.pickAspect(s.aspects().find(i => i.system.kind === "aspect").id); s.toggleAspectPick({ form: true }); });
     await look(`окно «Статусы и аспекты», статусы аспекта${tag}`, "#artarius-ui > .art-aspectwin");
     await ev(() => { const s = window.art.studio; s.aspectPick = null; s.newAspect("", "status"); s.aspectForm.icon = "modules/artarius/assets/icons/castle.svg"; s.changed("ui"); });
-    await ev(() => { window.art.ui.wfOpen?.add("aicon-more"); window.art.studio.changed("ui"); });
     await look(`окно «Статусы и аспекты», новый статус${tag}`, "#artarius-ui > .art-aspectwin");
     await ev(() => window.art.studio.toggleAspects(false));
     // Карточка гекса: раскрытая строка и правка метки.

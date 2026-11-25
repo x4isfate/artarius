@@ -853,6 +853,31 @@ async function shot(page, name) {
   const found = await page.locator(`${AW} [data-drag-aspect] .art-ut-name`).allTextContents();
   check(found.length === 2 && found.some(t => /марево/.test(t)) && found.some(t => /Хвонами/.test(t)), `поиск в окне «Статусы и аспекты»: ${found.join(", ")}`);
   await page.fill(`${AW} [data-key="aspectQ"]`, "");
+  // 1.0.1: значок статуса выбирается как у метки — библиотека сразу на виду, эмодзи её прячет.
+  await page.locator(`${AW} [data-action="newAspect"][data-kind="status"]`).click();
+  await page.waitForTimeout(80);
+  check(await page.locator(`${AW} .art-icons [data-action="aspectIcon"]`).count() > 5 && !(await page.locator(`${AW} details[data-fold="aicon-more"]`).count()),
+    "в форме статуса значки видны сразу, без раскрывашки");
+  await page.locator(`${AW} [data-action="aspectIconCat"][data-cat="danger"]`).click();
+  check(await page.locator(`${AW} .art-icons [data-action="aspectIconPick"]`).count() > 0, "раздел библиотеки картинок открывается кнопкой, как у меток");
+  await page.fill(`${AW} [data-key="af-emoji"]`, "🔥");
+  await page.waitForTimeout(80);
+  check(!(await page.locator(`${AW} .art-icons`).count()) && (await page.locator(`${AW} .art-thead .art-emoji`).textContent()) === "🔥",
+    "эмодзи прячет библиотеку и сразу виден в образце");
+  await page.fill(`${AW} [data-key="af-emoji"]`, "");
+  await page.waitForTimeout(80);
+  check(await page.locator(`${AW} .art-icons`).count() === 1, "без эмодзи библиотека возвращается");
+  // «+ Статус» в форме аспекта: новый статус вписывается прямо там.
+  await page.locator(`${AW} [data-action="aspectKind"][data-v="aspect"]`).click();
+  await page.fill(`${AW} [data-key="af-name"]`, "Проклятие");
+  await page.locator(`${AW} [data-action="aspectPickOpen"][data-form="1"]`).click();
+  await page.locator(`${AW} [data-action="aspectPickNew"][data-kind="status"]`).click();
+  await page.fill(`${AW} [data-key="apick-q"]`, "Порча");
+  await page.press(`${AW} [data-key="apick-q"]`, "Enter");
+  await page.waitForTimeout(120);
+  const curse = await ev(() => { const s = window.art.studio; const it = s.aspects().find(i => i.name === "Порча"); return { it: it?.system.kind, inForm: !!it && (s.aspectForm?.statusIds ?? []).includes(it.id), name: s.aspectForm?.name }; });
+  check(curse.it === "status" && curse.inForm && curse.name === "Проклятие", "в форме аспекта «Новый статус» заводит статус и кладёт его в аспект");
+  await ev(() => { window.art.studio.aspectForm = null; window.art.studio.aspectPick = null; window.art.studio.changed("ui"); });
   const zoneHere = await ev(() => {
     const s = window.art.studio;
     s.setTool("select", { toggle: false });
