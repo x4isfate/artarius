@@ -1004,7 +1004,7 @@
 .artarius .art-apick .art-menu-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: none; text-align: left; font-size: 12.5px; }
 /* 1.0: растягивалась и подложка значка (тоже span): кружок становился овалом. Растягивается только название. */
 .artarius .art-apick .art-menu-row > .art-apick-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.artarius .art-apick-name, .artarius .art-apick-name > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-apick-name, .artarius .art-apick-name > span, .artarius .art-apick-name > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-apick-name > small { color: var(--art-muted); font-size: 11px; }
 .artarius .art-apick .art-menu-row > .art-apick-kind { flex: none; color: var(--art-muted); font-size: 11px; white-space: nowrap; }
 .artarius .art-apick .art-menu-row { min-height: 34px; }
@@ -1130,10 +1130,10 @@
 .artarius .art-steps input[type="number"] { width: 58px; text-align: center; padding: 4px; }
 .artarius .art-steps > span { color: var(--art-muted); }
 .artarius .art-steps-sm { gap: 2px; flex: none; }
-.artarius .art-steps-sm input[type="number"] { width: 36px; min-height: 24px; padding: 2px; font-size: 12px; -moz-appearance: textfield; }
+.artarius .art-steps-sm input[type="number"] { width: 32px; min-height: 24px; padding: 2px; font-size: 12px; -moz-appearance: textfield; }
 .artarius .art-steps-sm input[type="number"]::-webkit-inner-spin-button { display: none; }
 .artarius .art-steps-none input[type="number"] { width: 30px; opacity: 0.75; }
-.artarius .art-steps-sm .art-icon-btn { width: 22px; height: 22px; font-size: 10px; }
+.artarius .art-steps-sm .art-icon-btn { width: 18px; height: 22px; font-size: 10px; }
 .artarius .art-grid2-kind { grid-template-columns: minmax(0, 1fr) auto; }
 .artarius .art-grid2-kind + .art-hint { margin-top: -6px; }
 
@@ -1148,8 +1148,9 @@
 /* Статусы и аспекты в правке элемента */
 .artarius .art-entries { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px dashed rgba(232, 194, 122, 0.45); border-radius: 8px; background: rgba(232, 194, 122, 0.03); }
 .artarius .art-entries > h5 { justify-content: flex-start; gap: 6px; margin: 0 0 2px; }
-.artarius .art-erow { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 2px 2px 4px; border-radius: 6px; background: var(--art-bg-2); }
-.artarius .art-erow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.artarius .art-erow { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 2px 2px 2px 4px; border-radius: 6px; background: var(--art-bg-2); }
+/* Длинное название переносится на вторую строку, а не режется сразу (узкая карточка гекса). */
+.artarius .art-erow-name { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.2; overflow-wrap: anywhere; font-size: 12.5px; }
 .artarius .art-erow-name.art-loose { font-style: italic; color: var(--art-muted); }
 .artarius .art-erow-aspect { background: rgba(143, 123, 181, 0.16); }
 .artarius .art-erow-aspect .art-erow-name { font-weight: 600; }
