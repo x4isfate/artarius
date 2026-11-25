@@ -238,7 +238,7 @@ export const UnifiedUI = {
     const rows = list.map(a => {
       const parents = a.system?.kind === "status" ? aspectsWith(a.id, s.aspects()).map(x => x.name).join(", ") : "";
       return `<button type="button" class="art-menu-row" data-action="aspectPickRow" data-id="${esc(a.id)}" title="${esc(a.system?.description || a.name)}">
-        ${this.uAspectPlate(a, " art-plate-md")}<span class="art-apick-name">${mark(a.name, p?.q)}${parents ? `<small>${esc(parents)}</small>` : ""}</span>
+        ${this.uAspectPlate(a, " art-plate-md")}<span class="art-apick-name"><span>${mark(a.name, p?.q)}</span>${parents ? `<small>${esc(parents)}</small>` : ""}</span>
         <small class="art-apick-kind">${esc(stepsLabel(a, t))}</small></button>`;
     }).join("");
     const q = String(p?.q ?? "").trim();
