@@ -361,7 +361,7 @@ export default class ArtariusUI {
     if ( hex?.dataset.hex ) hex.value = v;
     const box = el.closest(".art-item, .art-citem, .art-form, .art-ucol-right");
     if ( box && (el.dataset.model === "typeForm.color" || el.dataset.field === "color") ) {
-      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color, .art-plate, .art-circ") ) m.style.setProperty("--c", v);
+      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color, .art-plate, .art-mplate, .art-zsw") ) m.style.setProperty("--c", v);
     }
   }
 
@@ -689,18 +689,31 @@ export default class ArtariusUI {
    * Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить».
    * По умолчанию для формы типа метки; аспекты (1.0) передают свою модель и свои кнопки.
    */
-  renderIconPicker(f, { model = "typeForm", key = "tf", pick = "pickIcon", cat = "iconCat", browse = "browseIcon", defCat = "settlements", title = true } = {}) {
+  renderIconPicker(f, { model = "typeForm", key = "tf", pick = "pickIcon", cat = "iconCat", browse = "browseIcon", defCat = "settlements", title = true,
+    simple = null, simplePick = "", preview = null } = {}) {
     const q = (f.iconQuery ?? "").trim();
-    const curCat = f.iconCat || defCat;
+    // 1.0.1: у статусов и аспектов первый раздел — простые значки Font Awesome, дальше та же библиотека, что у меток.
+    const cats = [...(simple ? ["simple"] : []), ...Object.keys(ICON_LIBRARY)];
+    const curCat = cats.includes(f.iconCat) ? f.iconCat : defCat;
     const path = /[/.]/.test(String(f.icon ?? "")) ? f.icon : "";
-    const list = q ? searchIcons(q) : allIcons().filter(i => i.category === curCat);
-    const cats = Object.keys(ICON_LIBRARY).map(c => `<button type="button" class="art-btn${!q && c === curCat ? " active" : ""}" data-action="${cat}" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
-    const grid = list.length
-      ? list.map(i => `<button type="button" class="art-icon-pick${i.path === path ? " active" : ""}" data-action="${pick}" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
-      : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
-    const body = `<div class="art-icon-current">${path ? iconImg(path, f.color, { tint: f.tint !== false, cls: "art-icon-big" }) : `<span class="art-icon-big"></span>`}
+    const catBtns = cats.map(c => `<button type="button" class="art-btn${!q && c === curCat ? " active" : ""}" data-action="${cat}" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
+    let grid;
+    if ( !q && curCat === "simple" ) {
+      grid = simple.map(ic => `<button type="button" class="art-icon-pick art-icon-fa${!path && f.icon === ic ? " active" : ""}" data-action="${simplePick}" data-v="${esc(ic)}" title="${esc(ic)}"
+        style="color:${esc(f.color || "#ddd")}">${icon(ic)}</button>`).join("");
+    } else {
+      const list = q ? searchIcons(q) : allIcons().filter(i => i.category === curCat);
+      grid = list.length
+        ? list.map(i => `<button type="button" class="art-icon-pick${i.path === path ? " active" : ""}" data-action="${pick}" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
+        : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
+    }
+    // У типа метки образец сразу в рамке её формы, как на карте (1.0.1).
+    const shown = preview ?? (model === "typeForm"
+      ? this.uMarkPlate({ icon: path, color: f.color, tint: f.tint, shape: f.shape }, " art-plate-xl")
+      : path ? iconImg(path, f.color, { tint: f.tint !== false, cls: "art-icon-big" }) : `<span class="art-icon-big"></span>`);
+    const body = `<div class="art-icon-current">${shown}
         <input type="search" data-model="${model}.iconQuery" data-key="${key}-iq" value="${esc(q)}" placeholder="${esc(this.t("ART.Icons.search"))}"></div>
-      ${q ? "" : `<div class="art-seg art-icon-cats">${cats}</div>`}
+      ${q ? "" : `<div class="art-seg art-icon-cats">${catBtns}</div>`}
       <div class="art-icons">${grid}</div>
       <div class="art-row-btns"><button type="button" class="art-btn" data-action="${browse}">${icon("folder-open")} ${esc(this.t("ART.Icons.own"))}</button></div>
       <p class="art-hint">${esc(this.t("ART.Icons.ownHint"))}</p>
@@ -880,21 +893,6 @@ export default class ArtariusUI {
     st.setProperty("--hh", `${hh}px`);
   }
 
-  /** Значок элемента для кнопки: значок метки, цвет зоны или линии. */
-  _hudItemIcon(st) {
-    const type = this.studio.typeById(st.system.typeId);
-    const color = st.system.style?.color ?? type?.style?.color ?? "#ccc";
-    const kind = st.system.kind;
-    if ( kind === "object" ) {
-      const path = st.system.style?.icon ?? type?.style?.icon;
-      const tint = (st.system.style?.tint ?? type?.style?.tint) !== false;
-      if ( path ) return iconImg(path, st.system.style?.iconColor ?? color, { tint, cls: "art-hud-ico" });
-    }
-    if ( kind === "line" ) return `<i class="art-hud-line" style="--c:${esc(color)}"></i>`;
-    return `<i class="art-hud-swatch" style="--c:${esc(color)}"></i>`;
-  }
-
-
   /** Быстрое меню у панели гекса: выбор типа метки или какую метку удалить. */
   _hudMenu(sum, current) {
     const s = this.studio;
@@ -907,7 +905,7 @@ export default class ArtariusUI {
       return `<div class="art-hud-menu" role="menu"><div class="art-menu-head">${esc(this.t("ART.Hud.markPick"))}</div>${rows}</div>`;
     }
     const rows = sum.marks.map(st => `<button type="button" class="art-menu-row art-menu-del" data-action="deleteMark" data-id="${esc(st.id)}">
-        ${this._hudItemIcon(st)}<span>${esc(st.name || this.t("ART.Card.unnamed"))}</span>${icon("trash")}</button>`).join("");
+        ${this.uFeatureIcon(st)}<span>${esc(st.name || this.t("ART.Card.unnamed"))}</span>${icon("trash")}</button>`).join("");
     return `<div class="art-hud-menu" role="menu"><div class="art-menu-head">${esc(this.t("ART.Hud.deleteWhich"))}</div>${rows}</div>`;
   }
 
@@ -931,7 +929,7 @@ export default class ArtariusUI {
       return rows ? `<div class="art-menu-head">${esc(layer.name)}</div>${rows}` : "";
     }).join("");
     const zoneType = s.typeById(s.zone.typeId) ?? s.typesOf("area")[0];
-    return `<div class="art-hud-menu art-hud-zones" role="menu"><div class="art-menu-head">${esc(this.t("ART.Hud.zoneAdd"))}</div>
+    return `<div class="art-hud-menu art-hud-zones" role="menu">${this._qiHead("ART.Hud.zoneAdd", "area")}
       <input type="search" class="art-search" data-model="hudMenu.q" data-key="hud-zone-q" value="${esc(m.q ?? "")}" placeholder="${esc(this.t("ART.Zone.find"))}">
       ${groups || `<p class="art-empty">${esc(this.t("ART.Zone.noneFound"))}</p>`}
       <button type="button" class="art-menu-row art-menu-new" data-action="hudZoneNew">${icon("plus")}<span>${esc(this.t("ART.Hud.zoneNew", { name: zoneType?.name ?? "" }))}</span></button></div>`;
@@ -1122,11 +1120,10 @@ export default class ArtariusUI {
   }
 
   /** Образец типа для списка: значок метки, полоска линии или квадрат зоны. */
-  typeSwatch(t) {
+  typeSwatch(t, size = " art-plate-sm") {
     const st = t?.style ?? {};
     const c = st.color ?? "#ccc";
-    if ( t?.kind === "object" && st.emoji ) return `<span class="art-row-ico art-emoji">${esc(st.emoji)}</span>`;
-    if ( t?.kind === "object" && st.icon ) return iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-row-ico" });
+    if ( t?.kind === "object" ) return this.uMarkPlate(st, size);
     if ( t?.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(c)}"></i>`;
     return `<i class="art-swatch" style="--c:${esc(c)}"></i>`;
   }
@@ -1356,7 +1353,7 @@ export default class ArtariusUI {
       const f = fold(`layer:${layer.id}`, layer.name, total, layer.id ? eye(layer.id) : "");
       const body = f.open ? groups.map(({ type, zones }) => {
         if ( !zones.length ) return "";
-        return `${type ? `<div class="art-cat-type">${this.typeSwatch(type)} ${esc(type.name)} <small>${zones.length}</small></div>` : ""}
+        return `${type ? `<div class="art-cat-type">${this.typeSwatch(type, " art-plate-xs")} ${esc(type.name)} <small>${zones.length}</small></div>` : ""}
           ${zones.map(z => item(z, `<i class="art-swatch" style="--c:${esc(colorOf(z))}"></i>`)).join("")}`;
       }).join("") || `<p class="art-empty">${esc(this.t("ART.Catalog.emptyLayer"))}</p>` : "";
       return `<section class="art-cat-layer">${f.head}${f.open ? `<div class="art-cat-body">${body}</div>` : ""}</section>`;
@@ -1374,9 +1371,9 @@ export default class ArtariusUI {
       }
       const body = [...byType].map(([tid, items]) => {
         const type = s.typeById(tid);
-        return `<div class="art-cat-type">${type ? this.typeSwatch(type) : ""} ${esc(type?.name ?? "")} <small>${items.length}</small></div>
-          ${items.map(st => item(st, type ? this.typeSwatch(type) : "")).join("")}`;
-      }).join("") || `<p class="art-empty">${esc(this.t("ART.Catalog.none"))}</p>`;
+        return `<div class="art-cat-type">${type ? this.typeSwatch(type, " art-plate-xs") : ""} ${esc(type?.name ?? "")} <small>${items.length}</small></div>
+          ${items.map(st => item(st, this.uFeatureIcon(st, " art-plate-xs"))).join("")}`;
+      }).join("") || `<p class="art-empty">${esc(this.t("ART.Unified.noneOnMap"))}</p>`;
       return `<section class="art-cat-layer">${f.head}<div class="art-cat-body">${body}</div></section>`;
     };
     const all = zoneLayers + group("marks", "object", this.t("ART.Card.marks")) + group("lines", "line", this.t("ART.Card.lines"));

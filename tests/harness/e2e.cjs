@@ -305,6 +305,26 @@ async function shot(page, name) {
   if ( await page.locator(`#artarius-ui input[type="color"][data-key="${zoneId}:color"]`).count() ) {
     await page.locator(`#artarius-ui input[type="color"][data-key="${zoneId}:color"]`).fill("#3355aa");
   }
+  // 1.0.1: «+ Добавить» сразу показывает «Новый статус»; плашки базовых статусов под блоком.
+  const ZENT = `#artarius-ui .art-entries[data-drop-feature="${zoneId}"]`;
+  await page.locator(`${ZENT} [data-action="aspectPickOpen"]:not([data-n])`).first().click();
+  check(await page.locator(`${ZENT} [data-action="aspectPickNew"][data-kind="status"]`).count() === 1, "в «Добавить» строка «Новый статус» видна без поиска");
+  await page.locator(`${ZENT} [data-action="aspectPickNew"][data-kind="status"]`).click();
+  await page.fill('#artarius-ui [data-key="apick-q"]', "Засуха");
+  await page.press('#artarius-ui [data-key="apick-q"]', "Enter");
+  await page.waitForTimeout(80);
+  await ev(() => window.art.studio.flush());
+  let zs = (await atlas()).find(x => x.id === zoneId);
+  const drought = await ev(() => window.art.studio.aspects().find(i => i.name === "Засуха"));
+  check(drought?.system.kind === "status" && zs.statuses.some(x => x.itemId === drought.id), "«Новый статус» + Enter заводит статус в списке и вешает на зону");
+  await page.locator(`${ZENT} [data-action="baseQuick"][data-key="plague"]`).click();
+  await page.waitForTimeout(80);
+  await ev(() => window.art.studio.flush());
+  zs = (await atlas()).find(x => x.id === zoneId);
+  check(zs.statuses.some(x => x.name === "Чума" && x.itemId), "плашка «Чума» кладёт статус из общего списка");
+  check(!(await page.locator(`${ZENT} [data-action="baseQuick"][data-key="plague"]`).count()), "плашка висящего статуса пропадает");
+  // Быстрый осмотр показывает статусы зоны, а не только меток.
+  check(await page.locator("#artarius-hud .art-qi-asp", { hasText: "Чума" }).count() === 1, "статус зоны виден в быстром осмотре гекса");
   await act("removeCell", `[data-id="${zoneId}"]`);
   a = await atlas();
   check(a.find(x => x.id === zoneId).cells === before - 1, "«Убрать гекс из зоны» убирает осматриваемый гекс");
@@ -572,7 +592,8 @@ async function shot(page, name) {
     const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
     el.value = "#ff0000";
     el.dispatchEvent(new Event("input", { bubbles: true }));
-    const big = document.querySelector("#artarius-ui .art-icon-big");
+    // 1.0.1: образец значка типа метки — в рамке её формы (.art-mplate).
+    const big = document.querySelector("#artarius-ui .art-icon-current .art-mplate");
     return { same: el.isConnected, c: big?.style.getPropertyValue("--c"), hex: el.nextElementSibling?.value };
   });
   check(live.same && live.c === "#ff0000" && live.hex === "#ff0000", "палитра остаётся открытой, значок и код меняются сразу");
@@ -823,7 +844,7 @@ async function shot(page, name) {
   await page.waitForTimeout(150);
   const AW = "#artarius-ui > .art-aspectwin";
   // Пара предметов уже заведена из правки метки, базовый набор досыпаем через студию.
-  if ( (await page.locator(`${AW} [data-drag-aspect]`).count()) < 4 ) await ev(() => window.art.studio.seedAspects());
+  if ( !(await ev(() => window.art.studio.aspects().some(i => i.system?.key === "haze-learned"))) ) await ev(() => window.art.studio.seedAspects());
   await page.waitForTimeout(200);
   check(await page.locator(`${AW} [data-drag-aspect]`).count() >= 4, "в окне «Статусы и аспекты» базовые аспекты и статусы");
   await shot(page, "aspects");
@@ -832,6 +853,31 @@ async function shot(page, name) {
   const found = await page.locator(`${AW} [data-drag-aspect] .art-ut-name`).allTextContents();
   check(found.length === 2 && found.some(t => /марево/.test(t)) && found.some(t => /Хвонами/.test(t)), `поиск в окне «Статусы и аспекты»: ${found.join(", ")}`);
   await page.fill(`${AW} [data-key="aspectQ"]`, "");
+  // 1.0.1: значок статуса выбирается как у метки — библиотека сразу на виду, эмодзи её прячет.
+  await page.locator(`${AW} [data-action="newAspect"][data-kind="status"]`).click();
+  await page.waitForTimeout(80);
+  check(await page.locator(`${AW} .art-icons [data-action="aspectIcon"]`).count() > 5 && !(await page.locator(`${AW} details[data-fold="aicon-more"]`).count()),
+    "в форме статуса значки видны сразу, без раскрывашки");
+  await page.locator(`${AW} [data-action="aspectIconCat"][data-cat="danger"]`).click();
+  check(await page.locator(`${AW} .art-icons [data-action="aspectIconPick"]`).count() > 0, "раздел библиотеки картинок открывается кнопкой, как у меток");
+  await page.fill(`${AW} [data-key="af-emoji"]`, "🔥");
+  await page.waitForTimeout(80);
+  check(!(await page.locator(`${AW} .art-icons`).count()) && (await page.locator(`${AW} .art-thead .art-emoji`).textContent()) === "🔥",
+    "эмодзи прячет библиотеку и сразу виден в образце");
+  await page.fill(`${AW} [data-key="af-emoji"]`, "");
+  await page.waitForTimeout(80);
+  check(await page.locator(`${AW} .art-icons`).count() === 1, "без эмодзи библиотека возвращается");
+  // «+ Статус» в форме аспекта: новый статус вписывается прямо там.
+  await page.locator(`${AW} [data-action="aspectKind"][data-v="aspect"]`).click();
+  await page.fill(`${AW} [data-key="af-name"]`, "Проклятие");
+  await page.locator(`${AW} [data-action="aspectPickOpen"][data-form="1"]`).click();
+  await page.locator(`${AW} [data-action="aspectPickNew"][data-kind="status"]`).click();
+  await page.fill(`${AW} [data-key="apick-q"]`, "Порча");
+  await page.press(`${AW} [data-key="apick-q"]`, "Enter");
+  await page.waitForTimeout(120);
+  const curse = await ev(() => { const s = window.art.studio; const it = s.aspects().find(i => i.name === "Порча"); return { it: it?.system.kind, inForm: !!it && (s.aspectForm?.statusIds ?? []).includes(it.id), name: s.aspectForm?.name }; });
+  check(curse.it === "status" && curse.inForm && curse.name === "Проклятие", "в форме аспекта «Новый статус» заводит статус и кладёт его в аспект");
+  await ev(() => { window.art.studio.aspectForm = null; window.art.studio.aspectPick = null; window.art.studio.changed("ui"); });
   const zoneHere = await ev(() => {
     const s = window.art.studio;
     s.setTool("select", { toggle: false });

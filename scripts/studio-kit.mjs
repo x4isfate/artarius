@@ -146,6 +146,55 @@ export const StudioKit = {
     return free;
   },
 
+  /**
+   * 1.0.1: какие строки «Новый статус» / «Новый аспект» видны в списке выбора, пока поиск пуст.
+   * Щелчок по ним переключает поиск в поле названия нового статуса (aspectPick.creating).
+   */
+  pickNewKinds() {
+    const p = this.aspectPick;
+    if ( !p ) return [];
+    if ( !this.canEditAspects() && !p.featureId ) return [];
+    return this._pickOnlyStatus(p) ? ["status"] : ["status", "aspect"];
+  },
+
+  /** Поле поиска списка выбора становится полем названия нового статуса или аспекта. */
+  startPickCreate(kind) {
+    const p = this.aspectPick;
+    if ( !p || !["status", "aspect"].includes(kind) ) return;
+    p.creating = p.creating === kind ? null : kind;
+    this.changed("ui");
+  },
+
+  /**
+   * 1.0.1: быстрые плашки базовых статусов и аспектов под блоком «Статусы и аспекты».
+   * Берётся предмет общего списка с тем же ключом; если его нет, мастер заводит его тут же (аспект — со своими статусами).
+   * Без права на предметы запись ложится только на элемент, как до 1.0.
+   */
+  async addBaseQuick(featureId, key, kind) {
+    const st = this.stateOf(featureId);
+    if ( !st ) return;
+    const items = this.aspects();
+    let item = items.find(i => i.system?.key === key && i.system?.kind === kind);
+    if ( !item && this.canEditAspects() ) {
+      const base = baseItems();
+      const folderName = this.t("ART.Aspect.baseFolder");
+      const folder = (this.backend.aspectFolders?.() ?? []).find(f => f.name === folderName)?.id
+        ?? await this.backend.saveAspectFolder?.({ name: folderName, color: "#c9a45c" }) ?? "";
+      const own = base.find(b => b.system.key === key && b.system.kind === kind);
+      if ( !own ) return;
+      const id = await this.backend.saveAspect?.({ name: own.name, folder, system: own.system });
+      if ( kind === "aspect" && id ) {
+        for ( const b of base.filter(x => x.parentKey === key) ) {
+          if ( !items.some(i => i.system?.key === b.system.key) ) await this.backend.saveAspect?.({ name: b.name, folder, system: { ...b.system, parentId: id } });
+        }
+      }
+      item = id ? this.aspectById(id) : null;
+    }
+    if ( item ) return this.attachAspect(featureId, item.id);
+    if ( kind === "aspect" ) this.addBaseAspect(featureId, key);
+    else this.addBaseStatus(featureId, "statuses", key);
+  },
+
   /** Завести статус или аспект с набранным названием и сразу положить его туда же, куда и выбранный. */
   async createFromPick(kind) {
     const p = this.aspectPick;
