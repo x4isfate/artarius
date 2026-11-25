@@ -12,6 +12,7 @@ function statusSchema() {
     key: new fields.StringField({ required: false, blank: true, initial: "" }),
     itemId: new fields.StringField({ required: false, blank: true, initial: "" }),
     icon: new fields.StringField({ required: false, blank: true, initial: "" }),
+    emoji: new fields.StringField({ required: false, blank: true, initial: "" }),
     name: new fields.StringField({ required: true, blank: true, initial: "" }),
     value: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null }),
     max: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null })
@@ -44,6 +45,7 @@ export default class FeatureModel extends foundry.abstract.TypeDataModel {
         key: new fields.StringField({ required: false, blank: true, initial: "" }),
         itemId: new fields.StringField({ required: false, blank: true, initial: "" }),
         icon: new fields.StringField({ required: false, blank: true, initial: "" }),
+        emoji: new fields.StringField({ required: false, blank: true, initial: "" }),
         name: new fields.StringField({ required: true, blank: true, initial: "" }),
         description: new fields.StringField({ required: true, blank: true, initial: "" }),
         value: new fields.NumberField({ required: false, nullable: true, integer: true, initial: null }),

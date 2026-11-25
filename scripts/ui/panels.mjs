@@ -8,7 +8,7 @@
  * Все кнопки работают через data-action и делегированную подписку на части.
  * tools/check-buttons.mjs проверяет, что у каждого data-action есть обработчик.
  */
-import { esc, data, patch, icon, htmlToText } from "./dom.mjs";
+import { esc, data, patch, icon, htmlToText, keepSizes } from "./dom.mjs";
 import { cellKey, zoneCells, layerIdOf } from "../data/world.mjs";
 import { formatStatus } from "../review/ops.mjs";
 import { demiurgesOf } from "../data/access.mjs";
@@ -17,7 +17,6 @@ import { KIND_TOOL } from "../constants.mjs";
 import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
 import { RECIPES } from "../gen/pieces.mjs";
-import { statusIcon, BASE_STATUSES, BASE_ASPECTS } from "../data/statuses.mjs";
 
 import { ICON_LIBRARY, allIcons, searchIcons } from "../data/icons.mjs";
 import { MARK_SHAPES, shapeSwatch, shapeOf } from "../data/mark-shape.mjs";
@@ -351,6 +350,8 @@ export default class ArtariusUI {
     });
     // Колесо над панелью крутит панель, а не масштаб карты.
     target.addEventListener("wheel", ev => ev.stopPropagation(), { passive: true });
+    // Список потянули за угол: высота запоминается сразу, а не только при следующей перерисовке.
+    target.addEventListener("pointerup", () => keepSizes(target));
   }
 
   /** Цвет, пока палитра открыта: код и образцы рядом меняются сразу, окно не перерисовывается. */
@@ -366,6 +367,8 @@ export default class ArtariusUI {
 
   _setModel(path, value) {
     const [obj, key] = path.split(".");
+    // Одно слово — поле самой студии (поиск окна «Статусы и аспекты»). До 1.0 такой поиск молча не работал.
+    if ( key === undefined ) { if ( typeof this.studio[obj] !== "function" ) this.studio[obj] = value; return; }
     if ( obj === "typeForm" ) { if ( this.studio.typeForm ) this.studio.typeForm[key] = value; return; }
     if ( obj === "claimForm" ) { this.studio.claimForm[key] = value; return; }
     if ( this.studio[obj] ) this.studio[obj][key] = value;
@@ -383,8 +386,6 @@ export default class ArtariusUI {
       brushMode: el => s.setBrush(el.dataset.mode),
       brushDone: () => s.setTool("select", { toggle: false }),
       hideToast: () => s.hideToast(),
-      addBaseStatus: el => s.addBaseStatus(el.dataset.id, el.dataset.path, el.dataset.key),
-      addBaseAspect: el => s.addBaseAspect(el.dataset.id, el.dataset.key),
       permRole: el => this._setPerm(cfg => { ((cfg.roles ??= {})[el.dataset.role] ??= {})[el.dataset.perm] = el.checked; }),
       permUser: el => this._setPerm(cfg => {
         const u = ((cfg.users ??= {})[el.dataset.user] ??= {});
@@ -393,7 +394,6 @@ export default class ArtariusUI {
       visMode: el => s.setVisibility(el.dataset.id, el.value),
       visUser: el => s.toggleViewer(el.dataset.id, el.dataset.user),
       toggleDemiurge: el => s.toggleDemiurge(el.dataset.id, el.dataset.actor),
-      editStatuses: el => { this.statusEdit = el.dataset.id || null; this.render(); },
       extra: el => EXTRA_ACTIONS.get(el.dataset.id)?.onClick?.(),
       help: () => this.backend.openGuide?.(),
       // Зона
@@ -494,11 +494,8 @@ export default class ArtariusUI {
       removeCell: el => s.removeCellFromZone(el.dataset.id),
       markUp: el => s.shiftMark(el.dataset.id, -1),
       markDown: el => s.shiftMark(el.dataset.id, 1),
-      addStatus: el => s.addStatus(el.dataset.id, el.dataset.path),
       removeStatus: el => s.removeStatus(el.dataset.id, el.dataset.path, Number(el.dataset.n)),
       stepLevel: el => s.stepLevel(el.dataset.id, el.dataset.path, Number(el.dataset.n), Number(el.dataset.delta)),
-      toAspect: el => s.statusToAspect(el.dataset.id, Number(el.dataset.n)),
-      addAspect: el => s.addAspect(el.dataset.id),
       removeAspect: el => s.removeAspect(el.dataset.id, Number(el.dataset.n)),
       // Заявки
       openQueue: () => s.openQueue(),
@@ -688,24 +685,29 @@ export default class ArtariusUI {
       </section>`;
   }
 
-  /** Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить». */
-  renderIconPicker(f) {
+  /**
+   * Выбор значка: поиск, разделы библиотеки, свой файл и галочка «красить».
+   * По умолчанию для формы типа метки; аспекты (1.0) передают свою модель и свои кнопки.
+   */
+  renderIconPicker(f, { model = "typeForm", key = "tf", pick = "pickIcon", cat = "iconCat", browse = "browseIcon", defCat = "settlements", title = true } = {}) {
     const q = (f.iconQuery ?? "").trim();
-    const list = q ? searchIcons(q) : allIcons().filter(i => i.category === (f.iconCat || "settlements"));
-    const cats = Object.keys(ICON_LIBRARY).map(c => `<button type="button" class="art-btn${!q && c === f.iconCat ? " active" : ""}" data-action="iconCat" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
+    const curCat = f.iconCat || defCat;
+    const path = /[/.]/.test(String(f.icon ?? "")) ? f.icon : "";
+    const list = q ? searchIcons(q) : allIcons().filter(i => i.category === curCat);
+    const cats = Object.keys(ICON_LIBRARY).map(c => `<button type="button" class="art-btn${!q && c === curCat ? " active" : ""}" data-action="${cat}" data-cat="${c}">${esc(this.t(`ART.Icons.cat.${c}`))}</button>`).join("");
     const grid = list.length
-      ? list.map(i => `<button type="button" class="art-icon-pick${i.path === f.icon ? " active" : ""}" data-action="pickIcon" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
+      ? list.map(i => `<button type="button" class="art-icon-pick${i.path === path ? " active" : ""}" data-action="${pick}" data-icon="${esc(i.path)}" title="${esc(i.label)}">${iconImg(i.path, f.color)}</button>`).join("")
       : `<p class="art-hint">${esc(this.t("ART.Icons.none"))}</p>`;
-    return `<div class="art-field"><span>${esc(this.t("ART.Type.icon"))}</span>
-      <div class="art-icon-current">${iconImg(f.icon, f.color, { tint: f.tint !== false, cls: "art-icon-big" })}
-        <input type="search" data-model="typeForm.iconQuery" data-key="tf-iq" value="${esc(q)}" placeholder="${esc(this.t("ART.Icons.search"))}"></div>
+    const body = `<div class="art-icon-current">${path ? iconImg(path, f.color, { tint: f.tint !== false, cls: "art-icon-big" }) : `<span class="art-icon-big"></span>`}
+        <input type="search" data-model="${model}.iconQuery" data-key="${key}-iq" value="${esc(q)}" placeholder="${esc(this.t("ART.Icons.search"))}"></div>
       ${q ? "" : `<div class="art-seg art-icon-cats">${cats}</div>`}
       <div class="art-icons">${grid}</div>
-      <div class="art-row-btns"><button type="button" class="art-btn" data-action="browseIcon">${icon("folder-open")} ${esc(this.t("ART.Icons.own"))}</button></div>
+      <div class="art-row-btns"><button type="button" class="art-btn" data-action="${browse}">${icon("folder-open")} ${esc(this.t("ART.Icons.own"))}</button></div>
       <p class="art-hint">${esc(this.t("ART.Icons.ownHint"))}</p>
-      <input type="text" data-model="typeForm.icon" data-key="tf-icon" value="${esc(f.icon)}" placeholder="worlds/…/my-icon.webp">
-      <label class="art-check"><input type="checkbox" data-model="typeForm.tint" ${f.tint !== false ? "checked" : ""}> ${esc(this.t("ART.Icons.tint"))}</label>
-      <p class="art-hint">${esc(this.t("ART.Icons.credit"))}</p></div>`;
+      <input type="text" data-model="${model}.icon" data-key="${key}-icon" value="${esc(path)}" placeholder="worlds/…/my-icon.webp">
+      <label class="art-check"><input type="checkbox" data-model="${model}.tint" ${f.tint !== false ? "checked" : ""}> ${esc(this.t("ART.Icons.tint"))}</label>
+      <p class="art-hint">${esc(this.t("ART.Icons.credit"))}</p>`;
+    return title ? `<div class="art-field"><span>${esc(this.t("ART.Type.icon"))}</span>${body}</div>` : `<div class="art-field">${body}</div>`;
   }
 
   /**
@@ -834,18 +836,22 @@ export default class ArtariusUI {
   }
 
   /** Статусы и аспекты как значки с уровнем: точки, если уровней до пяти, иначе «3/7». */
-  statusChips(st, { limit = 8 } = {}) {
+  statusChips(st, { limit = 8, nested = false } = {}) {
     const chip = (x, aspect) => {
       const has = x.value !== null && x.value !== undefined && x.value !== "";
       const max = Number(x.max) || 0;
       const level = !has ? "" : (max > 0 && max <= 5
         ? `<span class="art-pips">${Array.from({ length: max }, (_, n) => `<i class="${n < Number(x.value) ? "on" : ""}"></i>`).join("")}</span>`
         : `<span class="art-lvl">${esc(String(x.value))}${max ? `/${max}` : ""}</span>`);
-      const ic = x.icon || (aspect ? (x.key ? statusIcon(x) : "star") : statusIcon(x));
-      return `<span class="art-chip${aspect ? " art-chip-aspect" : ""}" title="${esc(formatStatus(x))}">${icon(ic)}<span>${esc(x.name)}</span>${level}</span>`;
+      // 1.0: значок из предмета (эмодзи, картинка или Font Awesome), цветом предмета.
+      const g = this.uEntryGlyph(x, aspect);
+      const tip = [formatStatus(x), aspect && x.statuses?.length ? x.statuses.map(formatStatus).join(", ") : ""].filter(Boolean).join(": ");
+      return `<span class="art-chip${aspect ? " art-chip-aspect" : ""}" title="${esc(tip)}"><span class="art-chip-ic"${g.color ? ` style="color:${esc(g.color)}"` : ""}>${g.html}</span><span>${esc(x.name)}</span>${level}</span>`;
     };
+    // nested — статусы аспекта идут сразу за ним (строка под плашкой осмотра, карточка).
     const list = [...(st.system.statuses ?? []).filter(x => x.name).map(x => chip(x, false)),
-      ...(st.system.aspects ?? []).filter(x => x.name).map(x => chip(x, true))];
+      ...(st.system.aspects ?? []).filter(x => x.name).flatMap(x => [chip(x, true),
+        ...(nested ? (x.statuses ?? []).filter(y => y.name).map(y => chip(y, false).replace('class="art-chip"', 'class="art-chip art-chip-in"')) : [])])];
     const more = list.length > limit ? `<span class="art-chip art-chip-more">+${list.length - limit}</span>` : "";
     return list.slice(0, limit).join("") + more;
   }
@@ -1424,7 +1430,7 @@ export default class ArtariusUI {
       ${kind === "area" && zoneCells(st).length > 1 ? `<p class="art-hint">${esc(this.t(s.multi ? "ART.Field.typeHereMany" : "ART.Field.typeHere"))}</p>` : ""}
       ${this.renderDemiurges(st)}
       <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span><textarea rows="3" ${f("text")}>${esc(htmlToText(st.text))}</textarea></label>
-      ${this.statusEdit === id ? this.renderStatusEditor(st) : this.renderStatusView(st)}
+      ${this.renderEntries(st)}
       <div class="art-row-btns">
         <button type="button" class="art-btn" data-action="pan" data-id="${esc(id)}">${icon("crosshairs")} ${esc(this.t("ART.Card.pan"))}</button>
         ${kind === "area" ? `<button type="button" class="art-btn" data-action="removeCell" data-id="${esc(id)}">${icon("eraser")} ${esc(this.t(s.multi ? "ART.Card.removeCells" : "ART.Card.removeCell"))}</button>` : ""}
@@ -1475,89 +1481,6 @@ export default class ArtariusUI {
       ${players ? `<div class="art-parts">${players}</div>` : ""}
       ${lockedNames ? `<p class="art-hint">${esc(this.t("ART.Vis.lockedList", { names: lockedNames }))}</p>` : ""}
       ${can ? "" : `<p class="art-hint">${esc(this.t("ART.Vis.onlyDemiurge"))}</p>`}`;
-  }
-
-  /** Статусы и аспекты для чтения: значки с уровнями, у аспекта описание. Правка — по кнопке. */
-  renderStatusView(st) {
-    const id = st.id;
-    const statuses = (st.system.statuses ?? []).filter(x => x.name);
-    const aspects = (st.system.aspects ?? []).filter(x => x.name);
-    const chips = this.statusChips({ system: { statuses, aspects: [] } }, { limit: 99 });
-    const aspectRows = aspects.map(a => `<div class="art-aspect-view">
-      <div class="art-chips">${this.statusChips({ system: { statuses: [], aspects: [a] } })}${this.statusChips({ system: { statuses: a.statuses ?? [], aspects: [] } })}</div>
-      ${a.description ? `<p>${esc(a.description)}</p>` : ""}</div>`).join("");
-    const empty = !statuses.length && !aspects.length;
-    return `<section class="art-view-block"><h5>${esc(this.t("ART.Card.statusesAspects"))}
-        <button type="button" class="art-btn" data-action="editStatuses" data-id="${esc(id)}">${icon("pen")} ${esc(this.t("ART.Card.editStatuses"))}</button></h5>
-      ${empty ? `<p class="art-empty">${esc(this.t("ART.Card.noStatusesYet"))}</p>` : ""}
-      ${chips ? `<div class="art-chips">${chips}</div>` : ""}${aspectRows}
-    </section>`;
-  }
-
-  /** Правка статусов и аспектов: поля, уровни, «в аспект». Кнопка «Готово» возвращает к просмотру. */
-  renderStatusEditor(st) {
-    const id = st.id;
-    return `${this.renderStatuses(id, "statuses", st.system.statuses ?? [], true)}
-      <section class="art-sub-block"><h5>${esc(this.t("ART.Card.aspects"))}
-        <button type="button" class="art-icon-btn" data-action="addAspect" data-id="${esc(id)}" title="${esc(this.t("ART.Card.addAspect"))}">${icon("plus")}</button></h5>
-        ${(st.system.aspects ?? []).map((a, n) => this.renderAspect(id, a, n)).join("") || `<p class="art-empty">${esc(this.t("ART.Card.noAspects"))}</p>`}
-        ${(() => {
-          const have = new Set((st.system.aspects ?? []).map(a => a.key).filter(Boolean));
-          const quick = BASE_ASPECTS.filter(a => !have.has(a.key)).map(a => `<button type="button" class="art-chip art-chip-add art-chip-aspect" data-action="addBaseAspect"
-            data-id="${esc(id)}" data-key="${esc(a.key)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join("");
-          return quick ? `<div class="art-chips art-quick">${quick}</div>` : "";
-        })()}
-      </section>
-      <div class="art-row-btns"><button type="button" class="art-btn art-accent" data-action="editStatuses" data-id="">${icon("check")} ${esc(this.t("ART.Card.doneStatuses"))}</button></div>`;
-  }
-
-  renderStatuses(id, path, list, withAspect) {
-    const rows = list.map((x, n) => {
-      const base = `${path}.${n}`;
-      const f = key => `data-id="${esc(id)}" data-field="${esc(`${base}.${key}`)}" data-key="${esc(`${id}:${base}.${key}`)}"`;
-      return `<li class="art-status-row">
-        <input type="text" class="art-st-name" value="${esc(x.name)}" placeholder="${esc(this.t("ART.Card.statusPh"))}" ${f("name")}>
-        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" data-delta="-1" title="−1">${icon("minus")}</button>
-        <input type="number" class="art-num" value="${x.value ?? ""}" placeholder="—" ${f("value")}>
-        <span class="art-muted">/</span>
-        <input type="number" class="art-num" value="${x.max ?? ""}" placeholder="—" ${f("max")}>
-        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" data-delta="1" title="+1">${icon("plus")}</button>
-        ${withAspect ? `<button type="button" class="art-icon-btn" data-action="toAspect" data-id="${esc(id)}" data-n="${n}" title="${esc(this.t("ART.Card.toAspect"))}">${icon("star")}</button>` : ""}
-        <button type="button" class="art-icon-btn" data-action="removeStatus" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}" title="${esc(this.t("ART.Card.remove"))}">${icon("xmark")}</button>
-      </li>`;
-    }).join("");
-    // Быстрые кнопки базовых статусов: у метки — десять общих, у базового аспекта — его собственные.
-    const st = this.studio.stateOf(id);
-    const aspectN = path.startsWith("aspects.") ? Number(path.split(".")[1]) : null;
-    const aspectKey = aspectN !== null ? st?.system.aspects?.[aspectN]?.key : null;
-    const bases = aspectKey ? (BASE_ASPECTS.find(a => a.key === aspectKey)?.statuses ?? [])
-      : (path === "statuses" && st?.system.kind === "object" ? BASE_STATUSES : []);
-    const have = new Set(list.map(x => x.key).filter(Boolean));
-    const quick = bases.filter(b => !have.has(b.key)).map(b => `<button type="button" class="art-chip art-chip-add" data-action="addBaseStatus"
-      data-id="${esc(id)}" data-path="${esc(path)}" data-key="${esc(b.key)}" title="${esc(this.t("ART.Card.addStatus"))}">${icon(b.icon)}<span>${esc(b.name)}</span></button>`).join("");
-    return `<section class="art-sub-block"><h5>${esc(this.t(path === "statuses" ? "ART.Card.statuses" : "ART.Card.aspectStatuses"))}
-      <button type="button" class="art-icon-btn" data-action="addStatus" data-id="${esc(id)}" data-path="${esc(path)}" title="${esc(this.t("ART.Card.addOwnStatus"))}">${icon("plus")}</button></h5>
-      ${rows ? `<ul class="art-status-list">${rows}</ul>` : `<p class="art-empty">${esc(this.t("ART.Card.noStatuses"))}</p>`}
-      ${quick ? `<div class="art-chips art-quick">${quick}</div>` : ""}</section>`;
-  }
-
-  renderAspect(id, a, n) {
-    const base = `aspects.${n}`;
-    const f = key => `data-id="${esc(id)}" data-field="${esc(`${base}.${key}`)}" data-key="${esc(`${id}:${base}.${key}`)}"`;
-    return `<div class="art-aspect-box">
-      <div class="art-status-row">
-        ${icon("star", "art-aspect-star")}
-        <input type="text" class="art-st-name" value="${esc(a.name)}" placeholder="${esc(this.t("ART.Card.aspectPh"))}" ${f("name")}>
-        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="aspects" data-n="${n}" data-delta="-1">${icon("minus")}</button>
-        <input type="number" class="art-num" value="${a.value ?? ""}" placeholder="—" ${f("value")}>
-        <span class="art-muted">/</span>
-        <input type="number" class="art-num" value="${a.max ?? ""}" placeholder="—" ${f("max")}>
-        <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="aspects" data-n="${n}" data-delta="1">${icon("plus")}</button>
-        <button type="button" class="art-icon-btn" data-action="removeAspect" data-id="${esc(id)}" data-n="${n}" title="${esc(this.t("ART.Card.remove"))}">${icon("xmark")}</button>
-      </div>
-      <textarea rows="2" placeholder="${esc(this.t("ART.Field.text"))}" ${f("description")}>${esc(a.description ?? "")}</textarea>
-      ${this.renderStatuses(id, `${base}.statuses`, a.statuses ?? [], false)}
-    </div>`;
   }
 
   /* Заявки ---------------------------------------------------------- */
