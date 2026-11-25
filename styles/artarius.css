@@ -1177,3 +1177,6 @@
 .artarius .art-mplate.art-mshape-diamond > .art-plate-ico { width: 46%; height: 46%; }
 .artarius .art-mplate.art-mshape-square > .art-plate-ico { width: 62%; height: 62%; }
 .artarius .art-mplate > .art-emoji { position: relative; font-size: calc(var(--s) * 0.52); line-height: 1; }
+.artarius .art-apick .art-menu-new.active { border-color: var(--art-warn); background: rgba(232, 194, 122, 0.08); }
+.artarius .art-apick .art-search.art-creating { border-color: var(--art-warn); }
+.artarius .art-entries .art-quick { display: flex; flex-wrap: wrap; gap: 4px; }

@@ -305,6 +305,26 @@ async function shot(page, name) {
   if ( await page.locator(`#artarius-ui input[type="color"][data-key="${zoneId}:color"]`).count() ) {
     await page.locator(`#artarius-ui input[type="color"][data-key="${zoneId}:color"]`).fill("#3355aa");
   }
+  // 1.0.1: «+ Добавить» сразу показывает «Новый статус»; плашки базовых статусов под блоком.
+  const ZENT = `#artarius-ui .art-entries[data-drop-feature="${zoneId}"]`;
+  await page.locator(`${ZENT} [data-action="aspectPickOpen"]:not([data-n])`).first().click();
+  check(await page.locator(`${ZENT} [data-action="aspectPickNew"][data-kind="status"]`).count() === 1, "в «Добавить» строка «Новый статус» видна без поиска");
+  await page.locator(`${ZENT} [data-action="aspectPickNew"][data-kind="status"]`).click();
+  await page.fill('#artarius-ui [data-key="apick-q"]', "Засуха");
+  await page.press('#artarius-ui [data-key="apick-q"]', "Enter");
+  await page.waitForTimeout(80);
+  await ev(() => window.art.studio.flush());
+  let zs = (await atlas()).find(x => x.id === zoneId);
+  const drought = await ev(() => window.art.studio.aspects().find(i => i.name === "Засуха"));
+  check(drought?.system.kind === "status" && zs.statuses.some(x => x.itemId === drought.id), "«Новый статус» + Enter заводит статус в списке и вешает на зону");
+  await page.locator(`${ZENT} [data-action="baseQuick"][data-key="plague"]`).click();
+  await page.waitForTimeout(80);
+  await ev(() => window.art.studio.flush());
+  zs = (await atlas()).find(x => x.id === zoneId);
+  check(zs.statuses.some(x => x.name === "Чума" && x.itemId), "плашка «Чума» кладёт статус из общего списка");
+  check(!(await page.locator(`${ZENT} [data-action="baseQuick"][data-key="plague"]`).count()), "плашка висящего статуса пропадает");
+  // Быстрый осмотр показывает статусы зоны, а не только меток.
+  check(await page.locator("#artarius-hud .art-qi-asp", { hasText: "Чума" }).count() === 1, "статус зоны виден в быстром осмотре гекса");
   await act("removeCell", `[data-id="${zoneId}"]`);
   a = await atlas();
   check(a.find(x => x.id === zoneId).cells === before - 1, "«Убрать гекс из зоны» убирает осматриваемый гекс");
@@ -823,7 +843,7 @@ async function shot(page, name) {
   await page.waitForTimeout(150);
   const AW = "#artarius-ui > .art-aspectwin";
   // Пара предметов уже заведена из правки метки, базовый набор досыпаем через студию.
-  if ( (await page.locator(`${AW} [data-drag-aspect]`).count()) < 4 ) await ev(() => window.art.studio.seedAspects());
+  if ( !(await ev(() => window.art.studio.aspects().some(i => i.system?.key === "haze-learned"))) ) await ev(() => window.art.studio.seedAspects());
   await page.waitForTimeout(200);
   check(await page.locator(`${AW} [data-drag-aspect]`).count() >= 4, "в окне «Статусы и аспекты» базовые аспекты и статусы");
   await shot(page, "aspects");
