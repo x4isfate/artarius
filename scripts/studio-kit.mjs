@@ -5,7 +5,9 @@
  */
 import { COAST_DEFAULTS } from "./constants.mjs";
 import { groupByFolders, nextFolderColor, materialize } from "./data/folders.mjs";
-import { attachItem, detachItem, hostsOf, searchItems, baseItems } from "./data/aspects.mjs";
+import { attachItem, attachInto, detachItem, hostsOf, searchItems, rankItems, baseItems, statusIdsOf, cleanSteps, stepsOf,
+  itemByName, looseEntries, linkEntries, isImageIcon } from "./data/aspects.mjs";
+import { isLibraryIcon } from "./data/icons.mjs";
 import { cellKey, zoneCells, layerIdOf, lineLayerOf } from "./data/world.mjs";
 import { markAt } from "./data/mark-layout.mjs";
 import { lineAt } from "./data/lines.mjs";
@@ -53,9 +55,10 @@ export const StudioKit = {
   _decorate(state, slot) {
     const f = this[slot] ?? {};
     let st = clone(state);
+    const items = this.aspects();
     for ( const id of f.aspects ?? [] ) {
-      const item = this.aspectById(id);
-      if ( item ) st = attachItem(st, item, () => this.backend.newId()) ?? st;
+      const item = items.find(i => i.id === id);
+      if ( item ) st = attachItem(st, item, () => this.backend.newId(), items) ?? st;
     }
     const lb = f.label ?? {};
     const style = { ...(st.system.style ?? {}) };
@@ -88,30 +91,102 @@ export const StudioKit = {
     this.changed("ui");
   },
 
-  /** Открыть или закрыть выбор аспекта: для формы (slot) или для элемента карточки (featureId). */
-  toggleAspectPick({ slot = null, featureId = null } = {}) {
-    const same = this.aspectPick && this.aspectPick.slot === slot && this.aspectPick.featureId === featureId;
-    this.aspectPick = same ? null : { slot, featureId, q: "" };
+  /**
+   * Открыть или закрыть выбор аспекта. Куда кладётся выбранное:
+   * slot — форма нового элемента, featureId — элемент карточки, featureId + aspectN — внутрь его аспекта,
+   * form — статусы аспекта в окне «Статусы и аспекты».
+   */
+  toggleAspectPick({ slot = null, featureId = null, aspectN = null, form = false } = {}) {
+    const n = aspectN === null || aspectN === undefined || aspectN === "" ? null : Number(aspectN);
+    const p = this.aspectPick;
+    const same = p && p.slot === slot && p.featureId === featureId && p.aspectN === n && !!p.form === !!form;
+    this.aspectPick = same ? null : { slot, featureId, aspectN: n, form: !!form, q: "" };
     this.changed("ui");
   },
 
-  /** Щелчок в списке выбора: в форму или сразу на элемент. */
+  /** Щелчок в списке выбора: в форму, на элемент, внутрь аспекта элемента или в статусы аспекта. */
   async pickFromList(itemId) {
     const p = this.aspectPick;
     if ( !p ) return;
-    if ( p.slot ) this.addPending(p.slot, itemId);
+    if ( p.form ) this.addFormStatus(itemId);
+    else if ( p.slot ) this.addPending(p.slot, itemId);
+    else if ( p.featureId && p.aspectN !== null ) await this.attachIntoAspect(p.featureId, p.aspectN, itemId);
     else if ( p.featureId ) await this.attachAspect(p.featureId, itemId);
     this.aspectPick = null;
     this.changed("ui");
   },
 
-  /** Предметы для списка выбора: поиск, без уже выбранных. */
+  /** Только статусы: внутрь аспекта и в статусы аспекта аспект не кладётся. */
+  _pickOnlyStatus(p = this.aspectPick) { return !!(p && (p.form || p.aspectN !== null)); },
+
+  /** Предметы для списка выбора: поиск, сначала точные совпадения, без уже выбранных. */
   pickList() {
     const p = this.aspectPick;
     if ( !p ) return [];
-    const have = new Set(p.slot ? (this[p.slot]?.aspects ?? []) : []);
     const st = p.featureId ? this.stateOf(p.featureId) : null;
-    return searchItems(this.aspects(), p.q).filter(i => !have.has(i.id) && !(st && hostsOf(new Map([[st.id, st]]), i.id).length));
+    let have = new Set();
+    if ( p.form ) have = new Set([...(this.aspectForm?.statusIds ?? []), this.aspectForm?.id].filter(Boolean));
+    else if ( p.slot ) have = new Set(this[p.slot]?.aspects ?? []);
+    const items = this.aspects();
+    return rankItems(searchItems(items, p.q), p.q).filter(i => !have.has(i.id)
+      && !(st && hostsOf(new Map([[st.id, st]]), i.id).length)
+      && (!this._pickOnlyStatus(p) || i.system?.kind === "status"));
+  },
+
+  /** Что можно завести прямо из списка выбора по набранному названию: [] или ["status", "aspect"]. */
+  pickCreateKinds() {
+    const p = this.aspectPick;
+    const name = String(p?.q ?? "").trim();
+    if ( !p || !name ) return [];
+    const kinds = this._pickOnlyStatus(p) ? ["status"] : ["status", "aspect"];
+    const items = this.aspects();
+    const free = kinds.filter(k => !itemByName(items, name, k));
+    // Без права заводить предметы: свой статус ложится только на элемент, в общий список не попадает.
+    if ( !this.canEditAspects() ) return p.featureId ? free : [];
+    return free;
+  },
+
+  /** Завести статус или аспект с набранным названием и сразу положить его туда же, куда и выбранный. */
+  async createFromPick(kind) {
+    const p = this.aspectPick;
+    const name = String(p?.q ?? "").trim().slice(0, 80);
+    if ( !p || !name || !["status", "aspect"].includes(kind) ) return;
+    if ( !this.canEditAspects() ) {
+      if ( !p.featureId ) return;
+      // Игрок без права на предметы: запись только на элементе, мастер потом перенесёт её в список.
+      const entry = { id: this.backend.newId(), name, value: null, max: null };
+      this.edit(p.featureId, s => {
+        if ( kind === "aspect" ) (s.system.aspects ??= []).push({ ...entry, description: "", statuses: [] });
+        else if ( p.aspectN !== null && s.system.aspects?.[p.aspectN] ) (s.system.aspects[p.aspectN].statuses ??= []).push(entry);
+        else (s.system.statuses ??= []).push(entry);
+      }, { now: true });
+      this.aspectPick = null;
+      this.changed("ui");
+      return;
+    }
+    const id = await this.backend.saveAspect?.({
+      name, folder: "",
+      system: { kind, icon: kind === "aspect" ? "star" : "circle-dot", emoji: "", tint: true, color: kind === "aspect" ? "#8f7bb5" : "#c9a45c",
+        description: "", steps: 0, start: null, statusIds: [], parentId: "", key: "" }
+    });
+    if ( !id ) return;
+    this.showToast?.(this.t("ART.Aspect.created", { name }));
+    await this.pickFromList(id);
+  },
+
+  /** Статус внутрь аспекта, который уже висит на элементе. */
+  async attachIntoAspect(featureId, aspectN, itemId) {
+    const st = this.stateOf(featureId);
+    const item = this.aspectById(itemId);
+    const next = attachInto(st, Number(aspectN), item, () => this.backend.newId());
+    if ( !next ) {
+      if ( item ) this.backend.notify("info", this.t("ART.Aspect.already", { name: item.name }));
+      return false;
+    }
+    await this.flush();
+    await this._commit([{ action: "update", id: featureId, state: next }]);
+    this.changed("ui");
+    return true;
   },
 
   /* ---------------------------------------------------------------- */
@@ -261,7 +336,7 @@ export const StudioKit = {
   /** Элементы этого типа на карте, по названию. */
   featuresOfType(typeId) {
     return [...this.states.values()].filter(st => st.system.typeId === typeId)
-      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { numeric: true }));
   },
 
   /* ---------------------------------------------------------------- */
@@ -275,20 +350,28 @@ export const StudioKit = {
   pickAspect(id) {
     const a = this.aspectById(id);
     this.aspectSel = a ? id : null;
-    this.aspectForm = a ? { id: a.id, name: a.name, folder: a.folder ?? "", ...clone(a.system ?? {}) } : null;
+    if ( !a ) { this.aspectForm = null; this.changed("ui"); return; }
+    const sys = clone(a.system ?? {});
+    const { max, start } = stepsOf(a);
+    this.aspectForm = {
+      id: a.id, name: a.name, folder: a.folder ?? "", ...sys,
+      emoji: sys.emoji ?? "", tint: sys.tint !== false, steps: max ? String(max) : "", start: max ? String(start) : "",
+      statusIds: statusIdsOf(a, this.aspects()), iconQuery: "", iconCat: "", iconMore: isImageIcon(sys.icon)
+    };
+    if ( this.aspectPick?.form ) this.aspectPick = null;
     this.changed("ui");
   },
 
-  newAspect(folder = "") {
+  /** Новый аспект или статус. kind — что заводим, folder — папка. */
+  newAspect(folder = "", kind = "status") {
     if ( !this.canEditAspects() ) return this.backend.notify("warn", this.t("ART.Aspect.cantCreate"));
     this.aspectSel = "new";
-    this.aspectForm = { id: null, name: "", folder, kind: "status", icon: "star", color: "#c9a45c", description: "", steps: 0, parentId: "", key: "" };
-    this.changed("ui");
-  },
-
-  setAspectSteps(n) {
-    if ( !this.aspectForm ) return;
-    this.aspectForm.steps = Math.max(0, Math.min(20, Number(n) || 0));
+    this.aspectForm = {
+      id: null, name: "", folder, kind: kind === "aspect" ? "aspect" : "status", icon: kind === "aspect" ? "star" : "circle-dot",
+      emoji: "", tint: true, color: kind === "aspect" ? "#8f7bb5" : "#c9a45c", description: "", steps: "", start: "",
+      statusIds: [], parentId: "", key: "", iconQuery: "", iconCat: "", iconMore: false
+    };
+    if ( this.aspectPick?.form ) this.aspectPick = null;
     this.changed("ui");
   },
 
@@ -296,7 +379,41 @@ export const StudioKit = {
     if ( !this.aspectForm || !["aspect", "status"].includes(kind) ) return;
     this.aspectForm.kind = kind;
     if ( kind === "aspect" ) this.aspectForm.parentId = "";
+    if ( this.aspectPick?.form ) this.aspectPick = null;
     this.changed("ui");
+  },
+
+  /** Значок формы аспекта: имя Font Awesome или путь к картинке. Картинка библиотеки красится, своя нет. */
+  setAspectIcon(icon) {
+    const f = this.aspectForm;
+    if ( !f ) return;
+    f.icon = String(icon ?? "");
+    f.emoji = "";
+    if ( isImageIcon(f.icon) ) f.tint = isLibraryIcon(f.icon);
+    this.changed("ui");
+  },
+
+  /** Статус в список статусов аспекта (форма, до «Сохранить»). */
+  addFormStatus(itemId) {
+    const f = this.aspectForm;
+    const item = this.aspectById(itemId);
+    if ( !f || !item || item.system?.kind !== "status" || itemId === f.id ) return;
+    f.statusIds = [...new Set([...(f.statusIds ?? []), itemId])];
+    this.changed("ui");
+  },
+
+  removeFormStatus(itemId) {
+    const f = this.aspectForm;
+    if ( !f ) return;
+    f.statusIds = (f.statusIds ?? []).filter(id => id !== itemId);
+    this.changed("ui");
+  },
+
+  /** Предметы с похожим названием для подсказки под полем «Название» новой формы. */
+  similarAspects(name, limit = 6) {
+    const f = String(name ?? "").trim().toLowerCase();
+    if ( f.length < 2 ) return [];
+    return rankItems(this.aspects().filter(i => i.name.toLowerCase().includes(f)), f).slice(0, limit);
   },
 
   async saveAspectForm() {
@@ -304,15 +421,25 @@ export const StudioKit = {
     if ( !f ) return;
     const name = String(f.name ?? "").trim();
     if ( !name ) return this.backend.notify("warn", this.t("ART.Aspect.needName"));
+    const aspect = f.kind === "aspect";
+    const { steps, start } = cleanSteps(f.start, f.steps);
+    const items = this.aspects();
+    const ids = aspect ? (f.statusIds ?? []).filter(id => items.some(i => i.id === id && i.system?.kind === "status")) : [];
     const data = {
       id: f.id, name: name.slice(0, 80), folder: f.folder || "",
       system: {
-        kind: f.kind === "aspect" ? "aspect" : "status", icon: f.icon || "", color: f.color || "#c9a45c",
-        description: String(f.description ?? ""), steps: Math.max(0, Math.min(20, Number(f.steps) || 0)),
-        parentId: f.kind === "status" ? (f.parentId || "") : "", key: f.key || ""
+        kind: aspect ? "aspect" : "status", icon: f.icon || "", emoji: String(f.emoji ?? "").trim().slice(0, 16),
+        tint: f.tint !== false, color: f.color || "#c9a45c", description: String(f.description ?? ""), steps, start,
+        statusIds: ids, parentId: aspect ? "" : (f.parentId || ""), key: f.key || ""
       }
     };
     const id = await this.backend.saveAspect?.(data);
+    // Статус, убранный из аспекта, теряет и старую ссылку parentId на него.
+    if ( aspect && id ) {
+      for ( const st of items.filter(i => i.system?.kind === "status" && i.system?.parentId === id && !ids.includes(i.id)) ) {
+        await this.backend.saveAspect?.({ id: st.id, name: st.name, folder: st.folder ?? "", system: { ...clone(st.system), parentId: "" } });
+      }
+    }
     this.pickAspect(id ?? f.id);
   },
 
@@ -322,6 +449,10 @@ export const StudioKit = {
     const n = hostsOf(this.states, id).length;
     if ( !(await this.backend.confirm(this.t(n ? "ART.Aspect.deleteUsed" : "ART.Aspect.deleteAsk", { name: a.name, n }))) ) return;
     await this.backend.deleteAspect?.(id);
+    // Удалённый статус пропадает из списков аспектов.
+    for ( const x of this.aspects().filter(i => (i.system?.statusIds ?? []).includes(id)) ) {
+      await this.backend.saveAspect?.({ id: x.id, name: x.name, folder: x.folder ?? "", system: { ...clone(x.system), statusIds: x.system.statusIds.filter(s => s !== id) } });
+    }
     this.aspectSel = null;
     this.aspectForm = null;
     this.changed("ui");
@@ -344,6 +475,39 @@ export const StudioKit = {
     this.changed("ui");
   },
 
+  /** Свои статусы и аспекты на карте, которых нет в общем списке. */
+  looseAspects() { return looseEntries(this.states, this.aspects()); },
+
+  /**
+   * Перенести в общий список статусы и аспекты, заведённые прямо на элементах карты (до 1.0 так делали в карточке гекса).
+   * Каждое название становится предметом в папке «С карты», записи на карте получают ссылку на него.
+   */
+  async collectLoose() {
+    if ( !this.backend.isGM ) return this.backend.notify("warn", this.t("ART.Aspect.collectGm"));
+    const loose = this.looseAspects();
+    if ( loose.length ) {
+      const folder = await this.backend.saveAspectFolder?.({ name: this.t("ART.Aspect.fromMapFolder"), color: "#7fa9c4" });
+      for ( const x of loose ) {
+        const icon = x.icon || (x.kind === "aspect" ? "star" : "circle-dot");
+        await this.backend.saveAspect?.({
+          name: x.name, folder: folder ?? "",
+          system: { kind: x.kind, icon, emoji: "", tint: true, color: x.kind === "aspect" ? "#8f7bb5" : "#c9a45c", description: "",
+            steps: Math.max(0, Math.min(999, x.max || 0)), start: x.max ? 1 : null, statusIds: [], parentId: "", key: x.key || "" }
+        });
+      }
+    }
+    const items = this.aspects();
+    const ops = [];
+    for ( const st of this.states.values() ) {
+      const next = linkEntries(st, items);
+      if ( next ) ops.push({ action: "update", id: st.id, state: next });
+    }
+    await this.flush();
+    if ( ops.length ) await this._commit(ops, { label: this.t("ART.Aspect.collect") });
+    this.showToast?.(this.t("ART.Aspect.collected", { n: loose.length, m: ops.length }), { undo: ops.length > 0 });
+    this.changed("ui");
+  },
+
   /** Где висит предмет. */
   aspectHosts(id) { return hostsOf(this.states, id); },
 
@@ -352,7 +516,7 @@ export const StudioKit = {
     const item = this.aspectById(itemId);
     const st = this.stateOf(featureId);
     if ( !item || !st ) return false;
-    const next = attachItem(st, item, () => this.backend.newId());
+    const next = attachItem(st, item, () => this.backend.newId(), this.aspects());
     if ( !next ) {
       this.backend.notify("info", this.t("ART.Aspect.already", { name: item.name }));
       return false;

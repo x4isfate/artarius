@@ -23,7 +23,7 @@ const DEFS = {
   settings: { icon: "fa-solid fa-gear", width: 620, height: 600, at: () => ({ left: Math.max(120, (window.innerWidth - 620) / 2), top: 70 }) },
   wheel: { icon: "fa-solid fa-dice-d6", width: 240, height: 240, at: () => ({ left: 120, top: 400 }) },
   layers: { icon: "fa-solid fa-layer-group", width: 580, height: 640, at: () => ({ left: 140, top: 60 }) },
-  aspects: { icon: "fa-solid fa-wand-magic-sparkles", width: 580, height: 640, at: () => ({ left: 160, top: 70 }) }
+  aspects: { icon: "art-star4", width: 600, height: 680, at: () => ({ left: 160, top: 70 }) }
 };
 
 /** Окно, которое носит часть панели. Своих полей с именами ApplicationV2 не заводит. */

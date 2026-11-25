@@ -106,7 +106,8 @@ test("an aspect is attached to a zone, shows its hosts and is detached", async (
   const status = studio.aspects().find(i => i.system.parentId === aspect.id);
   assert.equal(await studio.attachAspect(zone.id, aspect.id), true);
   assert.equal(await studio.attachAspect(zone.id, aspect.id), false, "второй раз не вешается");
-  assert.equal(await studio.attachAspect(zone.id, status.id), true);
+  // 1.0: аспект ложится вместе со своими статусами, второй раз статус не вешается.
+  assert.equal(await studio.attachAspect(zone.id, status.id), false);
   const st = studio.stateOf(zone.id);
   assert.equal(st.system.aspects[0].itemId, aspect.id);
   assert.equal(st.system.aspects[0].statuses[0].itemId, status.id, "статус лёг внутрь своего аспекта");

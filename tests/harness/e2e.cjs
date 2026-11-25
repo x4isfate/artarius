@@ -239,35 +239,60 @@ async function shot(page, name) {
   // 0.9.2: демиургов отмечают галочками, можно нескольких или никого.
   await page.locator(`#artarius-ui [data-change="toggleDemiurge"][data-id="${markId}"][data-actor="a-ice"]`).check();
   await shot(page, "demiurges");
-  check(!(await page.locator(`#artarius-ui [data-action="addStatus"][data-id="${markId}"]`).count()), "статусы сначала только для чтения");
-  await act("editStatuses", `[data-id="${markId}"]`);
-  await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
-  await page.fill(`#artarius-ui [data-key="${markId}:statuses.0.name"]`, "Голод");
+  // 1.0: статусы и аспекты метки берутся из общего списка; новое название заводится в нём же.
+  const ENT = `#artarius-ui .art-entries[data-drop-feature="${markId}"]`;
+  check(await page.locator(ENT).count() === 1, "в правке метки блок «Статусы и аспекты»");
+  const pickNew = async (q, kind, extra = "") => {
+    await page.locator(`${ENT} [data-action="aspectPickOpen"][data-id="${markId}"]${extra}`).first().click();
+    await page.fill('#artarius-ui [data-key="apick-q"]', q);
+    await act("aspectPickCreate", `[data-kind="${kind}"]`);
+    await page.waitForTimeout(60);
+  };
+  await pickNew("Голод", "status", ":not([data-n])");
   await page.fill(`#artarius-ui [data-key="${markId}:statuses.0.max"]`, "10");
   await page.locator(`#artarius-ui [data-key="${markId}:statuses.0.max"]`).blur();
+  await ev(() => window.art.studio.flush());
   await act("stepLevel", `[data-id="${markId}"][data-path="statuses"][data-delta="1"]`);
   await act("stepLevel", `[data-id="${markId}"][data-path="statuses"][data-delta="1"]`);
   await act("stepLevel", `[data-id="${markId}"][data-path="statuses"][data-delta="-1"]`);
   await ev(() => window.art.studio.flush());
   a = await atlas();
   let m = a.find(x => x.id === markId);
+  const famine = await ev(() => window.art.studio.aspects().find(i => i.name === "Голод"));
   check(m.name === "Винтерфол-на-Скале" && m.demiurge === "a-ice" && m.demiurges.join() === "a-ice" && m.statuses[0].name === "Голод" && m.statuses[0].value === 1 && m.statuses[0].max === 10, "имя, демиург и статус «Голод (1/10)» сохранены");
-  await act("addStatus", `[data-id="${markId}"][data-path="statuses"]`);
-  await page.fill(`#artarius-ui [data-key="${markId}:statuses.1.name"]`, "Защищённая крепость");
-  await act("toAspect", `[data-id="${markId}"][data-n="1"]`);
-  await act("addAspect", `[data-id="${markId}"]`);
-  await act("addStatus", `[data-id="${markId}"][data-path="aspects.0.statuses"]`);
-  await page.fill(`#artarius-ui [data-key="${markId}:aspects.0.statuses.0.name"]`, "Осада");
+  check(famine?.system.kind === "status" && m.statuses[0].itemId === famine.id, "новый статус попал в общий список «Статусы и аспекты»");
+  // Готовый статус выбирается по названию: второй «Голод» не заводится.
+  await page.locator(`${ENT} [data-action="aspectPickOpen"]:not([data-n])`).first().click();
+  await page.fill('#artarius-ui [data-key="apick-q"]', "голо");
+  check(!(await page.locator('#artarius-ui [data-action="aspectPickRow"]').allTextContents()).some(t => t.includes("Голод")), "уже висящий на метке «Голод» в списке не предлагается");
+  await page.fill('#artarius-ui [data-key="apick-q"]', "голод");
+  check(!(await page.locator('#artarius-ui [data-action="aspectPickCreate"][data-kind="status"]').count()), "«Голод» уже есть: нового такого не предлагается");
+  await page.locator('#artarius-ui [data-action="aspectPickOpen"][data-id="' + markId + '"]:not([data-n])').first().click();
+  await pickNew("Защищённая крепость", "aspect", ":not([data-n])");
+  await pickNew("Осада", "status", '[data-n="0"]');
+  a = await atlas();
+  m = a.find(x => x.id === markId);
+  check(m.aspects[0]?.name === "Защищённая крепость" && m.aspects[0].statuses[0]?.name === "Осада", "статус лёг внутрь аспекта кнопкой «Статус в аспект»");
+  await page.fill(`#artarius-ui [data-key="${markId}:aspects.0.max"]`, "3");
+  await page.locator(`#artarius-ui [data-key="${markId}:aspects.0.max"]`).blur();
+  await ev(() => window.art.studio.flush());
   await act("stepLevel", `[data-id="${markId}"][data-path="aspects"][data-n="0"][data-delta="1"]`);
   await act("removeStatus", `[data-id="${markId}"][data-path="aspects.0.statuses"]`);
-  await act("removeAspect", `[data-id="${markId}"][data-n="1"]`);
   await ev(() => window.art.studio.flush());
   a = await atlas();
   m = a.find(x => x.id === markId);
-  check(m.statuses.length === 1 && m.aspects.length === 1 && m.aspects[0].name === "Защищённая крепость" && m.aspects[0].value === 1, "статус стал аспектом, уровни аспекта и его статусы работают");
-  await act("editStatuses", '[data-id=""]');
-  check(await page.locator(`#artarius-ui .art-view-block .art-chip`).count() >= 2, "после «Готово» статусы и аспекты видны значками");
-  await act("editStatuses", `[data-id="${markId}"]`);
+  check(m.statuses.length === 1 && m.aspects.length === 1 && m.aspects[0].value === 1 && !m.aspects[0].statuses.length, "ступени аспекта и снятие статуса из аспекта работают");
+  check(await page.locator(`${ENT} .art-erow`).count() === 2, "в блоке строки статуса и аспекта");
+  await act("removeStatus", `[data-id="${markId}"][data-path="statuses"]`);
+  // Снятый статус находится по началу названия и ложится тот же предмет, без копии.
+  await page.locator(`${ENT} [data-action="aspectPickOpen"]:not([data-n])`).first().click();
+  await page.fill('#artarius-ui [data-key="apick-q"]', "голо");
+  await page.locator('#artarius-ui [data-action="aspectPickRow"]', { hasText: "Голод" }).first().click();
+  await ev(() => window.art.studio.flush());
+  a = await atlas();
+  m = a.find(x => x.id === markId);
+  const famines = await ev(() => window.art.studio.aspects().filter(i => i.name === "Голод").length);
+  check(m.statuses[0]?.itemId === famine.id && famines === 1, "поиск по началу названия выбирает готовый «Голод», второй не заводится");
   await act("removeStatus", `[data-id="${markId}"][data-path="statuses"]`);
   await page.fill(`#artarius-ui textarea[data-key="${markId}:text"]`, "Северная твердыня.");
   await page.locator(`#artarius-ui textarea[data-key="${markId}:text"]`).blur();
@@ -797,10 +822,16 @@ async function shot(page, name) {
   await ev(() => window.art.studio.toggleAspects(true));
   await page.waitForTimeout(150);
   const AW = "#artarius-ui > .art-aspectwin";
-  if ( !(await page.locator(`${AW} [data-drag-aspect]`).count()) ) await page.locator(`${AW} [data-action="seedAspects"]`).click();
+  // Пара предметов уже заведена из правки метки, базовый набор досыпаем через студию.
+  if ( (await page.locator(`${AW} [data-drag-aspect]`).count()) < 4 ) await ev(() => window.art.studio.seedAspects());
   await page.waitForTimeout(200);
-  check(await page.locator(`${AW} [data-drag-aspect]`).count() >= 4, "в окне «Аспекты» базовые аспекты и статусы");
+  check(await page.locator(`${AW} [data-drag-aspect]`).count() >= 4, "в окне «Статусы и аспекты» базовые аспекты и статусы");
   await shot(page, "aspects");
+  // Поиск в окне: по названию статуса находится и сам статус, и аспект, в который он входит.
+  await page.fill(`${AW} [data-key="aspectQ"]`, "марев");
+  const found = await page.locator(`${AW} [data-drag-aspect] .art-ut-name`).allTextContents();
+  check(found.length === 2 && found.some(t => /марево/.test(t)) && found.some(t => /Хвонами/.test(t)), `поиск в окне «Статусы и аспекты»: ${found.join(", ")}`);
+  await page.fill(`${AW} [data-key="aspectQ"]`, "");
   const zoneHere = await ev(() => {
     const s = window.art.studio;
     s.setTool("select", { toggle: false });
