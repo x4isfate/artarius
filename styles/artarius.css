@@ -102,8 +102,13 @@
 .artarius .art-field { display: flex; flex-direction: column; gap: 3px; margin: 0 0 8px; }
 .artarius .art-field > span { color: var(--art-muted); font-size: 12px; }
 .artarius .art-field.art-inline { flex-direction: row; align-items: center; justify-content: space-between; }
+/* 1.0: в паре полей подпись всегда над полем — «Цвет» и «Папка» стоят ровно. */
+.artarius .art-grid2 > .art-field.art-inline { flex-direction: column; align-items: stretch; justify-content: flex-start; }
+.artarius .art-grid2 > .art-field.art-inline > .art-color { align-self: flex-start; }
 .artarius .art-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
-.artarius .art-grid2 { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.artarius .art-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.artarius .art-grid2.art-grid2-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.artarius .art-grid2 > .art-field { min-width: 0; }
 
 /* Текст ------------------------------------------------------------ */
 
@@ -174,7 +179,7 @@
 .artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; object-fit: contain; }
 .artarius .art-icon-pick { display: grid; place-items: center; }
 /* Поле цвета: палитра и код. */
-.artarius .art-color { display: inline-flex; align-items: center; gap: 6px; }
+.artarius .art-color { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
 .artarius .art-color input[type="color"] { width: 40px; height: 30px; padding: 2px; flex: none; cursor: pointer; }
 .artarius .art-color .art-color-hex { width: 84px; flex: none; font-family: monospace; text-transform: lowercase; }
 
@@ -885,12 +890,24 @@
   .artarius .art-ucols { grid-template-columns: 1fr; }
   .artarius .art-ucol-left { border-right: 0; padding-right: 0; max-height: 220px; }
 }
+/* 1.0: окно Foundry сжали — папки уходят наверх, правая колонка получает всю ширину. Считается от ширины окна, а не экрана. */
+.artarius .art-uw { container-type: inline-size; }
+@container (max-width: 500px) {
+  .artarius .art-ucols { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .artarius .art-ucol-left { border-right: 0; padding-right: 0; max-height: 200px; padding-bottom: 8px; border-bottom: 1px solid var(--art-line); }
+  .artarius .art-ucol-left .art-ft { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+}
 .artarius-part .art-left .art-body, .artarius-part .art-layerwin .art-body, .artarius-part .art-aspectwin .art-body,
 #artarius-ui > .art-left .art-body, #artarius-ui > .art-layerwin .art-body, #artarius-ui > .art-aspectwin .art-body { overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .artarius-part .art-left .art-body > .art-uw, #artarius-ui > .art-left .art-body > .art-uw { flex: 1; min-height: 0; }
 
 .artarius .art-newbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; flex: none; }
-.artarius .art-newbar .art-btn { padding: 0 8px; font-size: 12.5px; }
+.artarius .art-newbar .art-btn { padding: 0 8px; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.artarius .art-newbar .art-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Окно «Статусы и аспекты»: «+ Аспект» и «+ Статус» в строку, «Новая папка» под ними — в 196 px три кнопки не влезают. */
+.artarius .art-newbar.art-newbar-asp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.artarius .art-newbar .art-newbar-folder { grid-column: 1 / -1; min-height: 26px; border-style: dashed; background: none; color: var(--art-muted); }
+.artarius .art-newbar .art-newbar-folder:not(:disabled):hover { color: var(--art-ink); }
 
 /* Папки */
 .artarius .art-fgroup { display: flex; flex-direction: column; gap: 4px; flex: none; }
@@ -917,7 +934,7 @@
 .artarius .art-ut-wrap { position: relative; min-width: 0; }
 .artarius .art-ut { width: 100%; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px 3px;
   border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-2); font-size: 12px; min-width: 0; }
-.artarius .art-ut > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-ut > span:last-child, .artarius .art-ut > .art-ut-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-ut:hover { border-color: var(--art-line-2); }
 .artarius .art-ut.on { border-color: var(--art-accent); box-shadow: inset 0 0 0 1px var(--art-accent); }
 .artarius .art-ut[draggable="true"] { cursor: grab; }
@@ -933,6 +950,12 @@
 .artarius .art-plate .art-plate-ico { width: 66%; height: 66%; display: block; }
 .artarius .art-plate .art-emoji { font-size: 15px; line-height: 1; }
 .artarius .art-plate-sm .art-emoji { font-size: 11px; }
+.artarius .art-plate-md { width: 26px; height: 26px; font-size: 12px; box-shadow: inset 0 0 0 1.5px var(--c, #c9a45c); }
+.artarius .art-plate-md .art-emoji { font-size: 14px; }
+.artarius .art-plate-xs { width: 18px; height: 18px; font-size: 9px; box-shadow: inset 0 0 0 1.5px var(--c, #c9a45c); }
+.artarius .art-plate-xs .art-emoji { font-size: 10px; }
+.artarius .art-plate .art-glyph-img { width: 68%; height: 68%; display: block; object-fit: contain; }
+.artarius .art-plate-lg .art-emoji { font-size: 18px; }
 .artarius .art-aplate { color: var(--c, #c9a45c); }
 .artarius .art-circ { width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25); display: inline-block; flex: none; }
 .artarius .art-circ.art-plate-lg { width: 30px; height: 30px; }
@@ -948,6 +971,9 @@
 .artarius .art-lab { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--art-muted); font-weight: 600; }
 .artarius .art-lab .art-cnt { letter-spacing: 0; }
 .artarius .art-irows { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+/* 1.0: список «На карте» тянется за правый нижний угол; без этого он растёт вместе с окном. */
+.artarius .art-ucol-right { container-type: size; }
+.artarius .art-irows.art-resize { max-height: none; height: clamp(120px, 34cqh, 1200px); min-height: 60px; resize: vertical; overflow: auto; flex: none; }
 .artarius .art-irow { display: flex; align-items: center; gap: 2px; border-radius: 6px; border: 1px solid transparent; }
 .artarius .art-irow:nth-child(odd) { background: var(--art-bg-2); }
 .artarius .art-irow.on { border-color: var(--art-accent); }
@@ -972,10 +998,18 @@
 .artarius .art-uactions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 10px; margin-top: auto; border-top: 1px solid var(--art-line); }
 .artarius .art-uactions .art-sp, .artarius .art-sp { flex: 1; }
 .artarius .art-uactions kbd { font-size: 10px; opacity: 0.8; }
-.artarius .art-apick { display: flex; flex-direction: column; gap: 2px; padding: 5px; border: 1px solid var(--art-line-2); border-radius: 8px; background: var(--art-bg); max-height: 240px; overflow-y: auto; }
+.artarius .art-apick { display: flex; flex-direction: column; gap: 2px; padding: 5px; border: 1px solid var(--art-line-2); border-radius: 8px; background: var(--art-bg); }
+.artarius .art-apick-list { display: flex; flex-direction: column; gap: 2px; max-height: 268px; overflow-y: auto; }
 .artarius .art-apick .art-search { margin: 0 0 4px; }
 .artarius .art-apick .art-menu-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: none; text-align: left; font-size: 12.5px; }
-.artarius .art-apick .art-menu-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 1.0: растягивалась и подложка значка (тоже span): кружок становился овалом. Растягивается только название. */
+.artarius .art-apick .art-menu-row > .art-apick-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.artarius .art-apick-name, .artarius .art-apick-name > span, .artarius .art-apick-name > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-apick-name > small { color: var(--art-muted); font-size: 11px; }
+.artarius .art-apick .art-menu-row > .art-apick-kind { flex: none; color: var(--art-muted); font-size: 11px; white-space: nowrap; }
+.artarius .art-apick .art-menu-row { min-height: 34px; }
+.artarius .art-apick .art-menu-new { color: var(--art-warn); }
+.artarius .art-plate-new { box-shadow: inset 0 0 0 1.5px var(--art-warn); color: var(--art-warn); border: 0; }
 .artarius .art-apick .art-menu-row:hover { background: var(--art-bg-2); }
 .artarius .art-drop-on { outline: 2px dashed var(--art-warn); outline-offset: 2px; background: rgba(232, 194, 122, 0.08); }
 
@@ -992,7 +1026,8 @@
 .artarius .art-mini input[type="range"] { flex: 1; min-width: 0; }
 .artarius .art-mini > b { min-width: 42px; text-align: right; font-weight: 600; font-size: 12px; }
 .artarius .art-coast-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-.artarius .art-coast-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px; border-radius: 6px; border: 1px solid var(--art-line-2); background: var(--art-bg-2); font-size: 11.5px; }
+.artarius .art-coast-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px; border-radius: 6px; border: 1px solid var(--art-line-2); background: var(--art-bg-2); font-size: 11.5px; min-width: 0; }
+.artarius .art-coast-tile > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-coast-tile svg { width: 100%; height: 36px; border-radius: 4px; display: block; }
 .artarius .art-coast-tile.on { border-color: var(--art-accent); box-shadow: inset 0 0 0 1px var(--art-accent); }
 
@@ -1006,7 +1041,7 @@
 .art-layerbar .art-mode.active .art-preset { color: #fff4ea; background: rgba(255, 244, 234, 0.16); }
 
 /* Быстрый осмотр 7А: плашка над гексом, меню справа */
-#artarius-hud .art-qi-bar { position: absolute; left: 0; bottom: calc(var(--hh) + 8px); transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px;
+#artarius-hud .art-qi-bar { position: absolute; left: 0; bottom: calc(var(--hh) + 8px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px;
   border-radius: 9px; background: rgba(14, 12, 11, 0.94); border: 1px solid rgba(232, 214, 195, 0.22); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5); pointer-events: auto; white-space: nowrap; color: #f3e6d6; }
 #artarius-hud .art-qi-what { padding: 0 8px; font-size: 12.5px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
 #artarius-hud .art-qi-what .art-muted { color: #a89c8e; }
@@ -1037,7 +1072,7 @@
 .artarius .art-citem.open { border-color: var(--art-accent); }
 .artarius .art-citem-head { display: flex; align-items: center; gap: 4px; }
 .artarius .art-citem-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; text-align: left; }
-.artarius .art-citem-main > b { font-size: 13px; white-space: nowrap; }
+.artarius .art-citem-main > b { font-size: 13px; white-space: nowrap; min-width: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
 .artarius .art-citem-main > .art-muted { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-citem-body { display: flex; flex-direction: column; gap: 6px; }
 .artarius .art-citem-text { margin: 0; font-size: 12px; color: var(--art-ink); opacity: 0.85; white-space: pre-line; }
@@ -1053,3 +1088,76 @@
 .artarius-news .art-news-foot .art-btn { width: auto; }
 
 .artarius input[type="range"] { accent-color: var(--art-accent, #c9573f); }
+
+/* ---------------------------------------------------------------- */
+/* 1.0 ЗБТ                                                            */
+/* ---------------------------------------------------------------- */
+
+/* Четырёхконечная звезда «Статусы и аспекты»: своя картинка, в Font Awesome такой нет. Работает и в колонке Foundry, и в шапке окна. */
+.art-star4::before {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0.5 L14.7 9.3 L23.5 12 L14.7 14.7 L12 23.5 L9.3 14.7 L0.5 12 L9.3 9.3 Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0.5 L14.7 9.3 L23.5 12 L14.7 14.7 L12 23.5 L9.3 14.7 L0.5 12 L9.3 9.3 Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.window-icon.art-star4 { display: inline-grid; place-items: center; }
+
+/* Быстрый осмотр: кнопки в строку, ниже — аспекты и статусы меток гекса */
+#artarius-hud .art-qi-row { display: flex; align-items: center; gap: 4px; }
+#artarius-hud .art-qi-asp { display: flex; flex-direction: column; gap: 3px; padding: 4px 4px 2px; border-top: 1px solid rgba(232, 214, 195, 0.16); max-width: 440px; }
+#artarius-hud .art-qi-asp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; white-space: normal; }
+#artarius-hud .art-qi-asp-who { display: inline-flex; align-items: center; margin-right: 2px; }
+#artarius-hud .art-qi-asp .art-chip { font-size: 11.5px; padding: 1px 7px 1px 5px; background: rgba(38, 34, 30, 0.95); border-color: rgba(232, 214, 195, 0.22); color: #f3e6d6; }
+#artarius-hud .art-qi-asp .art-chip-aspect { background: rgba(143, 123, 181, 0.22); }
+
+/* Значок в значке статуса: цветом предмета */
+.art-chip .art-chip-ic { display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; font-size: 10px; }
+.art-chip .art-chip-ic .art-emoji { font-size: 11px; line-height: 1; }
+.art-chip .art-chip-ic .art-glyph-img { width: 13px; height: 13px; display: block; object-fit: contain; }
+.art-chip.art-chip-in { margin-left: -2px; border-style: dotted; opacity: 0.92; }
+
+/* Пилюли предметов: название открывает предмет */
+.artarius .art-pill .art-pill-name { border: 0; background: none; padding: 0; min-height: 0; color: inherit; font: inherit; cursor: pointer; }
+.artarius .art-pill .art-pill-name:hover { text-decoration: underline dotted; }
+.artarius .art-similar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: -4px 0 4px; }
+
+/* Ступени X / X */
+.artarius .art-steps { display: inline-flex; align-items: center; gap: 4px; }
+.artarius .art-steps input[type="number"] { width: 58px; text-align: center; padding: 4px; }
+.artarius .art-steps > span { color: var(--art-muted); }
+.artarius .art-steps-sm { gap: 2px; flex: none; }
+.artarius .art-steps-sm input[type="number"] { width: 32px; min-height: 24px; padding: 2px; font-size: 12px; -moz-appearance: textfield; }
+.artarius .art-steps-sm input[type="number"]::-webkit-inner-spin-button { display: none; }
+.artarius .art-steps-none input[type="number"] { width: 30px; opacity: 0.75; }
+.artarius .art-steps-sm .art-icon-btn { width: 18px; height: 22px; font-size: 10px; }
+.artarius .art-grid2-kind { grid-template-columns: minmax(0, 1fr) auto; }
+.artarius .art-grid2-kind + .art-hint { margin-top: -6px; }
+
+/* Значок аспекта: эмодзи, простые значки, библиотека */
+.artarius .art-emoji-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.artarius .art-emoji-row > .art-field { margin: 0; gap: 8px; }
+.artarius .art-emoji-row .art-emoji-input { width: 64px; text-align: center; font-size: 16px; }
+.artarius .art-fold-inner > summary { cursor: pointer; color: var(--art-muted); font-size: 12px; margin: 6px 0; }
+.artarius .art-ut-kind { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; transform: rotate(45deg); background: #8f7bb5; border-radius: 1px; }
+.artarius .art-ut { position: relative; }
+
+/* Статусы и аспекты в правке элемента */
+.artarius .art-entries { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px dashed rgba(232, 194, 122, 0.45); border-radius: 8px; background: rgba(232, 194, 122, 0.03); }
+.artarius .art-entries > h5 { justify-content: flex-start; gap: 6px; margin: 0 0 2px; }
+.artarius .art-erow { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 2px 2px 2px 4px; border-radius: 6px; background: var(--art-bg-2); }
+/* Длинное название переносится на вторую строку, а не режется сразу (узкая карточка гекса). */
+.artarius .art-erow-name { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.2; overflow-wrap: anywhere; font-size: 12.5px; }
+.artarius .art-erow-name.art-loose { font-style: italic; color: var(--art-muted); }
+.artarius .art-erow-aspect { background: rgba(143, 123, 181, 0.16); }
+.artarius .art-erow-aspect .art-erow-name { font-weight: 600; }
+.artarius .art-ebox { display: flex; flex-direction: column; gap: 3px; }
+.artarius .art-ebox-in { display: flex; flex-direction: column; gap: 3px; padding-left: 7px; margin-left: 10px; border-left: 2px solid rgba(143, 123, 181, 0.5); }
+.artarius .art-ebox-in > .art-link { align-self: flex-start; font-size: 12px; margin: 1px 0 2px; }
+
+/* Заметка «свои статусы с карты» */
+.artarius .art-collect { align-items: center; flex-wrap: wrap; }
+.artarius .art-collect > span { flex: 1; min-width: 160px; }

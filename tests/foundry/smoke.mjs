@@ -568,7 +568,7 @@ await check("0.9.9: аспекты — предметы Foundry, их броса
   const { runtime } = await import("../../scripts/canvas/hex-layer.mjs");
   runtime.buttons.aspects();
   await tick();
-  assert(win("aspects"), "окно «Аспекты» не открылось");
+  assert(win("aspects"), "окно «Статусы и аспекты» не открылось");
   if ( !s.aspects().length ) {
     win("aspects").querySelector('[data-action="seedAspects"]')?.click();
     await F.settle();
@@ -587,7 +587,18 @@ await check("0.9.9: аспекты — предметы Foundry, их броса
   assert(hosts.length >= 1, "аспект не лёг на карту");
   runtime.buttons.aspects();
   await tick();
-  assert(!win("aspects"), "окно «Аспекты» не закрылось второй кнопкой");
+  assert(!win("aspects"), "окно «Статусы и аспекты» не закрылось второй кнопкой");
+  // 1.0: аспект со статусами ложится на зону вместе с ними, ступени X/X и эмодзи доходят до записи.
+  const b = s.backend;
+  const famine = await b.saveAspect({ name: "Голод", folder: "", system: { kind: "status", icon: "", emoji: "🌾", tint: true, color: "#c9a45c", description: "", steps: 10, start: 3, statusIds: [], parentId: "", key: "" } });
+  const crop = await b.saveAspect({ name: "Неурожай", folder: "", system: { kind: "aspect", icon: "star", emoji: "", tint: true, color: "#8f7bb5", description: "", steps: 0, start: null, statusIds: [famine], parentId: "", key: "" } });
+  await F.settle();
+  await s.attachAspect(zone.id, crop);
+  await s.flush();
+  await F.settle();
+  const entry = s.stateOf(zone.id).system.aspects.find(a => a.itemId === crop);
+  assert(entry?.statuses?.[0]?.itemId === famine && entry.statuses[0].value === 3 && entry.statuses[0].max === 10 && entry.statuses[0].emoji === "🌾",
+    `аспект лёг без своего статуса: ${JSON.stringify(entry)}`);
   // «Что нового»: мастеру при новой версии, галочка прячет до следующей.
   const { default: NewsApp } = await import("../../scripts/apps/news-app.mjs");
   await game.settings.set("artarius", "newsSeen", "");

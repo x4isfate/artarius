@@ -13,7 +13,8 @@ import { zoneCells, layerIdOf, lineLayerOf, markCell } from "../data/world.mjs";
 import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
 import { FOLDER_COLORS, COAST_DEFAULTS } from "../constants.mjs";
-import { ASPECT_ICONS, ASPECT_STEPS, searchItems, stepsLabel } from "../data/aspects.mjs";
+import { ASPECT_ICONS, searchItems, stepsLabel, statusIdsOf, aspectsWith, isImageIcon, hasEntryLike } from "../data/aspects.mjs";
+import { statusIcon } from "../data/statuses.mjs";
 
 /** Полоса режимов внизу: порядок и клавиши 1–6 (0.9.9). */
 export const MODE_DEFS = [
@@ -32,7 +33,7 @@ const VIEW_GROUPS = ["objects", "lines", "map", "data"];
 const VIEW_FIELD = { "@heights": "height", "@temp": "temp", "@prec": "prec", "@pop": "pop", "@ice": "temp" };
 const COAST_PATTERNS = ["flat", "rough", "double", "hatch"];
 /** Сколько строк «На карте» видно без прокрутки. */
-const ON_MAP_MAX = 40;
+const ON_MAP_MAX = 400;
 
 /** Подсветить найденное в названии. */
 function mark(text, q) {
@@ -171,10 +172,32 @@ export const UnifiedUI = {
       <div class="art-ucol-right" data-scroll="${key}-r">${right}</div></div>`;
   },
 
+  /**
+   * Значок аспекта или статуса без подложки: эмодзи, картинка (белые значки библиотеки красятся цветом)
+   * или значок Font Awesome. sys — system предмета или запись на элементе.
+   */
+  uGlyph(sys, color = "", fallback = "star") {
+    if ( sys?.emoji ) return `<span class="art-emoji">${esc(sys.emoji)}</span>`;
+    const ic = sys?.icon || fallback;
+    if ( isImageIcon(ic) ) return iconImg(ic, color || "#ddd", { tint: sys?.tint !== false, cls: "art-glyph-img" });
+    return icon(ic);
+  },
+
   /** Значок аспекта: кружок с цветом и значком. */
   uAspectPlate(item, size = "") {
     const c = item?.system?.color || "#c9a45c";
-    return `<span class="art-plate art-aplate${size}" style="--c:${esc(c)}">${icon(item?.system?.icon || "star")}</span>`;
+    return `<span class="art-plate art-aplate${size}" style="--c:${esc(c)}">${this.uGlyph(item?.system, c)}</span>`;
+  },
+
+  /**
+   * Значок записи на элементе карты. Берётся из предмета (если его поменяли — меняется везде),
+   * иначе из самой записи; у старых статусов — по названию.
+   */
+  uEntryGlyph(x, aspect = false) {
+    const item = x?.itemId ? this.studio.aspectById(x.itemId) : null;
+    if ( item ) return { html: this.uGlyph(item.system, item.system?.color), color: item.system?.color || "" };
+    const fallback = aspect ? (x?.key ? statusIcon(x) : "star") : statusIcon(x);
+    return { html: this.uGlyph({ icon: x?.icon, emoji: x?.emoji }, "", fallback), color: "" };
   },
 
   /** Точки ступеней: n из m. */
@@ -190,8 +213,7 @@ export const UnifiedUI = {
   uAspectsBlock(slot) {
     const s = this.studio;
     const ids = s[slot]?.aspects ?? [];
-    const pills = ids.map(id => s.aspectById(id)).filter(Boolean).map(a => `<span class="art-pill">${icon(a.system?.icon || "star")}${esc(a.name)}
-      ${this.uPips(a.system?.steps ? 1 : 0, Number(a.system?.steps) || 0)}
+    const pills = ids.map(id => s.aspectById(id)).filter(Boolean).map(a => `<span class="art-pill">${this.uAspectPlate(a, " art-plate-xs")}${esc(a.name)}
       <button type="button" class="art-pill-x" data-action="pendingRemove" data-slot="${slot}" data-id="${esc(a.id)}" aria-label="${esc(this.t("ART.Aspect.detach"))}">${icon("xmark")}</button></span>`).join("");
     const open = s.aspectPick?.slot === slot;
     return `<div class="art-sect art-sect-aspects" data-drop-slot="${slot}">
@@ -201,18 +223,34 @@ export const UnifiedUI = {
     </div>`;
   },
 
-  /** Выбор аспекта: поиск и список. Для формы и для элемента карточки один и тот же. */
+  /**
+   * Выбор аспекта или статуса: поиск по названию и список, сначала точные совпадения.
+   * Если такого названия нет, внизу «Новый статус «…»» и «Новый аспект «…»»: он заводится в общем списке
+   * и сразу ложится туда, откуда открыт выбор. Для формы, элемента карточки и статусов аспекта один и тот же.
+   */
   uAspectPicker() {
     const s = this.studio;
     const p = s.aspectPick;
-    const list = s.pickList().slice(0, 30);
+    const all = s.pickList();
+    const list = all.slice(0, 40);
     const none = !s.aspects().length;
-    const rows = list.map(a => `<button type="button" class="art-menu-row" data-action="aspectPickRow" data-id="${esc(a.id)}">
-      ${this.uAspectPlate(a, " art-plate-sm")}<span>${mark(a.name, p?.q)}</span><small class="art-muted">${esc(stepsLabel(a, (k, d) => this.t(k, d)))}</small></button>`).join("");
+    const t = (k, d) => this.t(k, d);
+    const rows = list.map(a => {
+      const parents = a.system?.kind === "status" ? aspectsWith(a.id, s.aspects()).map(x => x.name).join(", ") : "";
+      return `<button type="button" class="art-menu-row" data-action="aspectPickRow" data-id="${esc(a.id)}" title="${esc(a.system?.description || a.name)}">
+        ${this.uAspectPlate(a, " art-plate-md")}<span class="art-apick-name"><span>${mark(a.name, p?.q)}</span>${parents ? `<small>${esc(parents)}</small>` : ""}</span>
+        <small class="art-apick-kind">${esc(stepsLabel(a, t))}</small></button>`;
+    }).join("");
+    const q = String(p?.q ?? "").trim();
+    const creates = s.pickCreateKinds().map(k => `<button type="button" class="art-menu-row art-menu-new" data-action="aspectPickCreate" data-kind="${k}">
+      <span class="art-plate art-plate-md art-plate-new">${icon("plus")}</span><span class="art-apick-name">${esc(this.t(k === "aspect" ? "ART.Aspect.createAspect" : "ART.Aspect.createStatus", { name: q }))}</span></button>`).join("");
+    const empty = rows || creates ? "" : `<p class="art-empty">${esc(this.t(none && !q ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`;
+    const ph = s._pickOnlyStatus(p) ? "ART.Aspect.findStatus" : "ART.Aspect.find";
     return `<div class="art-apick">
-      <input type="search" class="art-search" data-model="aspectPick.q" data-key="apick-q" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t("ART.Aspect.find"))}">
-      ${rows || `<p class="art-empty">${esc(this.t(none ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`}
-      <button type="button" class="art-link" data-action="openAspects">${icon("up-right-from-square")} ${esc(this.t("ART.Aspect.openWindow"))}</button>
+      <input type="search" class="art-search" data-model="aspectPick.q" data-key="apick-q" data-enter="aspectPickEnter" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t(ph))}" autocomplete="off">
+      <div class="art-apick-list">${rows}${creates}${empty}</div>
+      ${all.length > list.length ? `<p class="art-muted art-small">${esc(this.t("ART.Unified.more", { n: all.length - list.length }))}</p>` : ""}
+      ${p?.form ? "" : `<button type="button" class="art-link" data-action="openAspects">${icon("up-right-from-square")} ${esc(this.t("ART.Aspect.openWindow"))}</button>`}
     </div>`;
   },
 
@@ -267,7 +305,7 @@ export const UnifiedUI = {
     const s = this.studio;
     const f = String(q ?? "").trim().toLowerCase();
     const all = s.featuresOfType(typeId);
-    const list = all.filter(st => !f || (st.name ?? "").toLowerCase().includes(f) || (s.typeById(typeId)?.name ?? "").toLowerCase().includes(f));
+    const list = all.filter(st => !f || (st.name ?? "").toLowerCase().includes(f) || (s.typeById(typeId)?.name ?? "").toLowerCase().includes(f) || hasEntryLike(st, f));
     const z = s.zone;
     const rows = list.slice(0, ON_MAP_MAX).map(st => {
       const name = st.name || this.t("ART.Card.unnamed");
@@ -291,7 +329,7 @@ export const UnifiedUI = {
     }).join("");
     const more = list.length > ON_MAP_MAX ? `<p class="art-muted art-small">${esc(this.t("ART.Unified.more", { n: list.length - ON_MAP_MAX }))}</p>` : "";
     return `${this.uLab(this.t("ART.Unified.onMap"), all.length)}
-      ${rows ? `<div class="art-irows">${rows}</div>${more}` : `<p class="art-empty art-small">${esc(this.t("ART.Unified.noneOnMap"))}</p>`}`;
+      ${rows ? `<div class="art-irows art-resize" data-size="onmap-${kind}" data-scroll="onmap-${kind}" title="${esc(this.t("ART.Unified.resizeHint"))}">${rows}</div>${more}` : `<p class="art-empty art-small">${esc(this.t("ART.Unified.noneOnMap"))}</p>`}`;
   },
 
   /** Плашка у шапки: слой зоны или линии, папка метки. */
@@ -322,8 +360,10 @@ export const UnifiedUI = {
     const selected = target?.system.typeId ?? f.typeId;
     const types = s.typesOf(kind);
     // Поиск находит и тип по названию, и тип, у которого есть элемент с таким названием.
+    // 1.0: и тип, на элементе которого висит статус или аспект с таким названием («Голод»).
     const hasNamed = new Set(this._uQuery ? [...s.states.values()]
-      .filter(st => st.system.kind === kind && (st.name ?? "").toLowerCase().includes(this._uQuery)).map(st => st.system.typeId) : []);
+      .filter(st => st.system.kind === kind && ((st.name ?? "").toLowerCase().includes(this._uQuery) || hasEntryLike(st, this._uQuery)))
+      .map(st => st.system.typeId) : []);
     const keep = t => !this._uQuery || t.name.toLowerCase().includes(this._uQuery) || hasNamed.has(t.id);
     const tiles = this.uFolders(kind, t => this.uTypeTile(kind, t, selected), keep);
     const left = `${this.uNewbar(kind)}${tiles || `<p class="art-empty">${esc(this.t(types.length ? "ART.Unified.nothingFound" : "ART.Unified.noTypes"))}</p>`}`;
@@ -592,17 +632,38 @@ export const UnifiedUI = {
     this._uQuery = q.trim().toLowerCase();
     const found = new Set(searchItems(all, q).map(a => a.id));
     const tiles = this.uFolders("aspect", a => `<div class="art-ut-wrap"><button type="button" class="art-ut${a.id === s.aspectSel ? " on" : ""}" data-action="pickAspect" data-id="${esc(a.id)}"
-        draggable="true" data-drag-aspect="${esc(a.id)}" title="${esc(this.t("ART.Aspect.dragTile"))}">${this.uAspectPlate(a)}<span>${mark(a.name, q)}</span></button></div>`,
+        draggable="true" data-drag-aspect="${esc(a.id)}" title="${esc(`${a.name} · ${stepsLabel(a, (k, d) => this.t(k, d))}\n${this.t("ART.Aspect.dragTile")}`)}">${this.uAspectPlate(a)}<span class="art-ut-name">${mark(a.name, q)}</span>
+        ${a.system?.kind === "aspect" ? `<i class="art-ut-kind" title="${esc(this.t("ART.Aspect.kindAspect"))}"></i>` : ""}</button></div>`,
       a => found.has(a.id));
     this._uQuery = "";
     const empty = !all.length ? `<div class="art-empty">${esc(this.t("ART.Aspect.empty"))}
-        ${can ? `<button type="button" class="art-btn" data-action="seedAspects">${icon("wand-magic-sparkles")} ${esc(this.t("ART.Aspect.seed"))}</button>` : ""}</div>` : "";
-    const left = `${this.uNewbar("aspect", { action: "newAspect", label: "ART.Aspect.new", canNew: can })}${tiles}${empty}`;
-    const head = this.host ? "" : `<header class="art-head">${icon("wand-magic-sparkles")}<h3>${esc(this.t("ART.Aspect.title"))}</h3>
+        ${can ? `<button type="button" class="art-btn" data-action="seedAspects">${icon("wand-magic-sparkles")} ${esc(this.t("ART.Aspect.seed"))}</button>` : ""}</div>`
+      : (q.trim() && !found.size ? `<p class="art-empty">${esc(this.t("ART.Unified.nothingFound"))}</p>` : "");
+    const canFolder = s.canFolders("aspect");
+    const newbar = `<div class="art-newbar art-newbar-asp">
+      <button type="button" class="art-btn" data-action="newAspect" data-kind="aspect" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newAspect"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindAspect"))}</span></button>
+      <button type="button" class="art-btn" data-action="newAspect" data-kind="status" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newStatus"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindStatus"))}</span></button>
+      <button type="button" class="art-btn art-newbar-folder" data-action="newFolder" data-kind="aspect" ${canFolder ? "" : "disabled"}
+        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.new"))}</span></button></div>`;
+    // Свои статусы, заведённые прямо на карте (до 1.0 так делали в карточке гекса): мастер переносит их в список.
+    const loose = this.backend.isGM ? s.looseAspects() : [];
+    const collect = loose.length ? `<div class="art-sect art-sect-info art-collect">${icon("circle-info")}
+        <span>${esc(this.t("ART.Aspect.looseFound", { n: loose.length }))}</span>
+        <button type="button" class="art-btn art-sm" data-action="collectLoose" title="${esc(loose.slice(0, 12).map(x => x.name).join(", "))}">${icon("file-import")} ${esc(this.t("ART.Aspect.collect"))}</button></div>` : "";
+    const left = `${newbar}${tiles}${empty}`;
+    const head = this.host ? "" : `<header class="art-head">${icon("art-star4")}<h3>${esc(this.t("ART.Aspect.title"))}</h3>
       <button type="button" class="art-icon-btn" data-action="toggleAspects" title="${esc(this.t("ART.Close"))}">${icon("xmark")}</button></header>`;
-    const pill = `${esc(this.t("ART.Aspect.inWorld"))}: <b>${all.length}</b>`;
+    const nA = all.filter(a => a.system?.kind === "aspect").length;
+    const pill = `${esc(this.t("ART.Aspect.kindAspectsN"))}: <b>${nA}</b> · ${esc(this.t("ART.Aspect.kindStatusesN"))}: <b>${all.length - nA}</b>`;
     return `${head}<div class="art-body art-uw" data-scroll="aspects">${this.introHint("ART.Aspect.hint")}
-      ${this.uStrip("aspectQ", q, this.t("ART.Aspect.find"), pill)}${this.uCols(left, this.renderAspectRight(), "aspects")}</div>`;
+      ${this.uStrip("aspectQ", q, this.t("ART.Aspect.find"), pill)}${collect}${this.uCols(left, this.renderAspectRight(), "aspects")}</div>`;
+  },
+
+  /** Пилюля предмета: значок и название; × убирает, щелчок открывает его в окне. */
+  uItemPill(a, { remove = "", open = true } = {}) {
+    const name = open ? `<button type="button" class="art-pill-name" data-action="pickAspect" data-id="${esc(a.id)}" title="${esc(this.t("ART.Aspect.openItem"))}">${esc(a.name)}</button>` : esc(a.name);
+    return `<span class="art-pill">${this.uAspectPlate(a, " art-plate-xs")}${name}${remove
+      ? `<button type="button" class="art-pill-x" data-action="${remove}" data-id="${esc(a.id)}" aria-label="${esc(this.t("ART.Aspect.detach"))}" title="${esc(this.t("ART.Aspect.detach"))}">${icon("xmark")}</button>` : ""}</span>`;
   },
 
   renderAspectRight() {
@@ -611,48 +672,81 @@ export const UnifiedUI = {
     if ( !f ) return `<p class="art-empty">${esc(this.t("ART.Aspect.pick"))}</p>`;
     const can = s.canEditAspects();
     const dis = can ? "" : "disabled";
+    const items = s.aspects();
     const item = f.id ? s.aspectById(f.id) : null;
-    const preview = { system: { icon: f.icon, color: f.color, kind: f.kind, steps: f.steps } };
+    const preview = { system: { icon: f.icon, emoji: f.emoji, tint: f.tint, color: f.color, kind: f.kind, steps: f.steps, start: f.start } };
     const t = (k, d) => this.t(k, d);
+    const isAspect = f.kind === "aspect";
     let hosts = "";
     if ( item ) {
       const list = s.aspectHosts(item.id);
       const kindName = st => this.t({ area: "ART.Aspect.onZone", object: "ART.Aspect.onMark", line: "ART.Aspect.onLine" }[st.system.kind] ?? "ART.Aspect.onZone");
       const rows = list.map(({ state: st, entry }) => {
-        const lvl = entry.max ? this.uPips(Number(entry.value) || 0, Number(entry.max)) : "";
+        const lvl = entry.max ? `<span class="art-lvl">${esc(String(entry.value ?? 0))}/${esc(String(entry.max))}</span>` : "";
         return `<div class="art-irow"><button type="button" class="art-irow-main" data-action="focusFeature" data-id="${esc(st.id)}" title="${esc(this.t("ART.Catalog.show"))}">
           ${this.uFeatureIcon(st)}<span class="art-nm">${esc(st.name || this.t("ART.Card.unnamed"))}</span><span class="art-note">${esc(kindName(st))} ${lvl}</span></button>
           ${can ? `<button type="button" class="art-icon-btn" data-action="detachAspect" data-feature="${esc(st.id)}" data-id="${esc(item.id)}" title="${esc(this.t("ART.Aspect.detach"))}">${icon("xmark")}</button>` : ""}</div>`;
       }).join("");
       hosts = `${this.uLab(this.t("ART.Aspect.hostsOn"), list.length)}
-        ${rows ? `<div class="art-irows">${rows}</div>` : `<p class="art-empty art-small">${esc(this.t("ART.Aspect.notHost"))}</p>`}`;
+        ${rows ? `<div class="art-irows art-resize" data-size="aspect-hosts" data-scroll="aspect-hosts">${rows}</div>` : `<p class="art-empty art-small">${esc(this.t("ART.Aspect.notHost"))}</p>`}`;
     }
     const seg = (action, values, cur, label) => `<div class="art-seg">${values.map(v => `<button type="button" class="art-btn${String(v) === String(cur) ? " active" : ""}" data-action="${action}" data-v="${v}" ${dis}>${esc(label(v))}</button>`).join("")}</div>`;
-    const parents = s.aspects().filter(a => a.system?.kind === "aspect" && a.id !== f.id);
-    const popts = [`<option value="">${esc(this.t("ART.Aspect.parentNone"))}</option>`,
-      ...parents.map(a => `<option value="${esc(a.id)}"${a.id === f.parentId ? " selected" : ""}>${esc(a.name)}</option>`)].join("");
     const folders = s.folderGroups("aspect").filter(g => g.id);
     const fopts = [`<option value="">${esc(this.t("ART.Unified.noFolder"))}</option>`,
       ...folders.map(g => `<option value="${esc(g.id)}"${g.id === (f.folder ?? "") ? " selected" : ""}>${esc(g.name)}</option>`)].join("");
-    const icons = ASPECT_ICONS.map(ic => `<button type="button" class="art-aicon${ic === f.icon ? " on" : ""}" data-action="aspectIcon" data-v="${ic}" ${dis} title="${esc(ic)}">${icon(ic)}</button>`).join("");
-    return `${this.uHead(this.uAspectPlate(preview, " art-plate-lg"), f.name || this.t("ART.Aspect.new"), this.uChip(stepsLabel(preview, t), f.color || "#c9a45c"))}
+    // Похожие названия: новый не заводится вторым, а выбирается готовый.
+    const similar = !f.id ? s.similarAspects(f.name) : [];
+    const sim = similar.length ? `<div class="art-similar"><span class="art-muted art-small">${esc(this.t("ART.Aspect.similar"))}</span>
+      ${similar.map(a => this.uItemPill(a)).join("")}</div>` : "";
+    // Статусы аспекта или аспекты, в которые входит статус.
+    let members = "";
+    if ( isAspect ) {
+      const byId = new Map(items.map(i => [i.id, i]));
+      const pills = (f.statusIds ?? []).map(id => byId.get(id)).filter(Boolean).map(a => this.uItemPill(a, { remove: can ? "formStatusRemove" : "" })).join("");
+      const open = !!s.aspectPick?.form;
+      members = `<div class="art-sect art-sect-aspects">
+        <div class="art-lab">${icon("list-check")} ${esc(this.t("ART.Aspect.statusesOf"))} <span class="art-cnt">${(f.statusIds ?? []).length}</span></div>
+        <div class="art-chiprow">${pills}${can ? `<button type="button" class="art-btn art-sm art-dashed${open ? " active" : ""}" data-action="aspectPickOpen" data-form="1">${icon("plus")} ${esc(this.t("ART.Aspect.addStatus"))}</button>` : ""}</div>
+        ${open ? this.uAspectPicker() : `<div class="art-muted art-small">${esc(this.t("ART.Aspect.statusesHint"))}</div>`}
+      </div>`;
+    } else if ( item ) {
+      const parents = aspectsWith(item.id, items);
+      members = `<div class="art-field"><span>${esc(this.t("ART.Aspect.inAspects"))}</span>
+        ${parents.length ? `<div class="art-chiprow">${parents.map(a => this.uItemPill(a)).join("")}</div>` : `<p class="art-muted art-small">${esc(this.t("ART.Aspect.inNoAspect"))}</p>`}</div>`;
+    }
+    // Значок: эмодзи, простой значок или картинка из библиотеки и свой файл (как у меток).
+    const simple = ASPECT_ICONS.map(ic => `<button type="button" class="art-aicon${!f.emoji && ic === f.icon ? " on" : ""}" data-action="aspectIcon" data-v="${ic}" ${dis} title="${esc(ic)}">${icon(ic)}</button>`).join("");
+    const moreOpen = (this.wfOpen ??= new Set(["settings"])).has("aicon-more") || (isImageIcon(f.icon) && !f.emoji);
+    const iconField = `<div class="art-field"><span>${esc(this.t("ART.Aspect.icon"))}</span>
+      <div class="art-emoji-row"><label class="art-field art-inline"><span>${esc(this.t("ART.Type.emoji"))}</span>
+        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="—" ${dis}></label>
+        ${f.emoji ? `<button type="button" class="art-link art-small" data-action="aspectEmojiClear" ${dis}>${esc(this.t("ART.Aspect.emojiClear"))}</button>` : ""}</div>
+      <div class="art-aicons">${simple}</div>
+      <details class="art-fold-inner" data-fold="aicon-more"${moreOpen ? " open" : ""}><summary>${icon("image")} ${esc(this.t("ART.Aspect.iconMore"))}</summary>
+        ${can ? this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse", defCat: "danger", title: false }) : ""}</details></div>`;
+    const steps = `<div class="art-field"><span>${esc(this.t("ART.Aspect.steps"))}</span>
+      <div class="art-steps"><input type="number" min="0" max="999" step="1" data-model="aspectForm.start" data-key="af-start" value="${esc(f.steps === "" ? "" : String(f.start ?? ""))}" placeholder="1" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}" title="${esc(this.t("ART.Aspect.stepsNow"))}">
+        <span>/</span><input type="number" min="0" max="999" step="1" data-model="aspectForm.steps" data-key="af-steps" value="${esc(String(f.steps ?? ""))}" placeholder="—" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}" title="${esc(this.t("ART.Aspect.stepsMax"))}"></div></div>`;
+    return `${this.uHead(this.uAspectPlate(preview, " art-plate-lg"), f.name || this.t(isAspect ? "ART.Aspect.newAspect" : "ART.Aspect.newStatus"), this.uChip(stepsLabel(preview, t), f.color || "#c9a45c"))}
       ${hosts}
       ${this.uLab(this.t("ART.Aspect.props"))}
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-        <input type="text" data-model="aspectForm.name" data-key="af-name" data-enter="saveAspect" value="${esc(f.name)}" ${dis}></label>
+        <input type="text" data-model="aspectForm.name" data-key="af-name" data-enter="saveAspect" value="${esc(f.name)}" ${dis} autocomplete="off"></label>
+      ${sim}
       <label class="art-field"><span>${esc(this.t("ART.Field.text"))}</span>
         <textarea rows="2" data-model="aspectForm.description" data-key="af-desc" ${dis}>${esc(f.description ?? "")}</textarea></label>
-      <div class="art-grid2">
+      <div class="art-grid2 art-grid2-kind">
         <div class="art-field"><span>${esc(this.t("ART.Aspect.what"))}</span>${seg("aspectKind", ["aspect", "status"], f.kind, v => this.t(v === "aspect" ? "ART.Aspect.kindAspect" : "ART.Aspect.kindStatus"))}</div>
-        <div class="art-field"><span>${esc(this.t("ART.Aspect.steps"))}</span>${seg("aspectSteps", ASPECT_STEPS, Number(f.steps) || 0, v => (v ? String(v) : this.t("ART.Aspect.stepsNone")))}</div>
+        ${steps}
       </div>
-      ${f.kind === "status" ? `<label class="art-field"><span>${esc(this.t("ART.Aspect.parent"))}</span><select data-model="aspectForm.parentId" ${dis}>${popts}</select></label>` : ""}
-      <div class="art-field"><span>${esc(this.t("ART.Aspect.icon"))}</span><div class="art-aicons">${icons}</div></div>
-      <div class="art-grid2"><label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>${colorField(`data-model="aspectForm.color" ${dis}`, f.color || "#c9a45c", "af-color")}</label>
+      <p class="art-hint">${esc(this.t("ART.Aspect.stepsHint"))}</p>
+      ${members}
+      ${iconField}
+      <div class="art-grid2 art-grid2-even"><label class="art-field"><span>${esc(this.t("ART.Field.color"))}</span>${colorField(`data-model="aspectForm.color" ${dis}`, f.color || "#c9a45c", "af-color")}</label>
         <label class="art-field"><span>${esc(this.t("ART.Folder.one"))}</span><select data-model="aspectForm.folder" ${dis}>${fopts}</select></label></div>
       <div class="art-sect art-sect-info">${icon("circle-info")} <span>${esc(this.t("ART.Aspect.itemNote"))}</span></div>
       ${can ? this.uActions(`<button type="button" class="art-btn art-accent" data-action="saveAspect">${icon("check")} ${esc(this.t("ART.Save"))}</button><span class="art-sp"></span>
-        ${f.id ? `<button type="button" class="art-btn art-danger art-icon-only" data-action="deleteAspect" data-id="${esc(f.id)}" title="${esc(this.t("ART.Aspect.delete"))}">${icon("trash")}</button>` : ""}`)
+        ${f.id ? `<button type="button" class="art-btn art-danger art-icon-only" data-action="deleteAspect" data-id="${esc(f.id)}" title="${esc(this.t("ART.Aspect.delete"))}" aria-label="${esc(this.t("ART.Aspect.delete"))}">${icon("trash")}</button>` : ""}`)
         : `<p class="art-hint">${esc(this.t("ART.Aspect.readonly"))}</p>`}`;
   },
 
@@ -692,12 +786,16 @@ export const UnifiedUI = {
     const m = s.hudMenu;
     const btn = (action, ic, title, on = false) => `<button type="button" class="art-qbtn${on ? " on" : ""}" data-action="${action}" title="${esc(title)}" aria-label="${esc(title)}">${icon(ic)}</button>`;
     const n = sum.zones.length + sum.marks.length + sum.lines.length;
-    const bar = `<div class="art-qi-bar"><span class="art-qi-what">${what}</span><span class="art-qi-sep"></span>
+    // 1.0: под кнопками — аспекты и статусы меток гекса (если есть). Несколько меток — каждая со своим значком.
+    const marks = sum.marks.map(m => s.stateOf(m.id) ?? m).filter(m => (m.system.statuses ?? []).some(x => x.name) || (m.system.aspects ?? []).some(x => x.name));
+    const asp = marks.length ? `<div class="art-qi-asp">${marks.map(m => `<div class="art-qi-asp-row">${sum.marks.length > 1
+      ? `<span class="art-qi-asp-who" title="${esc(m.name || this.t("ART.Card.unnamed"))}">${this.uFeatureIcon(m)}</span>` : ""}${this.statusChips(m, { limit: 10, nested: true })}</div>`).join("")}</div>` : "";
+    const bar = `<div class="art-qi-bar${asp ? " art-qi-has-asp" : ""}"><div class="art-qi-row"><span class="art-qi-what">${what}</span><span class="art-qi-sep"></span>
       ${btn("hudMark", "location-dot", this.t("ART.Hud.markPick"), m?.kind === "type")}
       ${btn("hudZone", "draw-polygon", this.t("ART.Hud.zoneAdd"), m?.kind === "zone")}
       ${btn("hudLine", "route", this.t("ART.Hud.line"))}
       <span class="art-qi-sep"></span>
-      <button type="button" class="art-qbtn art-qbtn-flat" data-action="hudDetails" title="${esc(this.t("ART.Hud.detailsN", { n }))}" aria-label="${esc(this.t("ART.Hud.details"))}">${icon("circle-info")}${n ? `<small>${n}</small>` : ""}</button></div>`;
+      <button type="button" class="art-qbtn art-qbtn-flat" data-action="hudDetails" title="${esc(this.t("ART.Hud.detailsN", { n }))}" aria-label="${esc(this.t("ART.Hud.details"))}">${icon("circle-info")}${n ? `<small>${n}</small>` : ""}</button></div>${asp}</div>`;
     let menu = "";
     if ( m?.kind === "type" ) {
       const q = m.q ?? "";
@@ -742,7 +840,7 @@ export const UnifiedUI = {
     if ( edit ) body = this.renderEditor(st, type);
     else if ( open ) {
       const text = htmlToText(st.text).trim();
-      const chips = this.statusChips(st, { limit: 99 });
+      const chips = this.statusChips(st, { limit: 99, nested: true });
       const picking = s.aspectPick?.featureId === st.id;
       body = `<div class="art-citem-body">${text ? `<p class="art-citem-text">${esc(text)}</p>` : ""}
         <div class="art-chiprow">${chips}<button type="button" class="art-chip art-chip-add${picking ? " active" : ""}" data-action="aspectPickOpen" data-id="${esc(st.id)}"
@@ -750,6 +848,54 @@ export const UnifiedUI = {
         ${picking ? this.uAspectPicker() : ""}</div>`;
     }
     return `<article class="art-citem${open || edit ? " open" : ""}" data-drop-feature="${esc(st.id)}">${head}${body}</article>`;
+  },
+
+  /**
+   * Статусы и аспекты элемента в правке (1.0): строки со значком, названием и ступенями X/X.
+   * Добавляются из общего списка «Статусы и аспекты» с поиском по названию; новое название заводится там же.
+   * Внутрь аспекта статус кладётся его кнопкой «+ статус».
+   */
+  renderEntries(st) {
+    const s = this.studio;
+    const id = st.id;
+    const p = s.aspectPick;
+    const fld = (path, key) => `data-id="${esc(id)}" data-field="${esc(`${path}.${key}`)}" data-key="${esc(`${id}:${path}.${key}`)}"`;
+    const row = (x, path, n, aspect) => {
+      const g = this.uEntryGlyph(x, aspect);
+      const base = `${path}.${n}`;
+      const lvlPath = aspect ? "aspects" : path;
+      const loose = !x.itemId || !s.aspectById(x.itemId);
+      const remove = aspect
+        ? `data-action="removeAspect" data-id="${esc(id)}" data-n="${n}"`
+        : `data-action="removeStatus" data-id="${esc(id)}" data-path="${esc(path)}" data-n="${n}"`;
+      return `<div class="art-erow${aspect ? " art-erow-aspect" : ""}">
+        <span class="art-plate art-plate-sm" style="--c:${esc(g.color || (aspect ? "#8f7bb5" : "#c9a45c"))}">${g.html}</span>
+        <span class="art-erow-name${loose ? " art-loose" : ""}" title="${esc(loose ? this.t("ART.Aspect.looseOne") : (x.description || x.name))}">${esc(x.name || this.t("ART.Card.unnamed"))}</span>
+        <span class="art-steps art-steps-sm${x.max ? "" : " art-steps-none"}">
+          ${x.max ? `<button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="-1" title="−1" aria-label="−1">${icon("minus")}</button>` : ""}
+          <input type="number" class="art-num" value="${x.value ?? ""}" placeholder="—" ${fld(base, "value")} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}" title="${esc(this.t("ART.Aspect.stepsNow"))}">
+          <span>/</span>
+          <input type="number" class="art-num" value="${x.max ?? ""}" placeholder="—" ${fld(base, "max")} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}" title="${esc(this.t("ART.Aspect.stepsMax"))}">
+          ${x.max ? `<button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="1" title="+1" aria-label="+1">${icon("plus")}</button>` : ""}
+        </span>
+        <button type="button" class="art-icon-btn" ${remove} title="${esc(this.t("ART.Aspect.detach"))}" aria-label="${esc(this.t("ART.Aspect.detach"))}">${icon("xmark")}</button></div>`;
+    };
+    const statuses = (st.system.statuses ?? []).map((x, n) => row(x, "statuses", n, false)).join("");
+    const aspects = (st.system.aspects ?? []).map((a, n) => {
+      const inner = (a.statuses ?? []).map((x, m) => row(x, `aspects.${n}.statuses`, m, false)).join("");
+      const open = p?.featureId === id && p.aspectN === n;
+      return `<div class="art-ebox">${row(a, "aspects", n, true)}
+        <div class="art-ebox-in">${inner}
+          <button type="button" class="art-link art-small${open ? " active" : ""}" data-action="aspectPickOpen" data-id="${esc(id)}" data-n="${n}">${icon("plus")} ${esc(this.t("ART.Aspect.addStatusInto"))}</button>
+          ${open ? this.uAspectPicker() : ""}</div></div>`;
+    }).join("");
+    const openTop = p?.featureId === id && p.aspectN === null && !p.slot && !p.form;
+    const empty = !statuses && !aspects ? `<p class="art-empty">${esc(this.t("ART.Card.noStatusesYet"))}</p>` : "";
+    return `<section class="art-sub-block art-entries" data-drop-feature="${esc(id)}"><h5>${icon("art-star4")} ${esc(this.t("ART.Card.statusesAspects"))}
+        <span class="art-sp"></span><button type="button" class="art-btn art-sm art-dashed${openTop ? " active" : ""}" data-action="aspectPickOpen" data-id="${esc(id)}">${icon("plus")} ${esc(this.t("ART.Aspect.add"))}</button></h5>
+      ${openTop ? this.uAspectPicker() : ""}
+      ${statuses}${aspects}${empty}
+    </section>`;
   },
 
   /** Раздел карточки: «Зоны 2 [+]». «+» открывает окно инструмента с этим гексом. */
@@ -846,16 +992,31 @@ export const UnifiedUI = {
       folderNewIn: el => s.newInFolder(el.dataset.kind, el.dataset.id),
       folderRemove: el => s.removeFolder(el.dataset.kind, el.dataset.id),
       formLabel: el => s.setFormLabel(el.dataset.slot, el.dataset.lkey, el.value),
-      aspectPickOpen: el => s.toggleAspectPick({ slot: el.dataset.slot || null, featureId: el.dataset.id || null }),
+      aspectPickOpen: el => s.toggleAspectPick({ slot: el.dataset.slot || null, featureId: el.dataset.id || null, aspectN: el.dataset.n ?? null, form: !!el.dataset.form }),
       aspectPickRow: el => s.pickFromList(el.dataset.id),
+      aspectPickCreate: el => s.createFromPick(el.dataset.kind),
+      // Enter в поиске: точное совпадение или единственная строка выбирается, иначе заводится новый статус.
+      aspectPickEnter: () => {
+        const q = String(s.aspectPick?.q ?? "").trim().toLowerCase();
+        const list = s.pickList();
+        const hit = list.find(i => i.name.trim().toLowerCase() === q) ?? (list.length === 1 ? list[0] : null);
+        if ( hit ) return s.pickFromList(hit.id);
+        const kinds = s.pickCreateKinds();
+        if ( q && kinds.length ) return s.createFromPick(kinds[0]);
+      },
+      formStatusRemove: el => s.removeFormStatus(el.dataset.id),
+      collectLoose: () => s.collectLoose(),
       pendingRemove: el => s.removePending(el.dataset.slot, el.dataset.id),
       openAspects: () => s.toggleAspects(true),
       toggleAspects: () => s.toggleAspects(),
       pickAspect: el => s.pickAspect(el.dataset.id),
-      newAspect: () => s.newAspect(""),
+      newAspect: el => s.newAspect("", el.dataset.kind || "status"),
       aspectKind: el => s.setAspectKind(el.dataset.v),
-      aspectSteps: el => s.setAspectSteps(el.dataset.v),
-      aspectIcon: el => { if ( s.aspectForm ) { s.aspectForm.icon = el.dataset.v; s.changed("ui"); } },
+      aspectIcon: el => s.setAspectIcon(el.dataset.v),
+      aspectIconPick: el => s.setAspectIcon(el.dataset.icon),
+      aspectEmojiClear: () => { if ( s.aspectForm ) { s.aspectForm.emoji = ""; s.changed("ui"); } },
+      aspectIconCat: el => { if ( s.aspectForm ) { s.aspectForm.iconCat = el.dataset.cat; s.aspectForm.iconQuery = ""; s.changed("ui"); } },
+      aspectBrowse: () => this.backend.pickFile?.(isImageIcon(s.aspectForm?.icon) ? s.aspectForm.icon : "", path => s.setAspectIcon(path)),
       saveAspect: () => s.saveAspectForm(),
       deleteAspect: el => s.deleteAspect(el.dataset.id),
       seedAspects: () => s.seedAspects(),
