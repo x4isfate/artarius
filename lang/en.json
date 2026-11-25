@@ -525,6 +525,7 @@
       "newHere": "Open the window with this hex"
     },
     "Settings": {
+      "iconScale": { "name": "Mark icon size", "hint": "Mark icons in windows, menus and the hex quick view, in percent. Does not affect the map itself." },
       "title": "Artarius settings",
       "open": "Settings",
       "pick": "Pick something in the list on the left.",
