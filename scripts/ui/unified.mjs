@@ -14,7 +14,7 @@ import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
 import { FOLDER_COLORS, COAST_DEFAULTS } from "../constants.mjs";
 import { ASPECT_ICONS, searchItems, stepsLabel, statusIdsOf, aspectsWith, isImageIcon, hasEntryLike } from "../data/aspects.mjs";
-import { statusIcon } from "../data/statuses.mjs";
+import { statusIcon, BASE_STATUSES, BASE_ASPECTS } from "../data/statuses.mjs";
 import { shapeFrame, shapeOf } from "../data/mark-shape.mjs";
 
 /** Полоса режимов внизу: порядок и клавиши 1–6 (0.9.9). */
@@ -256,11 +256,15 @@ export const UnifiedUI = {
     const q = String(p?.q ?? "").trim();
     const creates = s.pickCreateKinds().map(k => `<button type="button" class="art-menu-row art-menu-new" data-action="aspectPickCreate" data-kind="${k}">
       <span class="art-plate art-plate-md art-plate-new">${icon("plus")}</span><span class="art-apick-name">${esc(this.t(k === "aspect" ? "ART.Aspect.createAspect" : "ART.Aspect.createStatus", { name: q }))}</span></button>`).join("");
-    const empty = rows || creates ? "" : `<p class="art-empty">${esc(this.t(none && !q ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`;
-    const ph = s._pickOnlyStatus(p) ? "ART.Aspect.findStatus" : "ART.Aspect.find";
+    // 1.0.1: «Новый статус» виден сразу, без набора в поиске. Щелчок — поиск становится полем названия.
+    const news = q ? "" : s.pickNewKinds().map(k => `<button type="button" class="art-menu-row art-menu-new${p?.creating === k ? " active" : ""}" data-action="aspectPickNew" data-kind="${k}">
+      <span class="art-plate art-plate-md art-plate-new">${icon("plus")}</span><span class="art-apick-name">${esc(this.t(k === "aspect" ? "ART.Aspect.newAspectRow" : "ART.Aspect.newStatusRow"))}</span></button>`).join("");
+    const empty = rows || creates || news ? "" : `<p class="art-empty">${esc(this.t(none && !q ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`;
+    const ph = p?.creating ? (p.creating === "aspect" ? "ART.Aspect.nameNewAspect" : "ART.Aspect.nameNewStatus")
+      : s._pickOnlyStatus(p) ? "ART.Aspect.findStatus" : "ART.Aspect.find";
     return `<div class="art-apick">
-      <input type="search" class="art-search" data-model="aspectPick.q" data-key="apick-q" data-enter="aspectPickEnter" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t(ph))}" autocomplete="off">
-      <div class="art-apick-list">${rows}${creates}${empty}</div>
+      <input type="search" class="art-search${p?.creating ? " art-creating" : ""}" data-model="aspectPick.q" data-key="apick-q" data-enter="aspectPickEnter" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t(ph))}" autocomplete="off">
+      <div class="art-apick-list">${news}${rows}${creates}${empty}</div>
       ${all.length > list.length ? `<p class="art-muted art-small">${esc(this.t("ART.Unified.more", { n: all.length - list.length }))}</p>` : ""}
       ${p?.form ? "" : `<button type="button" class="art-link" data-action="openAspects">${icon("up-right-from-square")} ${esc(this.t("ART.Aspect.openWindow"))}</button>`}
     </div>`;
@@ -907,10 +911,24 @@ export const UnifiedUI = {
     }).join("");
     const openTop = p?.featureId === id && p.aspectN === null && !p.slot && !p.form;
     const empty = !statuses && !aspects ? `<p class="art-empty">${esc(this.t("ART.Card.noStatusesYet"))}</p>` : "";
+    // 1.0.1: быстрые плашки базовых статусов и аспектов, как до 1.0. Уже висящие не показываются.
+    const items = s.aspects();
+    const keyOf = x => (x.itemId ? s.aspectById(x.itemId)?.system?.key : "") || x.key || "";
+    const have = new Set([...(st.system.statuses ?? []), ...(st.system.aspects ?? []), ...(st.system.aspects ?? []).flatMap(a => a.statuses ?? [])]
+      .flatMap(x => [keyOf(x), String(x.name ?? "").trim().toLowerCase()]).filter(Boolean));
+    const quickOne = (b, kind) => {
+      if ( have.has(b.key) || have.has(b.name.toLowerCase()) ) return "";
+      const item = items.find(i => i.system?.key === b.key && i.system?.kind === kind);
+      const name = item?.name ?? b.name;
+      return `<button type="button" class="art-chip art-chip-add${kind === "aspect" ? " art-chip-aspect" : ""}" data-action="baseQuick" data-id="${esc(id)}" data-key="${esc(b.key)}" data-kind="${kind}"
+        title="${esc(this.t(kind === "aspect" ? "ART.Aspect.quickAspect" : "ART.Aspect.quickStatus", { name }))}">${item ? this.uGlyph(item.system, item.system?.color) : icon(b.icon)}<span>${esc(name)}</span></button>`;
+    };
+    const quick = [...BASE_ASPECTS.map(b => quickOne(b, "aspect")), ...BASE_STATUSES.map(b => quickOne(b, "status"))].join("");
     return `<section class="art-sub-block art-entries" data-drop-feature="${esc(id)}"><h5>${icon("art-star4")} ${esc(this.t("ART.Card.statusesAspects"))}
         <span class="art-sp"></span><button type="button" class="art-btn art-sm art-dashed${openTop ? " active" : ""}" data-action="aspectPickOpen" data-id="${esc(id)}">${icon("plus")} ${esc(this.t("ART.Aspect.add"))}</button></h5>
       ${openTop ? this.uAspectPicker() : ""}
       ${statuses}${aspects}${empty}
+      ${quick ? `<div class="art-chips art-quick">${quick}</div>` : ""}
     </section>`;
   },
 
@@ -1011,13 +1029,21 @@ export const UnifiedUI = {
       aspectPickOpen: el => s.toggleAspectPick({ slot: el.dataset.slot || null, featureId: el.dataset.id || null, aspectN: el.dataset.n ?? null, form: !!el.dataset.form }),
       aspectPickRow: el => s.pickFromList(el.dataset.id),
       aspectPickCreate: el => s.createFromPick(el.dataset.kind),
+      aspectPickNew: el => {
+        s.startPickCreate(el.dataset.kind);
+        requestAnimationFrame(() => (el.ownerDocument ?? document).querySelector('[data-key="apick-q"]')?.focus());
+      },
+      baseQuick: el => s.addBaseQuick(el.dataset.id, el.dataset.key, el.dataset.kind),
       // Enter в поиске: точное совпадение или единственная строка выбирается, иначе заводится новый статус.
       aspectPickEnter: () => {
         const q = String(s.aspectPick?.q ?? "").trim().toLowerCase();
         const list = s.pickList();
         const hit = list.find(i => i.name.trim().toLowerCase() === q) ?? (list.length === 1 ? list[0] : null);
-        if ( hit ) return s.pickFromList(hit.id);
         const kinds = s.pickCreateKinds();
+        const want = s.aspectPick?.creating;
+        // Режим «Новый статус»: заводится новое, если такого названия ещё нет.
+        if ( want && q && kinds.includes(want) ) return s.createFromPick(want);
+        if ( hit ) return s.pickFromList(hit.id);
         if ( q && kinds.length ) return s.createFromPick(kinds[0]);
       },
       formStatusRemove: el => s.removeFormStatus(el.dataset.id),
