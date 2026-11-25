@@ -14,7 +14,8 @@ import { VIEW_PART_DEFS, isShown } from "../data/view.mjs";
 import { hasField } from "../data/fields.mjs";
 import { FOLDER_COLORS, COAST_DEFAULTS } from "../constants.mjs";
 import { ASPECT_ICONS, searchItems, stepsLabel, statusIdsOf, aspectsWith, isImageIcon, hasEntryLike } from "../data/aspects.mjs";
-import { statusIcon } from "../data/statuses.mjs";
+import { statusIcon, BASE_STATUSES, BASE_ASPECTS } from "../data/statuses.mjs";
+import { shapeFrame, shapeOf } from "../data/mark-shape.mjs";
 
 /** Полоса режимов внизу: порядок и клавиши 1–6 (0.9.9). */
 export const MODE_DEFS = [
@@ -133,20 +134,32 @@ export const UnifiedUI = {
       title="${esc(t.name)}${t.personal ? ` · ${esc(this.t("ART.Type.personal"))}` : ""}">${this.uTypeIcon(t)}<span>${mark(t.name, this._uQuery)}</span></button>${pen}</div>`;
   },
 
+  /**
+   * Значок метки в окнах и меню (1.0.1): рамка той же формы, что подложка на карте (круг, щит, ромб…),
+   * внутри значок или эмодзи. Размер задаёт настройка «Размер значков» (переменная --art-ik).
+   */
+  uMarkPlate(style, size = "") {
+    const c = style?.color ?? "#ccc";
+    const shape = shapeOf(style);
+    const inner = style?.emoji ? `<span class="art-emoji">${esc(style.emoji)}</span>`
+      : style?.icon ? iconImg(style.icon, style.iconColor || c, { tint: style.tint !== false, cls: "art-plate-ico" }) : "";
+    const cls = String(size).replace(/art-plate-/g, "art-mp-");
+    return `<span class="art-mplate${cls} art-mshape-${shape}" style="--c:${esc(c)}">${shapeFrame(shape)}${inner}</span>`;
+  },
+
   /** Крупный значок типа для плитки и шапки. */
   uTypeIcon(t, size = "") {
     const st = t?.style ?? {};
     const c = st.color ?? "#ccc";
     if ( t?.kind === "object" ) {
-      if ( st.emoji ) return `<span class="art-plate${size}"><span class="art-emoji">${esc(st.emoji)}</span></span>`;
-      if ( st.icon ) return `<span class="art-plate${size}" style="--c:${esc(c)}">${iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-plate-ico" })}</span>`;
-      return `<span class="art-plate${size}" style="--c:${esc(c)}"></span>`;
+      return this.uMarkPlate(st, size);
     }
     if ( t?.kind === "line" ) {
       const dash = st.pattern === "dash" ? ' stroke-dasharray="6 3"' : st.pattern === "dot" ? ' stroke-dasharray="1 4"' : "";
       return `<svg class="art-lnsw" width="34" height="14" viewBox="0 0 34 14" aria-hidden="true"><path d="M2 10 C10 2, 20 14, 32 4" stroke="${esc(c)}" stroke-width="3" fill="none" stroke-linecap="round"${dash}/></svg>`;
     }
-    return `<span class="art-circ${size}" style="--c:${esc(c)}"></span>`;
+    // Зона везде квадратиком: в плитках, шапке, строках, меню и на кисти (1.0.1).
+    return `<span class="art-zsw${size}" style="--c:${esc(c)}"></span>`;
   },
 
   /** Шапка правой колонки: значок, название, плашка. */
@@ -244,11 +257,15 @@ export const UnifiedUI = {
     const q = String(p?.q ?? "").trim();
     const creates = s.pickCreateKinds().map(k => `<button type="button" class="art-menu-row art-menu-new" data-action="aspectPickCreate" data-kind="${k}">
       <span class="art-plate art-plate-md art-plate-new">${icon("plus")}</span><span class="art-apick-name">${esc(this.t(k === "aspect" ? "ART.Aspect.createAspect" : "ART.Aspect.createStatus", { name: q }))}</span></button>`).join("");
-    const empty = rows || creates ? "" : `<p class="art-empty">${esc(this.t(none && !q ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`;
-    const ph = s._pickOnlyStatus(p) ? "ART.Aspect.findStatus" : "ART.Aspect.find";
+    // 1.0.1: «Новый статус» виден сразу, без набора в поиске. Щелчок — поиск становится полем названия.
+    const news = q ? "" : s.pickNewKinds().map(k => `<button type="button" class="art-menu-row art-menu-new${p?.creating === k ? " active" : ""}" data-action="aspectPickNew" data-kind="${k}">
+      <span class="art-plate art-plate-md art-plate-new">${icon("plus")}</span><span class="art-apick-name">${esc(this.t(k === "aspect" ? "ART.Aspect.newAspectRow" : "ART.Aspect.newStatusRow"))}</span></button>`).join("");
+    const empty = rows || creates || news ? "" : `<p class="art-empty">${esc(this.t(none && !q ? "ART.Aspect.emptyShort" : "ART.Aspect.noneFound"))}</p>`;
+    const ph = p?.creating ? (p.creating === "aspect" ? "ART.Aspect.nameNewAspect" : "ART.Aspect.nameNewStatus")
+      : s._pickOnlyStatus(p) ? "ART.Aspect.findStatus" : "ART.Aspect.find";
     return `<div class="art-apick">
-      <input type="search" class="art-search" data-model="aspectPick.q" data-key="apick-q" data-enter="aspectPickEnter" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t(ph))}" autocomplete="off">
-      <div class="art-apick-list">${rows}${creates}${empty}</div>
+      <input type="search" class="art-search${p?.creating ? " art-creating" : ""}" data-model="aspectPick.q" data-key="apick-q" data-enter="aspectPickEnter" value="${esc(p?.q ?? "")}" placeholder="${esc(this.t(ph))}" autocomplete="off">
+      <div class="art-apick-list">${news}${rows}${creates}${empty}</div>
       ${all.length > list.length ? `<p class="art-muted art-small">${esc(this.t("ART.Unified.more", { n: all.length - list.length }))}</p>` : ""}
       ${p?.form ? "" : `<button type="button" class="art-link" data-action="openAspects">${icon("up-right-from-square")} ${esc(this.t("ART.Aspect.openWindow"))}</button>`}
     </div>`;
@@ -291,10 +308,11 @@ export const UnifiedUI = {
     const type = s.typeById(st.system.typeId);
     const color = st.system.style?.color ?? type?.style?.color ?? "#ccc";
     if ( st.system.kind === "object" ) {
-      const path = st.system.style?.icon ?? type?.style?.icon;
-      const emoji = st.system.style?.emoji ?? type?.style?.emoji;
-      if ( emoji ) return `<span class="art-plate art-plate-sm${size}"><span class="art-emoji">${esc(emoji)}</span></span>`;
-      return `<span class="art-plate art-plate-sm${size}" style="--c:${esc(color)}">${path ? iconImg(path, color, { tint: (st.system.style?.tint ?? type?.style?.tint) !== false, cls: "art-plate-ico" }) : ""}</span>`;
+      const own = st.system.style ?? {}, base = type?.style ?? {};
+      return this.uMarkPlate({
+        color, icon: own.icon ?? base.icon, emoji: own.emoji ?? base.emoji,
+        tint: own.tint ?? base.tint, iconColor: own.iconColor ?? base.iconColor, shape: own.shape ?? base.shape
+      }, size || " art-plate-sm");
     }
     if ( st.system.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(color)}"></i>`;
     return `<i class="art-swatch" style="--c:${esc(color)}"></i>`;
@@ -469,7 +487,12 @@ export const UnifiedUI = {
       ${kind === "line" ? `<option value=""${f.layerId ? "" : " selected"}>${esc(this.t("ART.Unified.noLayer"))}</option>` : ""}
       ${s.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("")}</select></label>`;
     const type = f.id ? s.typeById(f.id) : null;
-    const sw = type ? this.uTypeIcon(type, " art-plate-lg") : `<span class="art-plate art-plate-lg">${icon(TOOL_ICON[kind])}</span>`;
+    // Шапка формы — живой образец (1.0.1): цвет, значок или эмодзи, форма метки меняются сразу.
+    const fIcon = /[/.]/.test(String(f.icon ?? "")) ? f.icon : "";
+    const live = { kind, style: { color: f.color, icon: fIcon, emoji: f.emoji, tint: f.tint, shape: f.shape, pattern: f.linePattern } };
+    const sw = kind === "object" && !fIcon && !f.emoji
+      ? `<span class="art-plate art-plate-lg">${icon(TOOL_ICON[kind])}</span>`
+      : this.uTypeIcon(live, " art-plate-lg");
     const area = kind === "area" ? `<div class="art-field"><span>${esc(this.t("ART.Pattern.title"))}</span>
         <div class="art-patterns">${this.patternButtons(f.pattern)}</div></div>
       ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : "";
@@ -478,9 +501,9 @@ export const UnifiedUI = {
         <input type="text" class="art-emoji-input" maxlength="8" data-model="typeForm.emoji" data-key="tf-emoji" value="${esc(f.emoji ?? "")}" placeholder="🐉"></label>
       ${f.emoji ? "" : this.renderIconPicker(f)}` : "";
     return `${this.uHead(sw, f.id ? (type?.name ?? f.name) : this.t("ART.Type.newTitle"), f.id ? this.uChip(this.t("ART.Unified.editType"), "", "pen") : "")}
-      ${this.uLab(this.t(f.id ? "ART.Unified.editType" : "ART.Type.newTitle"))}
+      ${this.uLab(this.t("ART.Aspect.props"))}
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-        <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t("ART.Type.namePh"))}"></label>
+        <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t({ object: "ART.Type.namePhObject", line: "ART.Type.namePhLine" }[kind] ?? "ART.Type.namePh"))}"></label>
       <div class="art-grid2"><label class="art-field"><span>${esc(this.t("ART.Folder.one"))}</span><select data-model="typeForm.folder">${fopts}</select></label>${layerSel}</div>
       <label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>${colorField('data-model="typeForm.color"', f.color, "tf-color")}</label>
       ${area}${object}${kind === "line" ? this.renderLineStyle(f) : ""}
@@ -644,7 +667,7 @@ export const UnifiedUI = {
       <button type="button" class="art-btn" data-action="newAspect" data-kind="aspect" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newAspect"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindAspect"))}</span></button>
       <button type="button" class="art-btn" data-action="newAspect" data-kind="status" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newStatus"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindStatus"))}</span></button>
       <button type="button" class="art-btn art-newbar-folder" data-action="newFolder" data-kind="aspect" ${canFolder ? "" : "disabled"}
-        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.new"))}</span></button></div>`;
+        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.one"))}</span></button></div>`;
     // Свои статусы, заведённые прямо на карте (до 1.0 так делали в карточке гекса): мастер переносит их в список.
     const loose = this.backend.isGM ? s.looseAspects() : [];
     const collect = loose.length ? `<div class="art-sect art-sect-info art-collect">${icon("circle-info")}
@@ -714,16 +737,13 @@ export const UnifiedUI = {
       members = `<div class="art-field"><span>${esc(this.t("ART.Aspect.inAspects"))}</span>
         ${parents.length ? `<div class="art-chiprow">${parents.map(a => this.uItemPill(a)).join("")}</div>` : `<p class="art-muted art-small">${esc(this.t("ART.Aspect.inNoAspect"))}</p>`}</div>`;
     }
-    // Значок: эмодзи, простой значок или картинка из библиотеки и свой файл (как у меток).
-    const simple = ASPECT_ICONS.map(ic => `<button type="button" class="art-aicon${!f.emoji && ic === f.icon ? " on" : ""}" data-action="aspectIcon" data-v="${ic}" ${dis} title="${esc(ic)}">${icon(ic)}</button>`).join("");
-    const moreOpen = (this.wfOpen ??= new Set(["settings"])).has("aicon-more") || (isImageIcon(f.icon) && !f.emoji);
-    const iconField = `<div class="art-field"><span>${esc(this.t("ART.Aspect.icon"))}</span>
-      <div class="art-emoji-row"><label class="art-field art-inline"><span>${esc(this.t("ART.Type.emoji"))}</span>
-        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="—" ${dis}></label>
-        ${f.emoji ? `<button type="button" class="art-link art-small" data-action="aspectEmojiClear" ${dis}>${esc(this.t("ART.Aspect.emojiClear"))}</button>` : ""}</div>
-      <div class="art-aicons">${simple}</div>
-      <details class="art-fold-inner" data-fold="aicon-more"${moreOpen ? " open" : ""}><summary>${icon("image")} ${esc(this.t("ART.Aspect.iconMore"))}</summary>
-        ${can ? this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse", defCat: "danger", title: false }) : ""}</details></div>`;
+    // Значок как у типа метки (1.0.1): поле эмодзи, а пока эмодзи нет — библиотека сразу на виду:
+    // простые значки, картинки по разделам, свой файл. Эмодзи прячет библиотеку, образец в шапке и рядом меняется сразу.
+    const iconField = `<label class="art-field"><span>${esc(this.t("ART.Type.emoji"))}</span>
+        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="🐉" ${dis}></label>
+      ${f.emoji || !can ? "" : this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse",
+        defCat: isImageIcon(f.icon) ? "danger" : "simple", simple: ASPECT_ICONS, simplePick: "aspectIcon",
+        preview: this.uAspectPlate({ system: { icon: f.icon, tint: f.tint, color: f.color } }, " art-plate-xl") })}`;
     const steps = `<div class="art-field"><span>${esc(this.t("ART.Aspect.steps"))}</span>
       <div class="art-steps"><input type="number" min="0" max="999" step="1" data-model="aspectForm.start" data-key="af-start" value="${esc(f.steps === "" ? "" : String(f.start ?? ""))}" placeholder="1" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}" title="${esc(this.t("ART.Aspect.stepsNow"))}">
         <span>/</span><input type="number" min="0" max="999" step="1" data-model="aspectForm.steps" data-key="af-steps" value="${esc(String(f.steps ?? ""))}" placeholder="—" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}" title="${esc(this.t("ART.Aspect.stepsMax"))}"></div></div>`;
@@ -786,10 +806,13 @@ export const UnifiedUI = {
     const m = s.hudMenu;
     const btn = (action, ic, title, on = false) => `<button type="button" class="art-qbtn${on ? " on" : ""}" data-action="${action}" title="${esc(title)}" aria-label="${esc(title)}">${icon(ic)}</button>`;
     const n = sum.zones.length + sum.marks.length + sum.lines.length;
-    // 1.0: под кнопками — аспекты и статусы меток гекса (если есть). Несколько меток — каждая со своим значком.
-    const marks = sum.marks.map(m => s.stateOf(m.id) ?? m).filter(m => (m.system.statuses ?? []).some(x => x.name) || (m.system.aspects ?? []).some(x => x.name));
-    const asp = marks.length ? `<div class="art-qi-asp">${marks.map(m => `<div class="art-qi-asp-row">${sum.marks.length > 1
-      ? `<span class="art-qi-asp-who" title="${esc(m.name || this.t("ART.Card.unnamed"))}">${this.uFeatureIcon(m)}</span>` : ""}${this.statusChips(m, { limit: 10, nested: true })}</div>`).join("")}</div>` : "";
+    // Под кнопками — аспекты и статусы всего, что лежит на гексе: зон, меток и линий (1.0.1: не только меток).
+    const has = st => (st.system.statuses ?? []).some(x => x.name) || (st.system.aspects ?? []).some(x => x.name);
+    const owners = [...sum.zones, ...sum.marks, ...sum.lines].map(x => s.stateOf(x.id) ?? x).filter(has);
+    // Значок владельца нужен, когда строк несколько или строка не от метки: иначе непонятно, чей статус.
+    const who = owners.length > 1 || owners.some(x => x.system.kind !== "object");
+    const asp = owners.length ? `<div class="art-qi-asp">${owners.map(x => `<div class="art-qi-asp-row">${who
+      ? `<span class="art-qi-asp-who" title="${esc(x.name || this.t("ART.Card.unnamed"))}">${this.uFeatureIcon(x)}</span>` : ""}${this.statusChips(x, { limit: 10, nested: true })}</div>`).join("")}</div>` : "";
     const bar = `<div class="art-qi-bar${asp ? " art-qi-has-asp" : ""}"><div class="art-qi-row"><span class="art-qi-what">${what}</span><span class="art-qi-sep"></span>
       ${btn("hudMark", "location-dot", this.t("ART.Hud.markPick"), m?.kind === "type")}
       ${btn("hudZone", "draw-polygon", this.t("ART.Hud.zoneAdd"), m?.kind === "zone")}
@@ -891,10 +914,24 @@ export const UnifiedUI = {
     }).join("");
     const openTop = p?.featureId === id && p.aspectN === null && !p.slot && !p.form;
     const empty = !statuses && !aspects ? `<p class="art-empty">${esc(this.t("ART.Card.noStatusesYet"))}</p>` : "";
+    // 1.0.1: быстрые плашки базовых статусов и аспектов, как до 1.0. Уже висящие не показываются.
+    const items = s.aspects();
+    const keyOf = x => (x.itemId ? s.aspectById(x.itemId)?.system?.key : "") || x.key || "";
+    const have = new Set([...(st.system.statuses ?? []), ...(st.system.aspects ?? []), ...(st.system.aspects ?? []).flatMap(a => a.statuses ?? [])]
+      .flatMap(x => [keyOf(x), String(x.name ?? "").trim().toLowerCase()]).filter(Boolean));
+    const quickOne = (b, kind) => {
+      if ( have.has(b.key) || have.has(b.name.toLowerCase()) ) return "";
+      const item = items.find(i => i.system?.key === b.key && i.system?.kind === kind);
+      const name = item?.name ?? b.name;
+      return `<button type="button" class="art-chip art-chip-add${kind === "aspect" ? " art-chip-aspect" : ""}" data-action="baseQuick" data-id="${esc(id)}" data-key="${esc(b.key)}" data-kind="${kind}"
+        title="${esc(this.t(kind === "aspect" ? "ART.Aspect.quickAspect" : "ART.Aspect.quickStatus", { name }))}">${item ? this.uGlyph(item.system, item.system?.color) : icon(b.icon)}<span>${esc(name)}</span></button>`;
+    };
+    const quick = [...BASE_ASPECTS.map(b => quickOne(b, "aspect")), ...BASE_STATUSES.map(b => quickOne(b, "status"))].join("");
     return `<section class="art-sub-block art-entries" data-drop-feature="${esc(id)}"><h5>${icon("art-star4")} ${esc(this.t("ART.Card.statusesAspects"))}
         <span class="art-sp"></span><button type="button" class="art-btn art-sm art-dashed${openTop ? " active" : ""}" data-action="aspectPickOpen" data-id="${esc(id)}">${icon("plus")} ${esc(this.t("ART.Aspect.add"))}</button></h5>
       ${openTop ? this.uAspectPicker() : ""}
       ${statuses}${aspects}${empty}
+      ${quick ? `<div class="art-chips art-quick">${quick}</div>` : ""}
     </section>`;
   },
 
@@ -995,13 +1032,21 @@ export const UnifiedUI = {
       aspectPickOpen: el => s.toggleAspectPick({ slot: el.dataset.slot || null, featureId: el.dataset.id || null, aspectN: el.dataset.n ?? null, form: !!el.dataset.form }),
       aspectPickRow: el => s.pickFromList(el.dataset.id),
       aspectPickCreate: el => s.createFromPick(el.dataset.kind),
+      aspectPickNew: el => {
+        s.startPickCreate(el.dataset.kind);
+        requestAnimationFrame(() => (el.ownerDocument ?? document).querySelector('[data-key="apick-q"]')?.focus());
+      },
+      baseQuick: el => s.addBaseQuick(el.dataset.id, el.dataset.key, el.dataset.kind),
       // Enter в поиске: точное совпадение или единственная строка выбирается, иначе заводится новый статус.
       aspectPickEnter: () => {
         const q = String(s.aspectPick?.q ?? "").trim().toLowerCase();
         const list = s.pickList();
         const hit = list.find(i => i.name.trim().toLowerCase() === q) ?? (list.length === 1 ? list[0] : null);
-        if ( hit ) return s.pickFromList(hit.id);
         const kinds = s.pickCreateKinds();
+        const want = s.aspectPick?.creating;
+        // Режим «Новый статус»: заводится новое, если такого названия ещё нет.
+        if ( want && q && kinds.includes(want) ) return s.createFromPick(want);
+        if ( hit ) return s.pickFromList(hit.id);
         if ( q && kinds.length ) return s.createFromPick(kinds[0]);
       },
       formStatusRemove: el => s.removeFormStatus(el.dataset.id),
@@ -1014,7 +1059,6 @@ export const UnifiedUI = {
       aspectKind: el => s.setAspectKind(el.dataset.v),
       aspectIcon: el => s.setAspectIcon(el.dataset.v),
       aspectIconPick: el => s.setAspectIcon(el.dataset.icon),
-      aspectEmojiClear: () => { if ( s.aspectForm ) { s.aspectForm.emoji = ""; s.changed("ui"); } },
       aspectIconCat: el => { if ( s.aspectForm ) { s.aspectForm.iconCat = el.dataset.cat; s.aspectForm.iconQuery = ""; s.changed("ui"); } },
       aspectBrowse: () => this.backend.pickFile?.(isImageIcon(s.aspectForm?.icon) ? s.aspectForm.icon : "", path => s.setAspectIcon(path)),
       saveAspect: () => s.saveAspectForm(),

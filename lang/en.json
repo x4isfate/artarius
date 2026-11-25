@@ -239,6 +239,8 @@
       "newTitle": "New type",
       "editTitle": "Type",
       "namePh": "E.g. Ash Wastes",
+      "namePhObject": "E.g. Outpost",
+      "namePhLine": "E.g. Trade Road",
       "icon": "Icon",
       "browse": "Browse files",
       "needName": "Give the type a name.",
@@ -493,6 +495,7 @@
       "tint": "Tint the icon with the type color",
       "credit": "Icons: game-icons.net, CC BY 3.0. Authors in assets/icons/CREDITS.md.",
       "cat": {
+        "simple": "Simple",
         "resources": "Resources",
         "settlements": "Settlements",
         "sacred": "Sacred",
@@ -525,6 +528,7 @@
       "newHere": "Open the window with this hex"
     },
     "Settings": {
+      "iconScale": { "name": "Mark icon size", "hint": "Mark icons in windows, menus and the hex quick view, in percent. Does not affect the map itself." },
       "title": "Artarius settings",
       "open": "Settings",
       "pick": "Pick something in the list on the left.",
@@ -784,6 +788,12 @@
       "kindStatusesN": "Statuses",
       "findStatus": "Find a status",
       "createStatus": "New status «{name}»",
+      "newStatusRow": "New status",
+      "newAspectRow": "New aspect",
+      "nameNewStatus": "Status name, then Enter",
+      "nameNewAspect": "Aspect name, then Enter",
+      "quickStatus": "Add status «{name}»",
+      "quickAspect": "Add aspect «{name}» with its statuses",
       "createAspect": "New aspect «{name}»",
       "created": "«{name}» is now in the shared list.",
       "similar": "Already exists:",
@@ -794,7 +804,6 @@
       "inAspects": "Part of aspects",
       "inNoAspect": "Not part of any aspect. Statuses are added to an aspect in the aspect form.",
       "addStatusInto": "Status into aspect",
-      "iconMore": "Library pictures and your own file",
       "stepsNow": "Starting step",
       "stepsMax": "Number of steps",
       "stepsHint": "Steps: starting one on the left, total on the right. Empty right field means no steps.",
@@ -803,8 +812,7 @@
       "collect": "Move to the list",
       "collected": "Added to the list: {n}; map elements linked: {m}.",
       "collectGm": "Only the GM can move statuses from the map.",
-      "fromMapFolder": "From the map",
-      "emojiClear": "Remove emoji"
+      "fromMapFolder": "From the map"
     },
     "LayerLook": {
       "view": "Look on the map",

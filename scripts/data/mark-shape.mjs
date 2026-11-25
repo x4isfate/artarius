@@ -39,3 +39,16 @@ export function shapeSwatch(shape) {
       : '<circle cx="12" cy="12" r="9"/>';
   return `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="art-shape-sw">${body}</svg>`;
 }
+
+/**
+ * Рамка значка метки для окон и меню (1.0.1): та же форма, что подложка на карте.
+ * SVG 24×24 растягивается на всю плашку; цвет обводки — переменная --c плашки.
+ */
+export function shapeFrame(shape) {
+  if ( shape === "none" ) return "";
+  const pts = shapePoints(shape, 10.4);
+  const body = pts
+    ? `<polygon points="${pts.map(([x, y]) => `${(x + 12).toFixed(2)},${(y + 12).toFixed(2)}`).join(" ")}"/>`
+    : '<circle cx="12" cy="12" r="10.6"/>';
+  return `<svg class="art-mframe" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+}
