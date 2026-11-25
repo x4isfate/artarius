@@ -592,7 +592,8 @@ async function shot(page, name) {
     const el = document.querySelector('#artarius-ui input[type="color"][data-model="typeForm.color"]');
     el.value = "#ff0000";
     el.dispatchEvent(new Event("input", { bubbles: true }));
-    const big = document.querySelector("#artarius-ui .art-icon-big");
+    // 1.0.1: образец значка типа метки — в рамке её формы (.art-mplate).
+    const big = document.querySelector("#artarius-ui .art-icon-current .art-mplate");
     return { same: el.isConnected, c: big?.style.getPropertyValue("--c"), hex: el.nextElementSibling?.value };
   });
   check(live.same && live.c === "#ff0000" && live.hex === "#ff0000", "палитра остаётся открытой, значок и код меняются сразу");

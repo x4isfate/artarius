@@ -158,7 +158,8 @@ export const UnifiedUI = {
       const dash = st.pattern === "dash" ? ' stroke-dasharray="6 3"' : st.pattern === "dot" ? ' stroke-dasharray="1 4"' : "";
       return `<svg class="art-lnsw" width="34" height="14" viewBox="0 0 34 14" aria-hidden="true"><path d="M2 10 C10 2, 20 14, 32 4" stroke="${esc(c)}" stroke-width="3" fill="none" stroke-linecap="round"${dash}/></svg>`;
     }
-    return `<span class="art-circ${size}" style="--c:${esc(c)}"></span>`;
+    // Зона везде квадратиком: в плитках, шапке, строках, меню и на кисти (1.0.1).
+    return `<span class="art-zsw${size}" style="--c:${esc(c)}"></span>`;
   },
 
   /** Шапка правой колонки: значок, название, плашка. */
@@ -495,9 +496,9 @@ export const UnifiedUI = {
         <input type="text" class="art-emoji-input" maxlength="8" data-model="typeForm.emoji" data-key="tf-emoji" value="${esc(f.emoji ?? "")}" placeholder="🐉"></label>
       ${f.emoji ? "" : this.renderIconPicker(f)}` : "";
     return `${this.uHead(sw, f.id ? (type?.name ?? f.name) : this.t("ART.Type.newTitle"), f.id ? this.uChip(this.t("ART.Unified.editType"), "", "pen") : "")}
-      ${this.uLab(this.t(f.id ? "ART.Unified.editType" : "ART.Type.newTitle"))}
+      ${this.uLab(this.t("ART.Aspect.props"))}
       <label class="art-field"><span>${esc(this.t("ART.Field.name"))}</span>
-        <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t("ART.Type.namePh"))}"></label>
+        <input type="text" data-model="typeForm.name" data-key="tf-name" data-enter="saveType" value="${esc(f.name)}" placeholder="${esc(this.t({ object: "ART.Type.namePhObject", line: "ART.Type.namePhLine" }[kind] ?? "ART.Type.namePh"))}"></label>
       <div class="art-grid2"><label class="art-field"><span>${esc(this.t("ART.Folder.one"))}</span><select data-model="typeForm.folder">${fopts}</select></label>${layerSel}</div>
       <label class="art-field art-inline"><span>${esc(this.t("ART.Field.color"))}</span>${colorField('data-model="typeForm.color"', f.color, "tf-color")}</label>
       ${area}${object}${kind === "line" ? this.renderLineStyle(f) : ""}
@@ -661,7 +662,7 @@ export const UnifiedUI = {
       <button type="button" class="art-btn" data-action="newAspect" data-kind="aspect" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newAspect"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindAspect"))}</span></button>
       <button type="button" class="art-btn" data-action="newAspect" data-kind="status" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newStatus"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindStatus"))}</span></button>
       <button type="button" class="art-btn art-newbar-folder" data-action="newFolder" data-kind="aspect" ${canFolder ? "" : "disabled"}
-        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.new"))}</span></button></div>`;
+        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.one"))}</span></button></div>`;
     // Свои статусы, заведённые прямо на карте (до 1.0 так делали в карточке гекса): мастер переносит их в список.
     const loose = this.backend.isGM ? s.looseAspects() : [];
     const collect = loose.length ? `<div class="art-sect art-sect-info art-collect">${icon("circle-info")}

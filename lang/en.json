@@ -239,6 +239,8 @@
       "newTitle": "New type",
       "editTitle": "Type",
       "namePh": "E.g. Ash Wastes",
+      "namePhObject": "E.g. Outpost",
+      "namePhLine": "E.g. Trade Road",
       "icon": "Icon",
       "browse": "Browse files",
       "needName": "Give the type a name.",
