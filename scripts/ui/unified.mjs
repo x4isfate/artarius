@@ -487,7 +487,12 @@ export const UnifiedUI = {
       ${kind === "line" ? `<option value=""${f.layerId ? "" : " selected"}>${esc(this.t("ART.Unified.noLayer"))}</option>` : ""}
       ${s.layers.map(l => `<option value="${esc(l.id)}"${l.id === f.layerId ? " selected" : ""}>${esc(l.name)}</option>`).join("")}</select></label>`;
     const type = f.id ? s.typeById(f.id) : null;
-    const sw = type ? this.uTypeIcon(type, " art-plate-lg") : `<span class="art-plate art-plate-lg">${icon(TOOL_ICON[kind])}</span>`;
+    // Шапка формы — живой образец (1.0.1): цвет, значок или эмодзи, форма метки меняются сразу.
+    const fIcon = /[/.]/.test(String(f.icon ?? "")) ? f.icon : "";
+    const live = { kind, style: { color: f.color, icon: fIcon, emoji: f.emoji, tint: f.tint, shape: f.shape, pattern: f.linePattern } };
+    const sw = kind === "object" && !fIcon && !f.emoji
+      ? `<span class="art-plate art-plate-lg">${icon(TOOL_ICON[kind])}</span>`
+      : this.uTypeIcon(live, " art-plate-lg");
     const area = kind === "area" ? `<div class="art-field"><span>${esc(this.t("ART.Pattern.title"))}</span>
         <div class="art-patterns">${this.patternButtons(f.pattern)}</div></div>
       ${f.pattern && f.pattern !== "none" ? `<label class="art-field art-inline"><span>${esc(this.t("ART.Pattern.color"))}</span>${colorField('data-model="typeForm.patternColor"', f.patternColor || "#1a1a1a", "tf-pcolor")}</label>` : ""}` : "";
@@ -732,16 +737,13 @@ export const UnifiedUI = {
       members = `<div class="art-field"><span>${esc(this.t("ART.Aspect.inAspects"))}</span>
         ${parents.length ? `<div class="art-chiprow">${parents.map(a => this.uItemPill(a)).join("")}</div>` : `<p class="art-muted art-small">${esc(this.t("ART.Aspect.inNoAspect"))}</p>`}</div>`;
     }
-    // Значок: эмодзи, простой значок или картинка из библиотеки и свой файл (как у меток).
-    const simple = ASPECT_ICONS.map(ic => `<button type="button" class="art-aicon${!f.emoji && ic === f.icon ? " on" : ""}" data-action="aspectIcon" data-v="${ic}" ${dis} title="${esc(ic)}">${icon(ic)}</button>`).join("");
-    const moreOpen = (this.wfOpen ??= new Set(["settings"])).has("aicon-more") || (isImageIcon(f.icon) && !f.emoji);
-    const iconField = `<div class="art-field"><span>${esc(this.t("ART.Aspect.icon"))}</span>
-      <div class="art-emoji-row"><label class="art-field art-inline"><span>${esc(this.t("ART.Type.emoji"))}</span>
-        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="—" ${dis}></label>
-        ${f.emoji ? `<button type="button" class="art-link art-small" data-action="aspectEmojiClear" ${dis}>${esc(this.t("ART.Aspect.emojiClear"))}</button>` : ""}</div>
-      <div class="art-aicons">${simple}</div>
-      <details class="art-fold-inner" data-fold="aicon-more"${moreOpen ? " open" : ""}><summary>${icon("image")} ${esc(this.t("ART.Aspect.iconMore"))}</summary>
-        ${can ? this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse", defCat: "danger", title: false }) : ""}</details></div>`;
+    // Значок как у типа метки (1.0.1): поле эмодзи, а пока эмодзи нет — библиотека сразу на виду:
+    // простые значки, картинки по разделам, свой файл. Эмодзи прячет библиотеку, образец в шапке и рядом меняется сразу.
+    const iconField = `<label class="art-field"><span>${esc(this.t("ART.Type.emoji"))}</span>
+        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="🐉" ${dis}></label>
+      ${f.emoji || !can ? "" : this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse",
+        defCat: isImageIcon(f.icon) ? "danger" : "simple", simple: ASPECT_ICONS, simplePick: "aspectIcon",
+        preview: this.uAspectPlate({ system: { icon: f.icon, tint: f.tint, color: f.color } }, " art-plate-xl") })}`;
     const steps = `<div class="art-field"><span>${esc(this.t("ART.Aspect.steps"))}</span>
       <div class="art-steps"><input type="number" min="0" max="999" step="1" data-model="aspectForm.start" data-key="af-start" value="${esc(f.steps === "" ? "" : String(f.start ?? ""))}" placeholder="1" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}" title="${esc(this.t("ART.Aspect.stepsNow"))}">
         <span>/</span><input type="number" min="0" max="999" step="1" data-model="aspectForm.steps" data-key="af-steps" value="${esc(String(f.steps ?? ""))}" placeholder="—" ${dis} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}" title="${esc(this.t("ART.Aspect.stepsMax"))}"></div></div>`;
@@ -1057,7 +1059,6 @@ export const UnifiedUI = {
       aspectKind: el => s.setAspectKind(el.dataset.v),
       aspectIcon: el => s.setAspectIcon(el.dataset.v),
       aspectIconPick: el => s.setAspectIcon(el.dataset.icon),
-      aspectEmojiClear: () => { if ( s.aspectForm ) { s.aspectForm.emoji = ""; s.changed("ui"); } },
       aspectIconCat: el => { if ( s.aspectForm ) { s.aspectForm.iconCat = el.dataset.cat; s.aspectForm.iconQuery = ""; s.changed("ui"); } },
       aspectBrowse: () => this.backend.pickFile?.(isImageIcon(s.aspectForm?.icon) ? s.aspectForm.icon : "", path => s.setAspectIcon(path)),
       saveAspect: () => s.saveAspectForm(),

@@ -495,6 +495,7 @@
       "tint": "Tint the icon with the type color",
       "credit": "Icons: game-icons.net, CC BY 3.0. Authors in assets/icons/CREDITS.md.",
       "cat": {
+        "simple": "Simple",
         "resources": "Resources",
         "settlements": "Settlements",
         "sacred": "Sacred",
@@ -803,7 +804,6 @@
       "inAspects": "Part of aspects",
       "inNoAspect": "Not part of any aspect. Statuses are added to an aspect in the aspect form.",
       "addStatusInto": "Status into aspect",
-      "iconMore": "Library pictures and your own file",
       "stepsNow": "Starting step",
       "stepsMax": "Number of steps",
       "stepsHint": "Steps: starting one on the left, total on the right. Empty right field means no steps.",
@@ -812,8 +812,7 @@
       "collect": "Move to the list",
       "collected": "Added to the list: {n}; map elements linked: {m}.",
       "collectGm": "Only the GM can move statuses from the map.",
-      "fromMapFolder": "From the map",
-      "emojiClear": "Remove emoji"
+      "fromMapFolder": "From the map"
     },
     "LayerLook": {
       "view": "Look on the map",
