@@ -463,14 +463,6 @@
 }
 #artarius-hud .art-hud-btn:hover { color: #fff; border-color: #ff9a3c; box-shadow: 0 0 10px #ff6a00; }
 #artarius-hud .art-hud-more { font-size: 13px; font-weight: 700; }
-#artarius-hud .art-hud-ico { width: 28px; height: 28px; }
-#artarius-hud img.art-hud-ico { object-fit: contain; }
-#artarius-hud .art-hud-swatch {
-  width: 22px; height: 22px; border-radius: 4px;
-  background: var(--c); border: 2px solid rgba(255, 255, 255, 0.55);
-  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
-}
-#artarius-hud .art-hud-line { width: 26px; height: 5px; border-radius: 3px; background: var(--c); transform: rotate(-35deg); }
 #artarius-hud .art-hud-plate {
   position: absolute;
   bottom: calc(max(var(--hh), var(--ch, 0px) / 2) + 8px);
@@ -906,8 +898,7 @@
 .artarius .art-newbar .art-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Окно «Статусы и аспекты»: «+ Аспект» и «+ Статус» в строку, «Новая папка» под ними — в 196 px три кнопки не влезают. */
 .artarius .art-newbar.art-newbar-asp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.artarius .art-newbar .art-newbar-folder { grid-column: 1 / -1; min-height: 26px; border-style: dashed; background: none; color: var(--art-muted); }
-.artarius .art-newbar .art-newbar-folder:not(:disabled):hover { color: var(--art-ink); }
+.artarius .art-newbar .art-newbar-folder { grid-column: 1 / -1; }
 
 /* Папки */
 .artarius .art-fgroup { display: flex; flex-direction: column; gap: 4px; flex: none; }
@@ -957,8 +948,8 @@
 .artarius .art-plate .art-glyph-img { width: 68%; height: 68%; display: block; object-fit: contain; }
 .artarius .art-plate-lg .art-emoji { font-size: 18px; }
 .artarius .art-aplate { color: var(--c, #c9a45c); }
-.artarius .art-circ { width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25); display: inline-block; flex: none; }
-.artarius .art-circ.art-plate-lg { width: 30px; height: 30px; }
+.artarius .art-zsw { width: 26px; height: 26px; border-radius: 6px; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25); display: inline-block; flex: none; }
+.artarius .art-zsw.art-plate-lg { width: 30px; height: 30px; }
 .artarius .art-sq { width: 26px; height: 26px; border-radius: 6px; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25); display: inline-block; flex: none; }
 .artarius .art-lnsw { flex: none; }
 
@@ -1180,3 +1171,4 @@
 .artarius .art-apick .art-menu-new.active { border-color: var(--art-warn); background: rgba(232, 194, 122, 0.08); }
 .artarius .art-apick .art-search.art-creating { border-color: var(--art-warn); }
 .artarius .art-entries .art-quick { display: flex; flex-wrap: wrap; gap: 4px; }
+.artarius .art-mplate.art-mp-xl { --s: calc(52px * var(--art-ik, 1)); }
