@@ -568,7 +568,7 @@
   display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 3px 6px; margin: 0;
   border: 1px solid transparent; border-radius: 5px; background: none; color: inherit; font-size: 14px; text-align: left; cursor: pointer;
 }
-#artarius-hud .art-menu-row > span { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#artarius-hud .art-menu-row > span:not(.art-mplate):not(.art-plate) { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #artarius-hud .art-menu-row:hover { background: rgba(232, 214, 195, 0.1); }
 #artarius-hud .art-menu-row.active { border-color: var(--art-warn); }
 #artarius-hud .art-menu-row .art-swatch, #artarius-hud .art-menu-row img, #artarius-hud .art-menu-row svg { width: 22px; height: 22px; flex: none; }
@@ -1161,3 +1161,19 @@
 /* Заметка «свои статусы с карты» */
 .artarius .art-collect { align-items: center; flex-wrap: wrap; }
 .artarius .art-collect > span { flex: 1; min-width: 160px; }
+
+/* 1.0.1: значок метки в окнах и меню — рамка формы метки, как на карте; размер из настройки «Размер значков» */
+.artarius .art-mplate { --s: calc(30px * var(--art-ik, 1)); position: relative; width: var(--s); height: var(--s); min-width: var(--s);
+  display: inline-grid; place-items: center; flex: none; color: #e8d3a0; vertical-align: middle; }
+.artarius .art-mplate.art-mp-lg { --s: calc(36px * var(--art-ik, 1)); }
+.artarius .art-mplate.art-mp-md { --s: calc(30px * var(--art-ik, 1)); }
+.artarius .art-mplate.art-mp-sm { --s: calc(26px * var(--art-ik, 1)); }
+.artarius .art-mplate.art-mp-xs { --s: calc(20px * var(--art-ik, 1)); }
+.artarius .art-mplate > .art-mframe, #artarius-hud .art-menu-row .art-mplate > .art-mframe { position: absolute; inset: 0; width: 100%; height: 100%;
+  overflow: visible; fill: rgba(17, 17, 17, 0.62); stroke: var(--c, #c9a45c); stroke-width: 1.7; stroke-linejoin: round; }
+.artarius .art-mplate > .art-plate-ico, #artarius-hud .art-menu-row .art-mplate > .art-plate-ico { position: relative; width: 64%; height: 64%; display: block; }
+.artarius .art-mplate > img.art-plate-ico { object-fit: contain; }
+.artarius .art-mplate.art-mshape-shield > .art-plate-ico { margin-top: -8%; width: 56%; height: 56%; }
+.artarius .art-mplate.art-mshape-diamond > .art-plate-ico { width: 46%; height: 46%; }
+.artarius .art-mplate.art-mshape-square > .art-plate-ico { width: 62%; height: 62%; }
+.artarius .art-mplate > .art-emoji { position: relative; font-size: calc(var(--s) * 0.52); line-height: 1; }

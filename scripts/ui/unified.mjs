@@ -15,6 +15,7 @@ import { hasField } from "../data/fields.mjs";
 import { FOLDER_COLORS, COAST_DEFAULTS } from "../constants.mjs";
 import { ASPECT_ICONS, searchItems, stepsLabel, statusIdsOf, aspectsWith, isImageIcon, hasEntryLike } from "../data/aspects.mjs";
 import { statusIcon } from "../data/statuses.mjs";
+import { shapeFrame, shapeOf } from "../data/mark-shape.mjs";
 
 /** Полоса режимов внизу: порядок и клавиши 1–6 (0.9.9). */
 export const MODE_DEFS = [
@@ -133,14 +134,25 @@ export const UnifiedUI = {
       title="${esc(t.name)}${t.personal ? ` · ${esc(this.t("ART.Type.personal"))}` : ""}">${this.uTypeIcon(t)}<span>${mark(t.name, this._uQuery)}</span></button>${pen}</div>`;
   },
 
+  /**
+   * Значок метки в окнах и меню (1.0.1): рамка той же формы, что подложка на карте (круг, щит, ромб…),
+   * внутри значок или эмодзи. Размер задаёт настройка «Размер значков» (переменная --art-ik).
+   */
+  uMarkPlate(style, size = "") {
+    const c = style?.color ?? "#ccc";
+    const shape = shapeOf(style);
+    const inner = style?.emoji ? `<span class="art-emoji">${esc(style.emoji)}</span>`
+      : style?.icon ? iconImg(style.icon, style.iconColor || c, { tint: style.tint !== false, cls: "art-plate-ico" }) : "";
+    const cls = String(size).replace(/art-plate-/g, "art-mp-");
+    return `<span class="art-mplate${cls} art-mshape-${shape}" style="--c:${esc(c)}">${shapeFrame(shape)}${inner}</span>`;
+  },
+
   /** Крупный значок типа для плитки и шапки. */
   uTypeIcon(t, size = "") {
     const st = t?.style ?? {};
     const c = st.color ?? "#ccc";
     if ( t?.kind === "object" ) {
-      if ( st.emoji ) return `<span class="art-plate${size}"><span class="art-emoji">${esc(st.emoji)}</span></span>`;
-      if ( st.icon ) return `<span class="art-plate${size}" style="--c:${esc(c)}">${iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-plate-ico" })}</span>`;
-      return `<span class="art-plate${size}" style="--c:${esc(c)}"></span>`;
+      return this.uMarkPlate(st, size);
     }
     if ( t?.kind === "line" ) {
       const dash = st.pattern === "dash" ? ' stroke-dasharray="6 3"' : st.pattern === "dot" ? ' stroke-dasharray="1 4"' : "";
@@ -291,10 +303,11 @@ export const UnifiedUI = {
     const type = s.typeById(st.system.typeId);
     const color = st.system.style?.color ?? type?.style?.color ?? "#ccc";
     if ( st.system.kind === "object" ) {
-      const path = st.system.style?.icon ?? type?.style?.icon;
-      const emoji = st.system.style?.emoji ?? type?.style?.emoji;
-      if ( emoji ) return `<span class="art-plate art-plate-sm${size}"><span class="art-emoji">${esc(emoji)}</span></span>`;
-      return `<span class="art-plate art-plate-sm${size}" style="--c:${esc(color)}">${path ? iconImg(path, color, { tint: (st.system.style?.tint ?? type?.style?.tint) !== false, cls: "art-plate-ico" }) : ""}</span>`;
+      const own = st.system.style ?? {}, base = type?.style ?? {};
+      return this.uMarkPlate({
+        color, icon: own.icon ?? base.icon, emoji: own.emoji ?? base.emoji,
+        tint: own.tint ?? base.tint, iconColor: own.iconColor ?? base.iconColor, shape: own.shape ?? base.shape
+      }, size || " art-plate-sm");
     }
     if ( st.system.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(color)}"></i>`;
     return `<i class="art-swatch" style="--c:${esc(color)}"></i>`;
@@ -786,10 +799,13 @@ export const UnifiedUI = {
     const m = s.hudMenu;
     const btn = (action, ic, title, on = false) => `<button type="button" class="art-qbtn${on ? " on" : ""}" data-action="${action}" title="${esc(title)}" aria-label="${esc(title)}">${icon(ic)}</button>`;
     const n = sum.zones.length + sum.marks.length + sum.lines.length;
-    // 1.0: под кнопками — аспекты и статусы меток гекса (если есть). Несколько меток — каждая со своим значком.
-    const marks = sum.marks.map(m => s.stateOf(m.id) ?? m).filter(m => (m.system.statuses ?? []).some(x => x.name) || (m.system.aspects ?? []).some(x => x.name));
-    const asp = marks.length ? `<div class="art-qi-asp">${marks.map(m => `<div class="art-qi-asp-row">${sum.marks.length > 1
-      ? `<span class="art-qi-asp-who" title="${esc(m.name || this.t("ART.Card.unnamed"))}">${this.uFeatureIcon(m)}</span>` : ""}${this.statusChips(m, { limit: 10, nested: true })}</div>`).join("")}</div>` : "";
+    // Под кнопками — аспекты и статусы всего, что лежит на гексе: зон, меток и линий (1.0.1: не только меток).
+    const has = st => (st.system.statuses ?? []).some(x => x.name) || (st.system.aspects ?? []).some(x => x.name);
+    const owners = [...sum.zones, ...sum.marks, ...sum.lines].map(x => s.stateOf(x.id) ?? x).filter(has);
+    // Значок владельца нужен, когда строк несколько или строка не от метки: иначе непонятно, чей статус.
+    const who = owners.length > 1 || owners.some(x => x.system.kind !== "object");
+    const asp = owners.length ? `<div class="art-qi-asp">${owners.map(x => `<div class="art-qi-asp-row">${who
+      ? `<span class="art-qi-asp-who" title="${esc(x.name || this.t("ART.Card.unnamed"))}">${this.uFeatureIcon(x)}</span>` : ""}${this.statusChips(x, { limit: 10, nested: true })}</div>`).join("")}</div>` : "";
     const bar = `<div class="art-qi-bar${asp ? " art-qi-has-asp" : ""}"><div class="art-qi-row"><span class="art-qi-what">${what}</span><span class="art-qi-sep"></span>
       ${btn("hudMark", "location-dot", this.t("ART.Hud.markPick"), m?.kind === "type")}
       ${btn("hudZone", "draw-polygon", this.t("ART.Hud.zoneAdd"), m?.kind === "zone")}

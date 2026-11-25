@@ -64,6 +64,15 @@ Hooks.once("init", () => {
     scope: "world", config: true, type: Boolean, default: false
   });
 
+  // 1.0.1: размер значков меток в окнах, меню и быстром осмотре (на карте метки не меняются).
+  const applyIconScale = v => document.documentElement.style.setProperty("--art-ik", String((Number(v) || 100) / 100));
+  S("iconScale", {
+    name: "ART.Settings.iconScale.name", hint: "ART.Settings.iconScale.hint",
+    scope: "world", config: true, type: Number, range: { min: 75, max: 200, step: 5 }, default: 100,
+    onChange: applyIconScale
+  });
+  applyIconScale(game.settings.get(MODULE_ID, "iconScale"));
+
   const backend = new FoundryBackend();
   const studio = new Studio(backend);
   runtime.backend = backend;

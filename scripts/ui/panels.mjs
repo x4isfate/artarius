@@ -361,7 +361,7 @@ export default class ArtariusUI {
     if ( hex?.dataset.hex ) hex.value = v;
     const box = el.closest(".art-item, .art-citem, .art-form, .art-ucol-right");
     if ( box && (el.dataset.model === "typeForm.color" || el.dataset.field === "color") ) {
-      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color, .art-plate, .art-circ") ) m.style.setProperty("--c", v);
+      for ( const m of box.querySelectorAll(".art-mask, .art-swatch, .art-live-color, .art-plate, .art-mplate, .art-circ") ) m.style.setProperty("--c", v);
     }
   }
 
@@ -1122,11 +1122,10 @@ export default class ArtariusUI {
   }
 
   /** Образец типа для списка: значок метки, полоска линии или квадрат зоны. */
-  typeSwatch(t) {
+  typeSwatch(t, size = " art-plate-sm") {
     const st = t?.style ?? {};
     const c = st.color ?? "#ccc";
-    if ( t?.kind === "object" && st.emoji ) return `<span class="art-row-ico art-emoji">${esc(st.emoji)}</span>`;
-    if ( t?.kind === "object" && st.icon ) return iconImg(st.icon, c, { tint: st.tint !== false, cls: "art-row-ico" });
+    if ( t?.kind === "object" ) return this.uMarkPlate(st, size);
     if ( t?.kind === "line" ) return `<i class="art-line-sw" style="--c:${esc(c)}"></i>`;
     return `<i class="art-swatch" style="--c:${esc(c)}"></i>`;
   }
@@ -1356,7 +1355,7 @@ export default class ArtariusUI {
       const f = fold(`layer:${layer.id}`, layer.name, total, layer.id ? eye(layer.id) : "");
       const body = f.open ? groups.map(({ type, zones }) => {
         if ( !zones.length ) return "";
-        return `${type ? `<div class="art-cat-type">${this.typeSwatch(type)} ${esc(type.name)} <small>${zones.length}</small></div>` : ""}
+        return `${type ? `<div class="art-cat-type">${this.typeSwatch(type, " art-plate-xs")} ${esc(type.name)} <small>${zones.length}</small></div>` : ""}
           ${zones.map(z => item(z, `<i class="art-swatch" style="--c:${esc(colorOf(z))}"></i>`)).join("")}`;
       }).join("") || `<p class="art-empty">${esc(this.t("ART.Catalog.emptyLayer"))}</p>` : "";
       return `<section class="art-cat-layer">${f.head}${f.open ? `<div class="art-cat-body">${body}</div>` : ""}</section>`;
@@ -1374,8 +1373,8 @@ export default class ArtariusUI {
       }
       const body = [...byType].map(([tid, items]) => {
         const type = s.typeById(tid);
-        return `<div class="art-cat-type">${type ? this.typeSwatch(type) : ""} ${esc(type?.name ?? "")} <small>${items.length}</small></div>
-          ${items.map(st => item(st, type ? this.typeSwatch(type) : "")).join("")}`;
+        return `<div class="art-cat-type">${type ? this.typeSwatch(type, " art-plate-xs") : ""} ${esc(type?.name ?? "")} <small>${items.length}</small></div>
+          ${items.map(st => item(st, type ? this.typeSwatch(type, " art-plate-xs") : "")).join("")}`;
       }).join("") || `<p class="art-empty">${esc(this.t("ART.Catalog.none"))}</p>`;
       return `<section class="art-cat-layer">${f.head}<div class="art-cat-body">${body}</div></section>`;
     };
