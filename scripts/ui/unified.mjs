@@ -632,7 +632,7 @@ export const UnifiedUI = {
     this._uQuery = q.trim().toLowerCase();
     const found = new Set(searchItems(all, q).map(a => a.id));
     const tiles = this.uFolders("aspect", a => `<div class="art-ut-wrap"><button type="button" class="art-ut${a.id === s.aspectSel ? " on" : ""}" data-action="pickAspect" data-id="${esc(a.id)}"
-        draggable="true" data-drag-aspect="${esc(a.id)}" title="${esc(`${a.name} · ${stepsLabel(a, (k, d) => this.t(k, d))}\n${this.t("ART.Aspect.dragTile")}`)}">${this.uAspectPlate(a)}<span>${mark(a.name, q)}</span>
+        draggable="true" data-drag-aspect="${esc(a.id)}" title="${esc(`${a.name} · ${stepsLabel(a, (k, d) => this.t(k, d))}\n${this.t("ART.Aspect.dragTile")}`)}">${this.uAspectPlate(a)}<span class="art-ut-name">${mark(a.name, q)}</span>
         ${a.system?.kind === "aspect" ? `<i class="art-ut-kind" title="${esc(this.t("ART.Aspect.kindAspect"))}"></i>` : ""}</button></div>`,
       a => found.has(a.id));
     this._uQuery = "";
@@ -640,11 +640,11 @@ export const UnifiedUI = {
         ${can ? `<button type="button" class="art-btn" data-action="seedAspects">${icon("wand-magic-sparkles")} ${esc(this.t("ART.Aspect.seed"))}</button>` : ""}</div>`
       : (q.trim() && !found.size ? `<p class="art-empty">${esc(this.t("ART.Unified.nothingFound"))}</p>` : "");
     const canFolder = s.canFolders("aspect");
-    const newbar = `<div class="art-newbar art-newbar3">
+    const newbar = `<div class="art-newbar art-newbar-asp">
       <button type="button" class="art-btn" data-action="newAspect" data-kind="aspect" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newAspect"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindAspect"))}</span></button>
       <button type="button" class="art-btn" data-action="newAspect" data-kind="status" ${can ? "" : "disabled"} title="${esc(this.t("ART.Aspect.newStatus"))}">${icon("plus")} <span>${esc(this.t("ART.Aspect.kindStatus"))}</span></button>
-      <button type="button" class="art-btn art-icon-only" data-action="newFolder" data-kind="aspect" ${canFolder ? "" : "disabled"}
-        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}" aria-label="${esc(this.t("ART.Folder.new"))}">${icon("folder-plus")}</button></div>`;
+      <button type="button" class="art-btn art-newbar-folder" data-action="newFolder" data-kind="aspect" ${canFolder ? "" : "disabled"}
+        title="${esc(this.t(canFolder ? "ART.Folder.new" : "ART.Folder.gmOnly"))}">${icon("folder-plus")} <span>${esc(this.t("ART.Folder.new"))}</span></button></div>`;
     // Свои статусы, заведённые прямо на карте (до 1.0 так делали в карточке гекса): мастер переносит их в список.
     const loose = this.backend.isGM ? s.looseAspects() : [];
     const collect = loose.length ? `<div class="art-sect art-sect-info art-collect">${icon("circle-info")}
@@ -719,8 +719,8 @@ export const UnifiedUI = {
     const moreOpen = (this.wfOpen ??= new Set(["settings"])).has("aicon-more") || (isImageIcon(f.icon) && !f.emoji);
     const iconField = `<div class="art-field"><span>${esc(this.t("ART.Aspect.icon"))}</span>
       <div class="art-emoji-row"><label class="art-field art-inline"><span>${esc(this.t("ART.Type.emoji"))}</span>
-        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="🔥" ${dis}></label>
-        <span class="art-muted art-small">${esc(this.t("ART.Aspect.emojiHint"))}</span></div>
+        <input type="text" class="art-emoji-input" maxlength="8" data-model="aspectForm.emoji" data-key="af-emoji" value="${esc(f.emoji ?? "")}" placeholder="—" ${dis}></label>
+        ${f.emoji ? `<button type="button" class="art-link art-small" data-action="aspectEmojiClear" ${dis}>${esc(this.t("ART.Aspect.emojiClear"))}</button>` : ""}</div>
       <div class="art-aicons">${simple}</div>
       <details class="art-fold-inner" data-fold="aicon-more"${moreOpen ? " open" : ""}><summary>${icon("image")} ${esc(this.t("ART.Aspect.iconMore"))}</summary>
         ${can ? this.renderIconPicker(f, { model: "aspectForm", key: "af", pick: "aspectIconPick", cat: "aspectIconCat", browse: "aspectBrowse", defCat: "danger", title: false }) : ""}</details></div>`;
@@ -871,12 +871,12 @@ export const UnifiedUI = {
       return `<div class="art-erow${aspect ? " art-erow-aspect" : ""}">
         <span class="art-plate art-plate-sm" style="--c:${esc(g.color || (aspect ? "#8f7bb5" : "#c9a45c"))}">${g.html}</span>
         <span class="art-erow-name${loose ? " art-loose" : ""}" title="${esc(loose ? this.t("ART.Aspect.looseOne") : (x.description || x.name))}">${esc(x.name || this.t("ART.Card.unnamed"))}</span>
-        <span class="art-steps art-steps-sm">
-          <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="-1" title="−1" aria-label="−1">${icon("minus")}</button>
-          <input type="number" class="art-num" value="${x.value ?? ""}" placeholder="—" ${fld(base, "value")} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}">
+        <span class="art-steps art-steps-sm${x.max ? "" : " art-steps-none"}">
+          ${x.max ? `<button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="-1" title="−1" aria-label="−1">${icon("minus")}</button>` : ""}
+          <input type="number" class="art-num" value="${x.value ?? ""}" placeholder="—" ${fld(base, "value")} aria-label="${esc(this.t("ART.Aspect.stepsNow"))}" title="${esc(this.t("ART.Aspect.stepsNow"))}">
           <span>/</span>
-          <input type="number" class="art-num" value="${x.max ?? ""}" placeholder="—" ${fld(base, "max")} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}">
-          <button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="1" title="+1" aria-label="+1">${icon("plus")}</button>
+          <input type="number" class="art-num" value="${x.max ?? ""}" placeholder="—" ${fld(base, "max")} aria-label="${esc(this.t("ART.Aspect.stepsMax"))}" title="${esc(this.t("ART.Aspect.stepsMax"))}">
+          ${x.max ? `<button type="button" class="art-icon-btn" data-action="stepLevel" data-id="${esc(id)}" data-path="${esc(lvlPath)}" data-n="${n}" data-delta="1" title="+1" aria-label="+1">${icon("plus")}</button>` : ""}
         </span>
         <button type="button" class="art-icon-btn" ${remove} title="${esc(this.t("ART.Aspect.detach"))}" aria-label="${esc(this.t("ART.Aspect.detach"))}">${icon("xmark")}</button></div>`;
     };
@@ -1014,6 +1014,7 @@ export const UnifiedUI = {
       aspectKind: el => s.setAspectKind(el.dataset.v),
       aspectIcon: el => s.setAspectIcon(el.dataset.v),
       aspectIconPick: el => s.setAspectIcon(el.dataset.icon),
+      aspectEmojiClear: () => { if ( s.aspectForm ) { s.aspectForm.emoji = ""; s.changed("ui"); } },
       aspectIconCat: el => { if ( s.aspectForm ) { s.aspectForm.iconCat = el.dataset.cat; s.aspectForm.iconQuery = ""; s.changed("ui"); } },
       aspectBrowse: () => this.backend.pickFile?.(isImageIcon(s.aspectForm?.icon) ? s.aspectForm.icon : "", path => s.setAspectIcon(path)),
       saveAspect: () => s.saveAspectForm(),
