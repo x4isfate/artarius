@@ -179,7 +179,7 @@
 .artarius .art-icon-pick img { width: 100%; height: 100%; border: 0; object-fit: contain; }
 .artarius .art-icon-pick { display: grid; place-items: center; }
 /* Поле цвета: палитра и код. */
-.artarius .art-color { display: inline-flex; align-items: center; gap: 6px; }
+.artarius .art-color { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
 .artarius .art-color input[type="color"] { width: 40px; height: 30px; padding: 2px; flex: none; cursor: pointer; }
 .artarius .art-color .art-color-hex { width: 84px; flex: none; font-family: monospace; text-transform: lowercase; }
 
@@ -890,6 +890,13 @@
   .artarius .art-ucols { grid-template-columns: 1fr; }
   .artarius .art-ucol-left { border-right: 0; padding-right: 0; max-height: 220px; }
 }
+/* 1.0: окно Foundry сжали — папки уходят наверх, правая колонка получает всю ширину. Считается от ширины окна, а не экрана. */
+.artarius .art-uw { container-type: inline-size; }
+@container (max-width: 500px) {
+  .artarius .art-ucols { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .artarius .art-ucol-left { border-right: 0; padding-right: 0; max-height: 200px; padding-bottom: 8px; border-bottom: 1px solid var(--art-line); }
+  .artarius .art-ucol-left .art-ft { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+}
 .artarius-part .art-left .art-body, .artarius-part .art-layerwin .art-body, .artarius-part .art-aspectwin .art-body,
 #artarius-ui > .art-left .art-body, #artarius-ui > .art-layerwin .art-body, #artarius-ui > .art-aspectwin .art-body { overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .artarius-part .art-left .art-body > .art-uw, #artarius-ui > .art-left .art-body > .art-uw { flex: 1; min-height: 0; }
@@ -897,8 +904,10 @@
 .artarius .art-newbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; flex: none; }
 .artarius .art-newbar .art-btn { padding: 0 8px; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .artarius .art-newbar .art-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.artarius .art-newbar.art-newbar3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
-.artarius .art-newbar .art-btn.art-icon-only { width: 32px; padding: 0; }
+/* Окно «Статусы и аспекты»: «+ Аспект» и «+ Статус» в строку, «Новая папка» под ними — в 196 px три кнопки не влезают. */
+.artarius .art-newbar.art-newbar-asp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.artarius .art-newbar .art-newbar-folder { grid-column: 1 / -1; min-height: 26px; border-style: dashed; background: none; color: var(--art-muted); }
+.artarius .art-newbar .art-newbar-folder:not(:disabled):hover { color: var(--art-ink); }
 
 /* Папки */
 .artarius .art-fgroup { display: flex; flex-direction: column; gap: 4px; flex: none; }
@@ -925,7 +934,7 @@
 .artarius .art-ut-wrap { position: relative; min-width: 0; }
 .artarius .art-ut { width: 100%; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px 3px;
   border: 1px solid var(--art-line); border-radius: 6px; background: var(--art-bg-2); font-size: 12px; min-width: 0; }
-.artarius .art-ut > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artarius .art-ut > span:last-child, .artarius .art-ut > .art-ut-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-ut:hover { border-color: var(--art-line-2); }
 .artarius .art-ut.on { border-color: var(--art-accent); box-shadow: inset 0 0 0 1px var(--art-accent); }
 .artarius .art-ut[draggable="true"] { cursor: grab; }
@@ -1017,7 +1026,8 @@
 .artarius .art-mini input[type="range"] { flex: 1; min-width: 0; }
 .artarius .art-mini > b { min-width: 42px; text-align: right; font-weight: 600; font-size: 12px; }
 .artarius .art-coast-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-.artarius .art-coast-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px; border-radius: 6px; border: 1px solid var(--art-line-2); background: var(--art-bg-2); font-size: 11.5px; }
+.artarius .art-coast-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px; border-radius: 6px; border: 1px solid var(--art-line-2); background: var(--art-bg-2); font-size: 11.5px; min-width: 0; }
+.artarius .art-coast-tile > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-coast-tile svg { width: 100%; height: 36px; border-radius: 4px; display: block; }
 .artarius .art-coast-tile.on { border-color: var(--art-accent); box-shadow: inset 0 0 0 1px var(--art-accent); }
 
@@ -1062,7 +1072,7 @@
 .artarius .art-citem.open { border-color: var(--art-accent); }
 .artarius .art-citem-head { display: flex; align-items: center; gap: 4px; }
 .artarius .art-citem-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; text-align: left; }
-.artarius .art-citem-main > b { font-size: 13px; white-space: nowrap; }
+.artarius .art-citem-main > b { font-size: 13px; white-space: nowrap; min-width: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
 .artarius .art-citem-main > .art-muted { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artarius .art-citem-body { display: flex; flex-direction: column; gap: 6px; }
 .artarius .art-citem-text { margin: 0; font-size: 12px; color: var(--art-ink); opacity: 0.85; white-space: pre-line; }
@@ -1120,7 +1130,9 @@
 .artarius .art-steps input[type="number"] { width: 58px; text-align: center; padding: 4px; }
 .artarius .art-steps > span { color: var(--art-muted); }
 .artarius .art-steps-sm { gap: 2px; flex: none; }
-.artarius .art-steps-sm input[type="number"] { width: 40px; min-height: 24px; padding: 2px; font-size: 12px; }
+.artarius .art-steps-sm input[type="number"] { width: 36px; min-height: 24px; padding: 2px; font-size: 12px; -moz-appearance: textfield; }
+.artarius .art-steps-sm input[type="number"]::-webkit-inner-spin-button { display: none; }
+.artarius .art-steps-none input[type="number"] { width: 30px; opacity: 0.75; }
 .artarius .art-steps-sm .art-icon-btn { width: 22px; height: 22px; font-size: 10px; }
 .artarius .art-grid2-kind { grid-template-columns: minmax(0, 1fr) auto; }
 .artarius .art-grid2-kind + .art-hint { margin-top: -6px; }
@@ -1142,7 +1154,7 @@
 .artarius .art-erow-aspect { background: rgba(143, 123, 181, 0.16); }
 .artarius .art-erow-aspect .art-erow-name { font-weight: 600; }
 .artarius .art-ebox { display: flex; flex-direction: column; gap: 3px; }
-.artarius .art-ebox-in { display: flex; flex-direction: column; gap: 3px; padding-left: 14px; margin-left: 12px; border-left: 2px solid rgba(143, 123, 181, 0.5); }
+.artarius .art-ebox-in { display: flex; flex-direction: column; gap: 3px; padding-left: 7px; margin-left: 10px; border-left: 2px solid rgba(143, 123, 181, 0.5); }
 .artarius .art-ebox-in > .art-link { align-self: flex-start; font-size: 12px; margin: 1px 0 2px; }
 
 /* Заметка «свои статусы с карты» */

@@ -336,7 +336,7 @@ export const StudioKit = {
   /** Элементы этого типа на карте, по названию. */
   featuresOfType(typeId) {
     return [...this.states.values()].filter(st => st.system.typeId === typeId)
-      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { numeric: true }));
   },
 
   /* ---------------------------------------------------------------- */

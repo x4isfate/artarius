@@ -77,7 +77,7 @@ export default class HexLayer extends InteractionLayer {
     };
     button("queue", "fa-solid fa-scroll", "ART.Mode.players", 4);
     button("layers", "fa-solid fa-layer-group", "ART.Layer.title", 5);
-    button("aspects", "fa-solid fa-wand-magic-sparkles", "ART.Aspect.title", 6);
+    button("aspects", "art-star4", "ART.Aspect.title", 6);
     button("settings", "fa-solid fa-gear", "ART.Settings.title", 7, gm);
     button("generator", "fa-solid fa-mountain-sun", "ART.Gen.title", 8, gm);
     button("guide", "fa-solid fa-circle-question", "ART.Guide.title", 9);
